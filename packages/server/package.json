@@ -4,6 +4,12 @@
   "private": true,
   "type": "module",
   "main": "./dist/index.js",
+  "exports": {
+    ".": { "import": "./dist/index.js" },
+    "./app": { "import": "./dist/app.js" },
+    "./bootstrap": { "import": "./dist/bootstrap.js" },
+    "./config": { "import": "./dist/config.js" }
+  },
   "scripts": {
     "build": "tsc",
     "dev": "tsx watch src/index.ts",

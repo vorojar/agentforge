@@ -8,6 +8,27 @@ importers:
 
   .:
     devDependencies:
+      '@agentforge/core':
+        specifier: workspace:*
+        version: link:packages/core
+      '@agentforge/database':
+        specifier: workspace:*
+        version: link:packages/database
+      '@agentforge/providers':
+        specifier: workspace:*
+        version: link:packages/providers
+      '@agentforge/server':
+        specifier: workspace:*
+        version: link:packages/server
+      '@agentforge/skills':
+        specifier: workspace:*
+        version: link:packages/skills
+      '@agentforge/tools':
+        specifier: workspace:*
+        version: link:packages/tools
+      '@agentforge/types':
+        specifier: workspace:*
+        version: link:packages/types
       turbo:
         specifier: ^2.3.0
         version: 2.8.20
