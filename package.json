@@ -1,0 +1,20 @@
+{
+  "name": "claude-agent-sdk-demo",
+  "version": "1.0.0",
+  "description": "使用 Claude Agent SDK 构建自定义 AI Agent 的完整示例",
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/agent.ts",
+    "start:streaming": "tsx src/agent-streaming.ts",
+    "build": "tsc",
+    "build:run": "tsc && node dist/agent.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.52.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "@types/node": "^22.0.0"
+  }
+}
