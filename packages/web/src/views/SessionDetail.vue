@@ -53,8 +53,27 @@ import { useRoute } from "vue-router";
 import { getSessionMessages } from "@/api";
 import { ElMessage } from "element-plus";
 
+interface ContentBlock {
+  type: string;
+  text?: string;
+  name?: string;
+  input?: Record<string, unknown>;
+  content?: string;
+  isError?: boolean;
+  toolUseId?: string;
+}
+
+interface ChatMessage {
+  id: string;
+  role: string;
+  content: string | ContentBlock[];
+  tokensIn?: number;
+  tokensOut?: number;
+  durationMs?: number;
+}
+
 const route = useRoute();
-const messages = ref<Array<Record<string, unknown>>>([]);
+const messages = ref<ChatMessage[]>([]);
 const loading = ref(false);
 
 function roleLabel(role: string) {
@@ -66,9 +85,9 @@ async function loadMessages() {
   loading.value = true;
   try {
     const { data } = await getSessionMessages(route.params.id as string);
-    messages.value = data.map((m: Record<string, unknown>) => ({
+    messages.value = (data as ChatMessage[]).map((m) => ({
       ...m,
-      content: typeof m.content === "string" ? tryParse(m.content as string) : m.content,
+      content: typeof m.content === "string" ? tryParse(m.content) : m.content,
     }));
   } catch {
     ElMessage.error("Failed to load messages");
@@ -77,7 +96,7 @@ async function loadMessages() {
   }
 }
 
-function tryParse(s: string): unknown {
+function tryParse(s: string): string | ContentBlock[] {
   try {
     const parsed = JSON.parse(s);
     return Array.isArray(parsed) ? parsed : s;

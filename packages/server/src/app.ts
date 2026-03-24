@@ -1,6 +1,10 @@
 import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import Fastify from "fastify";
 import cors from "@fastify/cors";
+import fastifyStatic from "@fastify/static";
 import type { AppContext } from "./bootstrap.js";
 import "./auth.js"; // type augmentation for FastifyRequest.agentConfig
 import { agentRoutes } from "./routes/agents.js";
@@ -10,10 +14,30 @@ import { toolRoutes } from "./routes/tools.js";
 import { skillRoutes } from "./routes/skills.js";
 import { statsRoutes } from "./routes/stats.js";
 
+const __dirname = fileURLToPath(new URL(".", import.meta.url));
+
 export function createApp(ctx: AppContext) {
   const fastify = Fastify({ logger: true });
 
   fastify.register(cors, { origin: true });
+
+  // Serve Vue3 admin UI static files in production
+  const webDistPath = join(__dirname, "../../web/dist");
+  if (existsSync(webDistPath)) {
+    fastify.register(fastifyStatic, {
+      root: webDistPath,
+      prefix: "/",
+      wildcard: false,
+    });
+
+    // SPA fallback: serve index.html for non-API, non-file routes
+    fastify.setNotFoundHandler((request, reply) => {
+      if (request.url.startsWith("/api/")) {
+        return reply.code(404).send({ error: "Not found" });
+      }
+      return reply.sendFile("index.html");
+    });
+  }
 
   // Chat routes — API key auth applied directly on scope
   fastify.register(async (scope) => {
