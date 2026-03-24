@@ -1,0 +1,32 @@
+{
+  "name": "@agentforge/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "test": "vitest run",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@agentforge/types": "workspace:*",
+    "@agentforge/database": "workspace:*",
+    "@agentforge/providers": "workspace:*",
+    "@agentforge/tools": "workspace:*",
+    "@agentforge/skills": "workspace:*",
+    "@agentforge/core": "workspace:*",
+    "fastify": "^5.0.0",
+    "@fastify/cors": "^10.0.0",
+    "@fastify/static": "^8.0.0",
+    "uuid": "^11.0.0"
+  },
+  "devDependencies": {
+    "@types/uuid": "^10.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vitest": "^3.0.0"
+  }
+}
