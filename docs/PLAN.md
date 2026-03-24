@@ -1,6 +1,6 @@
 # AgentForge Implementation Plan
 
-> **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development to implement this plan. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Build a unified Agent service platform (AgentForge) — a Docker-deployable service with Vue3 admin UI, where each business team can create, configure, and call AI Agents via API.
 
@@ -224,20 +224,20 @@ CREATE TABLE skills (
 - Create: `packages/types/package.json`
 - Create: `packages/types/tsconfig.json`
 
-- [ ] **Step 1: Initialize root monorepo config**
+- [x] **Step 1: Initialize root monorepo config**
 
 Root `package.json` with pnpm workspaces, `turbo.json` with build pipeline, shared `tsconfig.base.json`.
 
-- [ ] **Step 2: Create types package skeleton**
+- [x] **Step 2: Create types package skeleton**
 
 `packages/types/package.json` with name `@agentforge/types`, `tsconfig.json` extending base.
 
-- [ ] **Step 3: Verify monorepo builds**
+- [x] **Step 3: Verify monorepo builds**
 
 Run: `pnpm install && pnpm -r build`
 Expected: Clean build with no errors.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add -A && git commit -m "chore: scaffold monorepo with types package"
@@ -254,16 +254,16 @@ git add -A && git commit -m "chore: scaffold monorepo with types package"
 - Create: `packages/types/src/message.ts`
 - Create: `packages/types/src/database.ts`
 
-- [ ] **Step 1: Define all type interfaces**
+- [x] **Step 1: Define all type interfaces**
 
 All interfaces as specified in the architecture doc: AgentConfig, Tool, ToolResult, ToolExecutionContext, Skill, LLMProvider, LLMRequest, LLMResponse, LLMStreamChunk, Message, ContentBlock, Session, DatabaseAdapter.
 
-- [ ] **Step 2: Build types package**
+- [x] **Step 2: Build types package**
 
 Run: `cd packages/types && pnpm build`
 Expected: Compiles with no errors, `dist/` contains `.d.ts` files.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add -A && git commit -m "feat: define all core type interfaces"
@@ -280,33 +280,33 @@ git add -A && git commit -m "feat: define all core type interfaces"
 - Create: `packages/database/src/migrations.ts`
 - Create: `packages/database/tests/sqlite.test.ts`
 
-- [ ] **Step 1: Write failing tests for database operations**
+- [x] **Step 1: Write failing tests for database operations**
 
 Tests for: createAgent, getAgent, listAgents, updateAgent, deleteAgent, createSession, addMessage, getMessages, logUsage, getUsageStats, CRUD skills, CRUD apiKeys.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `cd packages/database && pnpm test`
 Expected: All tests FAIL (modules not found).
 
-- [ ] **Step 3: Implement DatabaseAdapter abstract class**
+- [x] **Step 3: Implement DatabaseAdapter abstract class**
 
 Abstract class with all method signatures.
 
-- [ ] **Step 4: Implement SQLiteAdapter**
+- [x] **Step 4: Implement SQLiteAdapter**
 
 Using `better-sqlite3`. Implements all methods. Includes migration logic to create tables on init.
 
-- [ ] **Step 5: Run tests to verify they pass**
+- [x] **Step 5: Run tests to verify they pass**
 
 Run: `cd packages/database && pnpm test`
 Expected: All tests PASS.
 
-- [ ] **Step 6: Add PostgreSQL and MySQL stubs**
+- [x] **Step 6: Add PostgreSQL and MySQL stubs**
 
 Stub classes that throw "Not implemented yet" — just to prove the adapter pattern works. These are placeholders for future implementation.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add -A && git commit -m "feat: database adapter with SQLite implementation"
@@ -327,28 +327,28 @@ git add -A && git commit -m "feat: database adapter with SQLite implementation"
 - Create: `packages/providers/src/factory.ts`
 - Create: `packages/providers/tests/factory.test.ts`
 
-- [ ] **Step 1: Write tests for provider factory**
+- [x] **Step 1: Write tests for provider factory**
 
 Test that `createProvider("claude", { apiKey })` returns a ClaudeProvider, `createProvider("openai", { apiKey, baseUrl })` returns an OpenAIProvider.
 
-- [ ] **Step 2: Implement ClaudeProvider**
+- [x] **Step 2: Implement ClaudeProvider**
 
 Using `@anthropic-ai/sdk`. Implements `chat()` and `stream()` methods. Properly maps between internal types and Anthropic SDK types.
 
-- [ ] **Step 3: Implement OpenAIProvider**
+- [x] **Step 3: Implement OpenAIProvider**
 
 Using `openai` SDK. Implements `chat()` and `stream()`. Maps between internal types and OpenAI types.
 
-- [ ] **Step 4: Implement provider factory**
+- [x] **Step 4: Implement provider factory**
 
 `createProvider(type, config)` that returns the right provider.
 
-- [ ] **Step 5: Run tests**
+- [x] **Step 5: Run tests**
 
 Run: `cd packages/providers && pnpm test`
 Expected: Factory tests PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add -A && git commit -m "feat: LLM provider layer with Claude and OpenAI support"
@@ -369,32 +369,32 @@ git add -A && git commit -m "feat: LLM provider layer with Claude and OpenAI sup
 - Create: `packages/tools/tests/registry.test.ts`
 - Create: `packages/tools/tests/executor.test.ts`
 
-- [ ] **Step 1: Write tests for ToolRegistry**
+- [x] **Step 1: Write tests for ToolRegistry**
 
 Tests: register, get, list, filter by names, duplicate registration error.
 
-- [ ] **Step 2: Implement ToolRegistry**
+- [x] **Step 2: Implement ToolRegistry**
 
 Map-based registry. `register(tool)`, `get(name)`, `list()`, `getByNames(names[])`.
 
-- [ ] **Step 3: Write tests for ToolExecutor**
+- [x] **Step 3: Write tests for ToolExecutor**
 
 Tests: execute tool, before/after hooks, tool policy (allow/deny), unknown tool error.
 
-- [ ] **Step 4: Implement ToolExecutor**
+- [x] **Step 4: Implement ToolExecutor**
 
 Runs hooks, checks policy, calls `tool.execute()`, returns result.
 
-- [ ] **Step 5: Implement 3 demo builtin tools**
+- [x] **Step 5: Implement 3 demo builtin tools**
 
 Weather (mock data), Calculator (safe eval), Time (timezone).
 
-- [ ] **Step 6: Run all tests**
+- [x] **Step 6: Run all tests**
 
 Run: `cd packages/tools && pnpm test`
 Expected: All PASS.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add -A && git commit -m "feat: tool system with registry, executor, and demo tools"
@@ -413,32 +413,32 @@ git add -A && git commit -m "feat: tool system with registry, executor, and demo
 - Create: `packages/skills/tests/registry.test.ts`
 - Create: `skills/demo-skill.md` (example skill file)
 
-- [ ] **Step 1: Write tests for skill parser**
+- [x] **Step 1: Write tests for skill parser**
 
 Tests: parse frontmatter (name, description) + markdown body from .md file.
 
-- [ ] **Step 2: Implement skill parser**
+- [x] **Step 2: Implement skill parser**
 
 Parse `---\nname: ...\ndescription: ...\n---\n<body>` format.
 
-- [ ] **Step 3: Write tests for SkillRegistry**
+- [x] **Step 3: Write tests for SkillRegistry**
 
 Tests: register, get by name, list, match by keyword.
 
-- [ ] **Step 4: Implement SkillRegistry**
+- [x] **Step 4: Implement SkillRegistry**
 
 Uses parser. CRUD from database. `match(query)` returns best-match skill.
 
-- [ ] **Step 5: Create demo skill .md file**
+- [x] **Step 5: Create demo skill .md file**
 
 A sample skill following Claude Code format.
 
-- [ ] **Step 6: Run tests**
+- [x] **Step 6: Run tests**
 
 Run: `cd packages/skills && pnpm test`
 Expected: All PASS.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add -A && git commit -m "feat: skill system with Claude Code style .md parsing"
@@ -460,19 +460,19 @@ git add -A && git commit -m "feat: skill system with Claude Code style .md parsi
 - Create: `packages/core/tests/agent-loop.test.ts`
 - Create: `packages/core/tests/context.test.ts`
 
-- [ ] **Step 1: Write tests for ContextBuilder**
+- [x] **Step 1: Write tests for ContextBuilder**
 
 Tests: builds system prompt from agent config, appends skill instructions, manages conversation history, estimates token count.
 
-- [ ] **Step 2: Implement ContextBuilder**
+- [x] **Step 2: Implement ContextBuilder**
 
 Combines agent's systemPrompt + matched skill instructions + conversation history. Estimates tokens. Truncates old messages when over budget.
 
-- [ ] **Step 3: Implement token estimation utils**
+- [x] **Step 3: Implement token estimation utils**
 
 Simple char-based estimation (~4 chars per token).
 
-- [ ] **Step 4: Write tests for AgentLoop**
+- [x] **Step 4: Write tests for AgentLoop**
 
 Tests (with mocked LLM provider):
 - Simple text response (no tools)
@@ -481,7 +481,7 @@ Tests (with mocked LLM provider):
 - Max iterations reached → stops
 - Streaming mode yields chunks
 
-- [ ] **Step 5: Implement AgentLoop**
+- [x] **Step 5: Implement AgentLoop**
 
 The core think-act-observe loop:
 1. Build context
@@ -492,12 +492,12 @@ The core think-act-observe loop:
 6. Track token usage
 7. Persist messages to database
 
-- [ ] **Step 6: Run tests**
+- [x] **Step 6: Run tests**
 
 Run: `cd packages/core && pnpm test`
 Expected: All PASS.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add -A && git commit -m "feat: agent loop with context management and streaming support"
@@ -519,27 +519,27 @@ git add -A && git commit -m "feat: agent loop with context management and stream
 - Create: `packages/server/src/bootstrap.ts`
 - Create: `packages/server/tests/auth.test.ts`
 
-- [ ] **Step 1: Write auth tests**
+- [x] **Step 1: Write auth tests**
 
 Tests: valid API key passes, invalid key returns 401, disabled key returns 403, key resolves to correct agent.
 
-- [ ] **Step 2: Implement config loader**
+- [x] **Step 2: Implement config loader**
 
 Read from env vars: `DATABASE_TYPE`, `DATABASE_URL`, `LLM_PROVIDER`, `LLM_API_KEY`, `PORT`, `ADMIN_SECRET`.
 
-- [ ] **Step 3: Implement auth middleware**
+- [x] **Step 3: Implement auth middleware**
 
 Fastify preHandler that checks `Authorization: Bearer <key>`, hashes it, looks up in api_keys table, resolves agent.
 
-- [ ] **Step 4: Implement bootstrap**
+- [x] **Step 4: Implement bootstrap**
 
 Wire up: database adapter → tool registry → skill registry → LLM provider → ready for routes.
 
-- [ ] **Step 5: Run auth tests**
+- [x] **Step 5: Run auth tests**
 
 Expected: All PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add -A && git commit -m "feat: server bootstrap with API key authentication"
@@ -551,11 +551,11 @@ git add -A && git commit -m "feat: server bootstrap with API key authentication"
 - Create: `packages/server/src/routes/agents.ts`
 - Create: `packages/server/tests/routes/agents.test.ts`
 
-- [ ] **Step 1: Write route tests**
+- [x] **Step 1: Write route tests**
 
 Tests: POST create agent, GET list agents, GET single agent, PUT update agent, DELETE agent, auto-generate API key on create.
 
-- [ ] **Step 2: Implement agents routes**
+- [x] **Step 2: Implement agents routes**
 
 ```
 POST   /api/agents          → create agent + generate API key
@@ -567,11 +567,11 @@ POST   /api/agents/:id/keys → generate new API key
 DELETE /api/agents/:id/keys/:keyId → revoke key
 ```
 
-- [ ] **Step 3: Run tests**
+- [x] **Step 3: Run tests**
 
 Expected: All PASS.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add -A && git commit -m "feat: agents CRUD API routes"
@@ -583,11 +583,11 @@ git add -A && git commit -m "feat: agents CRUD API routes"
 - Create: `packages/server/src/routes/chat.ts`
 - Create: `packages/server/tests/routes/chat.test.ts`
 
-- [ ] **Step 1: Write chat route tests**
+- [x] **Step 1: Write chat route tests**
 
 Tests: POST /api/chat returns response, creates session if none, reuses session, returns tool calls in response, streaming endpoint returns SSE.
 
-- [ ] **Step 2: Implement chat routes**
+- [x] **Step 2: Implement chat routes**
 
 ```
 POST /api/chat          → { message, sessionId? } → { reply, sessionId, toolCalls, usage }
@@ -596,11 +596,11 @@ POST /api/chat/stream   → SSE stream (for streaming-enabled agents)
 
 Auth via API key → resolves agent → runs AgentLoop → persists → returns.
 
-- [ ] **Step 3: Run tests**
+- [x] **Step 3: Run tests**
 
 Expected: All PASS.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add -A && git commit -m "feat: chat API with session management and streaming"
@@ -614,7 +614,7 @@ git add -A && git commit -m "feat: chat API with session management and streamin
 - Create: `packages/server/src/routes/skills.ts`
 - Create: `packages/server/src/routes/stats.ts`
 
-- [ ] **Step 1: Implement sessions routes**
+- [x] **Step 1: Implement sessions routes**
 
 ```
 GET /api/sessions              → list sessions (filterable by agent_id)
@@ -623,13 +623,13 @@ GET /api/sessions/:id/messages → full message history
 DELETE /api/sessions/:id       → delete session
 ```
 
-- [ ] **Step 2: Implement tools routes**
+- [x] **Step 2: Implement tools routes**
 
 ```
 GET /api/tools                 → list all registered tools with schemas
 ```
 
-- [ ] **Step 3: Implement skills routes**
+- [x] **Step 3: Implement skills routes**
 
 ```
 GET    /api/skills             → list skills
@@ -638,7 +638,7 @@ PUT    /api/skills/:id         → update skill
 DELETE /api/skills/:id         → delete skill
 ```
 
-- [ ] **Step 4: Implement stats routes**
+- [x] **Step 4: Implement stats routes**
 
 ```
 GET /api/stats                 → aggregate usage stats
@@ -646,11 +646,11 @@ GET /api/stats/agents/:id      → per-agent stats
 GET /api/stats/daily           → daily breakdown
 ```
 
-- [ ] **Step 5: Write and run tests for all routes**
+- [x] **Step 5: Write and run tests for all routes**
 
 Expected: All PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add -A && git commit -m "feat: sessions, tools, skills, and stats API routes"
@@ -673,22 +673,22 @@ git add -A && git commit -m "feat: sessions, tools, skills, and stats API routes
 - Create: `packages/web/src/api/index.ts`
 - Create: `packages/web/src/styles/global.css`
 
-- [ ] **Step 1: Scaffold Vue3 + Vite + Element Plus + Vue Router**
+- [x] **Step 1: Scaffold Vue3 + Vite + Element Plus + Vue Router**
 
-- [ ] **Step 2: Setup API client with axios**
+- [x] **Step 2: Setup API client with axios**
 
 Base URL configurable, all endpoints wrapped.
 
-- [ ] **Step 3: Create Layout component**
+- [x] **Step 3: Create Layout component**
 
 Sidebar navigation (Dashboard, Agents, Tools, Skills, Sessions) + header with title.
 
-- [ ] **Step 4: Verify dev server starts**
+- [x] **Step 4: Verify dev server starts**
 
 Run: `cd packages/web && pnpm dev`
 Expected: Vite dev server runs, shows layout shell.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add -A && git commit -m "feat: Vue3 admin UI scaffold with layout and router"
@@ -700,11 +700,11 @@ git add -A && git commit -m "feat: Vue3 admin UI scaffold with layout and router
 - Create: `packages/web/src/views/Dashboard.vue`
 - Create: `packages/web/src/components/StatsChart.vue`
 
-- [ ] **Step 1: Implement Dashboard view**
+- [x] **Step 1: Implement Dashboard view**
 
 Overview cards: total agents, total sessions today, total tokens today, active agents count. Daily usage chart (line chart via ECharts or Chart.js).
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add -A && git commit -m "feat: dashboard with stats overview and charts"
@@ -717,15 +717,15 @@ git add -A && git commit -m "feat: dashboard with stats overview and charts"
 - Create: `packages/web/src/views/AgentEdit.vue`
 - Create: `packages/web/src/components/AgentCard.vue`
 
-- [ ] **Step 1: Implement AgentList view**
+- [x] **Step 1: Implement AgentList view**
 
 Table/cards showing all agents. Status toggle (enabled/disabled). Copy API key button. Create/Edit/Delete actions.
 
-- [ ] **Step 2: Implement AgentEdit view**
+- [x] **Step 2: Implement AgentEdit view**
 
 Form with: name, description, system prompt (textarea), model selector, temperature slider, max tokens, max iterations, streaming toggle, tool multi-select, skill multi-select. Save/Cancel buttons.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add -A && git commit -m "feat: agent list and edit pages"
@@ -737,15 +737,15 @@ git add -A && git commit -m "feat: agent list and edit pages"
 - Create: `packages/web/src/views/ToolList.vue`
 - Create: `packages/web/src/views/SkillList.vue`
 
-- [ ] **Step 1: Implement ToolList view**
+- [x] **Step 1: Implement ToolList view**
 
 Read-only table of registered tools. Shows name, description, parameter schema (collapsible JSON viewer).
 
-- [ ] **Step 2: Implement SkillList view**
+- [x] **Step 2: Implement SkillList view**
 
 Table of skills. Create/Edit dialog with markdown editor. Preview rendered markdown. Enable/disable toggle. Delete action.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add -A && git commit -m "feat: tool and skill management pages"
@@ -758,15 +758,15 @@ git add -A && git commit -m "feat: tool and skill management pages"
 - Create: `packages/web/src/views/SessionDetail.vue`
 - Create: `packages/web/src/components/MessageBubble.vue`
 
-- [ ] **Step 1: Implement Sessions view**
+- [x] **Step 1: Implement Sessions view**
 
 Table of sessions, filterable by agent. Shows session ID, agent name, message count, last activity. Click to view detail.
 
-- [ ] **Step 2: Implement SessionDetail view**
+- [x] **Step 2: Implement SessionDetail view**
 
 Chat-style conversation replay. MessageBubble component shows user/assistant/tool messages differently. Tool calls show name + input + result in collapsible blocks.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add -A && git commit -m "feat: session browser and conversation replay"
@@ -781,19 +781,19 @@ git add -A && git commit -m "feat: session browser and conversation replay"
 **Files:**
 - Modify: `packages/server/src/app.ts`
 
-- [ ] **Step 1: Add @fastify/static to serve Vue build output**
+- [x] **Step 1: Add @fastify/static to serve Vue build output**
 
 In production, serve `packages/web/dist/` at `/`. API routes at `/api/*`. SPA fallback for Vue Router.
 
-- [ ] **Step 2: Add build script**
+- [x] **Step 2: Add build script**
 
 Root `pnpm build` builds all packages + Vue frontend.
 
-- [ ] **Step 3: Verify end-to-end**
+- [x] **Step 3: Verify end-to-end**
 
 Build everything, start server, visit `http://localhost:3000`, see admin UI.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add -A && git commit -m "feat: serve Vue admin UI as static files in production"
@@ -806,21 +806,21 @@ git add -A && git commit -m "feat: serve Vue admin UI as static files in product
 - Create: `docker/docker-compose.yml`
 - Create: `.dockerignore`
 
-- [ ] **Step 1: Write multi-stage Dockerfile**
+- [x] **Step 1: Write multi-stage Dockerfile**
 
 Stage 1: Node.js build (pnpm install + build all packages).
 Stage 2: Production image (copy dist + node_modules, expose port).
 
-- [ ] **Step 2: Write docker-compose.yml**
+- [x] **Step 2: Write docker-compose.yml**
 
 Service: `agentforge` with env vars for config. Volume for SQLite data. Port mapping.
 
-- [ ] **Step 3: Test Docker build and run**
+- [x] **Step 3: Test Docker build and run**
 
 Run: `docker compose up --build`
 Expected: Service starts, admin UI accessible at `http://localhost:3000`.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add -A && git commit -m "feat: Docker setup with multi-stage build"
@@ -831,7 +831,7 @@ git add -A && git commit -m "feat: Docker setup with multi-stage build"
 **Files:**
 - Create: `tests/integration/full-flow.test.ts`
 
-- [ ] **Step 1: Write end-to-end integration test**
+- [x] **Step 1: Write end-to-end integration test**
 
 1. Start server
 2. Create agent via API
@@ -843,11 +843,11 @@ git add -A && git commit -m "feat: Docker setup with multi-stage build"
 8. Check usage logged
 9. Verify stats endpoint returns data
 
-- [ ] **Step 2: Run integration test**
+- [x] **Step 2: Run integration test**
 
 Expected: PASS.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add -A && git commit -m "test: end-to-end integration test"
@@ -859,11 +859,11 @@ git add -A && git commit -m "test: end-to-end integration test"
 - Create: `README.md`
 - Create: `.env.example`
 
-- [ ] **Step 1: Write README**
+- [x] **Step 1: Write README**
 
 Quick start (Docker), configuration reference, API documentation, how to add custom tools, how to write skills.
 
-- [ ] **Step 2: Create .env.example**
+- [x] **Step 2: Create .env.example**
 
 ```
 DATABASE_TYPE=sqlite
@@ -874,12 +874,12 @@ PORT=3000
 ADMIN_SECRET=change-me
 ```
 
-- [ ] **Step 3: Final build + test verification**
+- [x] **Step 3: Final build + test verification**
 
 Run: `pnpm install && pnpm build && pnpm test`
 Expected: All builds pass, all tests pass.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add -A && git commit -m "docs: README, env example, and final polish"
