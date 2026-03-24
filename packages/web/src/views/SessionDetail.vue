@@ -1,0 +1,141 @@
+<template>
+  <div>
+    <div class="page-header">
+      <h2>Session Detail</h2>
+      <el-button @click="$router.back()">Back</el-button>
+    </div>
+
+    <el-card v-loading="loading">
+      <div class="chat-container">
+        <div
+          v-for="msg in messages"
+          :key="msg.id"
+          :class="['message', `message-${msg.role}`]"
+        >
+          <div class="message-role">{{ roleLabel(msg.role) }}</div>
+          <div class="message-content">
+            <template v-if="typeof msg.content === 'string'">
+              {{ msg.content }}
+            </template>
+            <template v-else>
+              <div v-for="(block, i) in msg.content" :key="i">
+                <div v-if="block.type === 'text'">{{ block.text }}</div>
+                <div v-else-if="block.type === 'tool_use'" class="tool-block">
+                  <el-tag type="warning" size="small">Tool: {{ block.name }}</el-tag>
+                  <el-collapse>
+                    <el-collapse-item title="Input">
+                      <pre>{{ JSON.stringify(block.input, null, 2) }}</pre>
+                    </el-collapse-item>
+                  </el-collapse>
+                </div>
+                <div v-else-if="block.type === 'tool_result'" class="tool-block">
+                  <el-tag :type="block.isError ? 'danger' : 'success'" size="small">
+                    Tool Result
+                  </el-tag>
+                  <pre>{{ block.content }}</pre>
+                </div>
+              </div>
+            </template>
+          </div>
+          <div class="message-meta" v-if="msg.tokensIn || msg.tokensOut">
+            Tokens: {{ msg.tokensIn }}↓ {{ msg.tokensOut }}↑
+            <span v-if="msg.durationMs"> · {{ msg.durationMs }}ms</span>
+          </div>
+        </div>
+      </div>
+    </el-card>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref, onMounted } from "vue";
+import { useRoute } from "vue-router";
+import { getSessionMessages } from "@/api";
+import { ElMessage } from "element-plus";
+
+const route = useRoute();
+const messages = ref<Array<Record<string, unknown>>>([]);
+const loading = ref(false);
+
+function roleLabel(role: string) {
+  const map: Record<string, string> = { user: "User", assistant: "Assistant", tool: "Tool" };
+  return map[role] || role;
+}
+
+async function loadMessages() {
+  loading.value = true;
+  try {
+    const { data } = await getSessionMessages(route.params.id as string);
+    messages.value = data.map((m: Record<string, unknown>) => ({
+      ...m,
+      content: typeof m.content === "string" ? tryParse(m.content as string) : m.content,
+    }));
+  } catch {
+    ElMessage.error("Failed to load messages");
+  } finally {
+    loading.value = false;
+  }
+}
+
+function tryParse(s: string): unknown {
+  try {
+    const parsed = JSON.parse(s);
+    return Array.isArray(parsed) ? parsed : s;
+  } catch {
+    return s;
+  }
+}
+
+onMounted(loadMessages);
+</script>
+
+<style scoped>
+.chat-container {
+  max-width: 800px;
+  margin: 0 auto;
+}
+.message {
+  margin-bottom: 16px;
+  padding: 12px 16px;
+  border-radius: 8px;
+}
+.message-user {
+  background: #ecf5ff;
+  margin-left: 40px;
+}
+.message-assistant {
+  background: #f0f9eb;
+  margin-right: 40px;
+}
+.message-tool {
+  background: #fdf6ec;
+  margin-right: 40px;
+}
+.message-role {
+  font-size: 12px;
+  font-weight: 600;
+  color: #909399;
+  margin-bottom: 4px;
+}
+.message-content {
+  font-size: 14px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+.message-meta {
+  font-size: 11px;
+  color: #c0c4cc;
+  margin-top: 6px;
+}
+.tool-block {
+  margin: 8px 0;
+  padding: 8px;
+  background: rgba(0, 0, 0, 0.03);
+  border-radius: 4px;
+}
+.tool-block pre {
+  font-size: 12px;
+  margin-top: 4px;
+  white-space: pre-wrap;
+}
+</style>
