@@ -1,20 +1,20 @@
 {
-  "name": "claude-agent-sdk-demo",
-  "version": "1.0.0",
-  "description": "使用 Claude Agent SDK 构建自定义 AI Agent 的完整示例",
-  "type": "module",
+  "name": "agentforge",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Unified Agent Service Platform",
   "scripts": {
-    "start": "tsx src/agent.ts",
-    "start:streaming": "tsx src/agent-streaming.ts",
-    "build": "tsc",
-    "build:run": "tsc && node dist/agent.js"
-  },
-  "dependencies": {
-    "@anthropic-ai/sdk": "^0.52.0"
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "dev": "turbo run dev --parallel",
+    "dev:server": "pnpm --filter @agentforge/server dev",
+    "dev:web": "pnpm --filter @agentforge/web dev",
+    "start": "node packages/server/dist/index.js",
+    "clean": "turbo run clean"
   },
   "devDependencies": {
-    "tsx": "^4.19.0",
+    "turbo": "^2.3.0",
     "typescript": "^5.6.0",
-    "@types/node": "^22.0.0"
+    "vitest": "^3.0.0"
   }
 }
