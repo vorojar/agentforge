@@ -7,20 +7,28 @@
       </el-select>
     </div>
 
-    <el-table :data="sessions" v-loading="loading" stripe @row-click="openSession">
-      <el-table-column prop="id" label="Session ID" width="300">
+    <el-table :data="sessions" v-loading="loading" stripe @row-click="openSession" style="cursor: pointer">
+      <el-table-column prop="id" label="Session ID" min-width="200">
         <template #default="{ row }">
-          <code style="font-size: 12px">{{ row.id }}</code>
+          <code style="font-size: 12px">{{ row.id.slice(0, 8) }}...</code>
         </template>
       </el-table-column>
-      <el-table-column prop="agentId" label="Agent" width="200">
+      <el-table-column prop="agentId" label="Agent" min-width="120">
         <template #default="{ row }">
           {{ agentMap[row.agentId] || row.agentId }}
         </template>
       </el-table-column>
-      <el-table-column prop="messageCount" label="Messages" width="100" align="center" />
-      <el-table-column prop="updatedAt" label="Last Activity" width="200" />
-      <el-table-column label="Actions" width="120" align="center">
+      <el-table-column prop="messageCount" label="Messages" width="100" align="center">
+        <template #default="{ row }">
+          {{ row.messageCount ?? 0 }}
+        </template>
+      </el-table-column>
+      <el-table-column prop="updatedAt" label="Last Activity" min-width="160">
+        <template #default="{ row }">
+          {{ formatTime(row.updatedAt) }}
+        </template>
+      </el-table-column>
+      <el-table-column label="Actions" width="100" align="center">
         <template #default="{ row }">
           <el-popconfirm title="Delete session?" @confirm.stop="handleDelete(row.id)">
             <template #reference>
@@ -45,6 +53,13 @@ const agents = ref<Array<{ id: string; name: string }>>([]);
 const agentMap = ref<Record<string, string>>({});
 const loading = ref(false);
 const filterAgent = ref("");
+
+function formatTime(iso: string): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
 
 async function loadSessions() {
   loading.value = true;

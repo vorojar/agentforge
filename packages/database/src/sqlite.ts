@@ -208,11 +208,13 @@ export class SQLiteAdapter implements DatabaseAdapter {
   }
 
   listSessions(agentId?: string): Session[] {
-    if (agentId) {
-      const rows = this.db.prepare("SELECT * FROM sessions WHERE agent_id = ? ORDER BY updated_at DESC").all(agentId) as Record<string, unknown>[];
-      return rows.map((r) => this.mapSession(r));
-    }
-    const rows = this.db.prepare("SELECT * FROM sessions ORDER BY updated_at DESC").all() as Record<string, unknown>[];
+    const sql = `SELECT s.*, COUNT(m.id) as message_count
+      FROM sessions s LEFT JOIN messages m ON m.session_id = s.id
+      ${agentId ? "WHERE s.agent_id = ?" : ""}
+      GROUP BY s.id ORDER BY s.updated_at DESC`;
+    const rows = (agentId
+      ? this.db.prepare(sql).all(agentId)
+      : this.db.prepare(sql).all()) as Record<string, unknown>[];
     return rows.map((r) => this.mapSession(r));
   }
 
@@ -225,6 +227,7 @@ export class SQLiteAdapter implements DatabaseAdapter {
     return {
       id: row.id as string,
       agentId: row.agent_id as string,
+      messageCount: (row.message_count as number) ?? undefined,
       createdAt: row.created_at as string,
       updatedAt: row.updated_at as string,
     };
