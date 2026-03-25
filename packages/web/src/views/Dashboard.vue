@@ -6,7 +6,7 @@
 
     <!-- Summary cards -->
     <el-row :gutter="16" style="margin-bottom: 20px">
-      <el-col :span="4" v-for="card in statCards" :key="card.label">
+      <el-col :span="6" v-for="card in statCards" :key="card.label">
         <el-card shadow="hover">
           <div class="stat-card">
             <div class="stat-value">{{ card.value }}</div>
@@ -31,34 +31,50 @@
       <div ref="chartRef" style="height: 320px"></div>
     </el-card>
 
-    <!-- Model usage table -->
-    <el-card>
-      <template #header>
-        <span>Usage by Model</span>
-      </template>
-      <el-table :data="modelStats" stripe size="small">
-        <el-table-column prop="model" label="Model" min-width="200" />
-        <el-table-column label="Requests" width="120" align="right">
-          <template #default="{ row }">{{ row.requests.toLocaleString() }}</template>
-        </el-table-column>
-        <el-table-column label="Tokens In" width="140" align="right">
-          <template #default="{ row }">{{ row.tokensIn.toLocaleString() }}</template>
-        </el-table-column>
-        <el-table-column label="Tokens Out" width="140" align="right">
-          <template #default="{ row }">{{ row.tokensOut.toLocaleString() }}</template>
-        </el-table-column>
-        <el-table-column label="Total Tokens" width="150" align="right">
-          <template #default="{ row }">{{ (row.tokensIn + row.tokensOut).toLocaleString() }}</template>
-        </el-table-column>
-      </el-table>
-    </el-card>
+    <!-- Two tables side by side -->
+    <el-row :gutter="16">
+      <el-col :span="12">
+        <el-card>
+          <template #header><span>Usage by Model</span></template>
+          <el-table :data="modelStats" stripe size="small">
+            <el-table-column prop="model" label="Model" min-width="160" />
+            <el-table-column label="Requests" width="90" align="right">
+              <template #default="{ row }">{{ row.requests.toLocaleString() }}</template>
+            </el-table-column>
+            <el-table-column label="Tokens In" width="110" align="right">
+              <template #default="{ row }">{{ row.tokensIn.toLocaleString() }}</template>
+            </el-table-column>
+            <el-table-column label="Tokens Out" width="110" align="right">
+              <template #default="{ row }">{{ row.tokensOut.toLocaleString() }}</template>
+            </el-table-column>
+          </el-table>
+        </el-card>
+      </el-col>
+      <el-col :span="12">
+        <el-card>
+          <template #header><span>Usage by Agent</span></template>
+          <el-table :data="agentStats" stripe size="small">
+            <el-table-column prop="name" label="Agent" min-width="160" />
+            <el-table-column label="Requests" width="90" align="right">
+              <template #default="{ row }">{{ row.totalRequests.toLocaleString() }}</template>
+            </el-table-column>
+            <el-table-column label="Tokens In" width="110" align="right">
+              <template #default="{ row }">{{ row.totalTokensIn.toLocaleString() }}</template>
+            </el-table-column>
+            <el-table-column label="Tokens Out" width="110" align="right">
+              <template #default="{ row }">{{ row.totalTokensOut.toLocaleString() }}</template>
+            </el-table-column>
+          </el-table>
+        </el-card>
+      </el-col>
+    </el-row>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from "vue";
 import * as echarts from "echarts";
-import { getStats, getDailyStats, getModelStats } from "@/api";
+import { getStats, getDailyStats, getModelStats, getAgentUsageStats } from "@/api";
 
 const chartRef = ref<HTMLElement>();
 let chartInstance: echarts.ECharts | null = null;
@@ -66,8 +82,6 @@ let resizeHandler: (() => void) | null = null;
 const chartRange = ref("30");
 
 const statCards = ref([
-  { label: "Total Agents", value: 0 },
-  { label: "Active Agents", value: 0 },
   { label: "Total Sessions", value: 0 },
   { label: "Sessions Today", value: 0 },
   { label: "Total Requests", value: 0 },
@@ -75,14 +89,13 @@ const statCards = ref([
 ]);
 
 const modelStats = ref<Array<{ model: string; requests: number; tokensIn: number; tokensOut: number }>>([]);
+const agentStats = ref<Array<{ name: string; totalRequests: number; totalTokensIn: number; totalTokensOut: number }>>([]);
 
 async function loadStats() {
   try {
     const { data } = await getStats();
     statCards.value = [
-      { label: "Total Agents", value: data.totalAgents ?? 0 },
-      { label: "Active Agents", value: data.activeAgents ?? 0 },
-      { label: "Total Sessions", value: data.totalSessions ?? 0 },
+      { label: "Total Sessions", value: (data.totalSessions ?? 0).toLocaleString() },
       { label: "Sessions Today", value: data.sessionsToday ?? 0 },
       { label: "Total Requests", value: (data.totalRequests ?? 0).toLocaleString() },
       { label: "Total Tokens", value: ((data.totalTokensIn ?? 0) + (data.totalTokensOut ?? 0)).toLocaleString() },
@@ -96,9 +109,14 @@ async function loadModelStats() {
   try {
     const { data } = await getModelStats();
     modelStats.value = data;
-  } catch {
-    // ignore
-  }
+  } catch { /* ignore */ }
+}
+
+async function loadAgentStats() {
+  try {
+    const { data } = await getAgentUsageStats();
+    agentStats.value = data;
+  } catch { /* ignore */ }
 }
 
 async function loadChart() {
@@ -143,6 +161,7 @@ async function loadChart() {
 onMounted(() => {
   loadStats();
   loadModelStats();
+  loadAgentStats();
   loadChart();
 });
 

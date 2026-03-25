@@ -46,4 +46,13 @@ export async function statsRoutes(fastify: FastifyInstance, opts: { ctx: AppCont
   fastify.get("/api/stats/models", async () => {
     return db.getModelStats();
   });
+
+  // Agent usage breakdown
+  fastify.get("/api/stats/agents", async () => {
+    const agents = db.listAgents();
+    return agents.map(a => {
+      const usage = db.getUsageStats(a.id);
+      return { id: a.id, name: a.name, ...usage };
+    }).filter(a => a.totalRequests > 0).sort((a, b) => b.totalRequests - a.totalRequests);
+  });
 }

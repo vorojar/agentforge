@@ -84,5 +84,6 @@ export const getAgentStats = (agentId: string) =>
 export const getDailyStats = (agentId?: string, days?: number) =>
   api.get("/stats/daily", { params: { ...(agentId ? { agentId } : {}), ...(days ? { days } : {}) } });
 export const getModelStats = () => api.get("/stats/models");
+export const getAgentUsageStats = () => api.get("/stats/agents");
 
 export default api;
