@@ -286,15 +286,28 @@ export class AgentLoop {
         }
       }
 
+      // Merge consecutive text chunks into a single text block for storage
+      const mergedBlocks: ContentBlock[] = [];
+      let pendingText = "";
+      for (const block of contentBlocks) {
+        if (block.type === "text") {
+          pendingText += block.text ?? "";
+        } else {
+          if (pendingText) { mergedBlocks.push({ type: "text", text: pendingText }); pendingText = ""; }
+          mergedBlocks.push(block);
+        }
+      }
+      if (pendingText) mergedBlocks.push({ type: "text", text: pendingText });
+
       if (stopReason === "end_turn" || stopReason === "max_tokens") {
-        history.push({ role: "assistant", content: contentBlocks });
-        this.persistMessage(sid, agentConfig.id, "assistant", contentBlocks);
+        history.push({ role: "assistant", content: mergedBlocks });
+        this.persistMessage(sid, agentConfig.id, "assistant", mergedBlocks);
         break;
       }
 
       if (stopReason === "tool_use") {
-        history.push({ role: "assistant", content: contentBlocks });
-        this.persistMessage(sid, agentConfig.id, "assistant", contentBlocks);
+        history.push({ role: "assistant", content: mergedBlocks });
+        this.persistMessage(sid, agentConfig.id, "assistant", mergedBlocks);
 
         const resultBlocks: ToolResultBlock[] = [];
         for (const block of contentBlocks) {
