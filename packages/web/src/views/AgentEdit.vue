@@ -64,6 +64,7 @@
             <el-checkbox v-for="tool in availableTools" :key="tool.name" :label="tool.name" :value="tool.name"
               style="display: block; margin-bottom: 8px">
               <span>{{ tool.name }}</span>
+              <el-tag v-if="httpToolNames.has(tool.name)" size="small" type="warning" style="margin-left: 8px">HTTP</el-tag>
               <el-tag size="small" type="info" style="margin-left: 8px">{{ tool.description?.slice(0, 40) }}</el-tag>
             </el-checkbox>
           </el-checkbox-group>
@@ -202,6 +203,7 @@ import { useRoute, useRouter } from "vue-router";
 import {
   getAgent, createAgent, updateAgent,
   getTools, getSkills, getStats,
+  getHttpTools,
   createApiKey, deleteApiKey,
   chatWithAgent, getAgentStats,
 } from "@/api";
@@ -230,6 +232,7 @@ const form = ref({
 });
 
 const availableTools = ref<Array<{ name: string; description: string }>>([]);
+const httpToolNames = ref<Set<string>>(new Set());
 const availableSkills = ref<Array<{ name: string }>>([]);
 
 // API tab state
@@ -254,13 +257,15 @@ const testApiKey = computed(() => {
 async function loadData() {
   loading.value = true;
   try {
-    const [toolsRes, skillsRes, statsRes] = await Promise.all([
+    const [toolsRes, skillsRes, statsRes, httpToolsRes] = await Promise.all([
       getTools().catch(() => ({ data: [] })),
       getSkills().catch(() => ({ data: [] })),
       getStats().catch(() => ({ data: {} })),
+      getHttpTools().catch(() => ({ data: [] })),
     ]);
     availableTools.value = toolsRes.data;
     availableSkills.value = skillsRes.data;
+    httpToolNames.value = new Set((httpToolsRes.data as Array<{ name: string }>).map(t => t.name));
 
     if (statsRes.data.defaultModel && !isEdit.value) {
       form.value.model = statsRes.data.defaultModel;

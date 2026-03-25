@@ -18,6 +18,7 @@ COPY packages/web/package.json packages/web/tsconfig.json packages/web/vite.conf
 RUN pnpm install --frozen-lockfile
 
 COPY packages/ packages/
+COPY skills/ skills/
 
 RUN pnpm -r build
 
@@ -48,6 +49,7 @@ COPY --from=builder /app/packages/skills/dist packages/skills/dist
 COPY --from=builder /app/packages/core/dist packages/core/dist
 COPY --from=builder /app/packages/server/dist packages/server/dist
 COPY --from=builder /app/packages/web/dist packages/web/dist
+COPY --from=builder /app/skills skills/
 
 RUN mkdir -p /app/data
 

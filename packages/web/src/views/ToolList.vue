@@ -246,7 +246,7 @@ async function handleSave() {
     } else {
       await createHttpTool(payload);
     }
-    ElMessage.success("Tool saved. Restart server to activate.");
+    ElMessage.success("Tool saved");
     formVisible.value = false;
     loadHttpTools();
     loadTools();
