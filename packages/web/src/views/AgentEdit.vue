@@ -382,6 +382,18 @@ async function sendChat() {
   await nextTick();
   if (chatBoxRef.value) chatBoxRef.value.scrollTop = chatBoxRef.value.scrollHeight;
 
+  if (form.value.streaming) {
+    await sendChatStream(msg);
+  } else {
+    await sendChatNonStream(msg);
+  }
+
+  chatLoading.value = false;
+  await nextTick();
+  if (chatBoxRef.value) chatBoxRef.value.scrollTop = chatBoxRef.value.scrollHeight;
+}
+
+async function sendChatNonStream(msg: string) {
   try {
     const { data } = await chatWithAgent(testApiKey.value, msg, chatSessionId.value || undefined);
     chatSessionId.value = data.sessionId;
@@ -393,10 +405,66 @@ async function sendChat() {
   } catch (e: unknown) {
     const errMsg = (e as { response?: { data?: { error?: string } } })?.response?.data?.error || "Request failed";
     chatMessages.value.push({ role: "assistant", text: `Error: ${errMsg}` });
-  } finally {
-    chatLoading.value = false;
-    await nextTick();
-    if (chatBoxRef.value) chatBoxRef.value.scrollTop = chatBoxRef.value.scrollHeight;
+  }
+}
+
+async function sendChatStream(msg: string) {
+  try {
+    const response = await fetch("/api/chat/stream", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${testApiKey.value}`,
+      },
+      body: JSON.stringify({ message: msg, sessionId: chatSessionId.value || undefined }),
+    });
+
+    if (!response.ok) {
+      chatMessages.value.push({ role: "assistant", text: `Error: HTTP ${response.status}` });
+      return;
+    }
+
+    // Add an empty assistant message that we'll stream into
+    const assistantMsg = { role: "assistant", text: "", toolCalls: [] as Array<{ name: string }> };
+    chatMessages.value.push(assistantMsg);
+    const msgIndex = chatMessages.value.length - 1;
+
+    const reader = response.body!.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+        const payload = line.slice(6);
+        if (payload === "[DONE]") continue;
+
+        try {
+          const event = JSON.parse(payload);
+          if (event.type === "text") {
+            chatMessages.value[msgIndex].text += event.data;
+          } else if (event.type === "tool_call") {
+            chatMessages.value[msgIndex].toolCalls!.push({ name: event.data.name });
+          } else if (event.type === "done") {
+            chatSessionId.value = event.data.sessionId;
+          }
+        } catch {
+          // skip malformed lines
+        }
+      }
+
+      await nextTick();
+      if (chatBoxRef.value) chatBoxRef.value.scrollTop = chatBoxRef.value.scrollHeight;
+    }
+  } catch (e: unknown) {
+    chatMessages.value.push({ role: "assistant", text: `Error: ${(e as Error).message}` });
   }
 }
 
