@@ -23,6 +23,9 @@ export function loadConfig(): AppConfig {
     llmApiKey,
     llmBaseUrl: process.env.LLM_BASE_URL || undefined,
     defaultModel: process.env.DEFAULT_MODEL ?? "claude-sonnet-4-20250514",
-    adminSecret: process.env.ADMIN_SECRET ?? "admin",
+    adminSecret: process.env.ADMIN_SECRET || (() => {
+      if (process.env.NODE_ENV === 'production') throw new Error('ADMIN_SECRET is required in production');
+      return 'admin';
+    })(),
   };
 }

@@ -101,4 +101,10 @@ CREATE TABLE IF NOT EXISTS http_tools (
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now'))
 );
+
+CREATE INDEX IF NOT EXISTS idx_api_keys_hash ON api_keys(key_hash);
+CREATE INDEX IF NOT EXISTS idx_sessions_agent ON sessions(agent_id);
+CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id);
+CREATE INDEX IF NOT EXISTS idx_usage_logs_agent ON usage_logs(agent_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_usage_logs_model ON usage_logs(model);
 `;

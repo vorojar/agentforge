@@ -20,9 +20,19 @@ import { providerRoutes } from "./routes/providers.js";
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 
 export function createApp(ctx: AppContext) {
-  const fastify = Fastify({ logger: true });
+  const fastify = Fastify({
+    logger: {
+      level: process.env.LOG_LEVEL || "info",
+      redact: {
+        paths: ["req.headers.authorization", "req.headers['x-admin-secret']"],
+        remove: true,
+      },
+    },
+  });
 
-  fastify.register(cors, { origin: true });
+  fastify.register(cors, {
+    origin: process.env.CORS_ORIGIN || true,
+  });
   fastify.register(multipart, { limits: { fileSize: 10 * 1024 * 1024 } });
 
   // Serve Vue3 admin UI static files in production
@@ -42,6 +52,9 @@ export function createApp(ctx: AppContext) {
       return reply.sendFile("index.html");
     });
   }
+
+  // Health check
+  fastify.get("/health", async () => ({ status: "ok", timestamp: new Date().toISOString() }));
 
   // Chat routes — API key auth applied directly on scope
   fastify.register(async (scope) => {

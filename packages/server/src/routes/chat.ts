@@ -16,13 +16,13 @@ export async function chatRoutes(fastify: FastifyInstance, opts: { ctx: AppConte
       return reply.code(400).send({ error: "message is required" });
     }
 
-    const result = await agentLoop.run(agentConfig, body.message, body.sessionId);
-    return {
-      reply: result.reply,
-      sessionId: result.sessionId,
-      toolCalls: result.toolCalls,
-      usage: result.usage,
-    };
+    try {
+      const result = await agentLoop.run(agentConfig, body.message, body.sessionId);
+      return { reply: result.reply, sessionId: result.sessionId, toolCalls: result.toolCalls, usage: result.usage };
+    } catch (error) {
+      request.log.error(error, "Chat request failed");
+      return reply.code(502).send({ error: "LLM provider error", message: (error as Error).message });
+    }
   });
 
   // Streaming chat
@@ -43,11 +43,16 @@ export async function chatRoutes(fastify: FastifyInstance, opts: { ctx: AppConte
       Connection: "keep-alive",
     });
 
-    const stream = agentLoop.runStream(agentConfig, body.message, body.sessionId);
-    for await (const chunk of stream) {
-      reply.raw.write(`data: ${JSON.stringify(chunk)}\n\n`);
+    try {
+      const stream = agentLoop.runStream(agentConfig, body.message, body.sessionId);
+      for await (const chunk of stream) {
+        reply.raw.write(`data: ${JSON.stringify(chunk)}\n\n`);
+      }
+      reply.raw.write("data: [DONE]\n\n");
+    } catch (error) {
+      request.log.error(error, "Streaming chat request failed");
+      reply.raw.write(`data: ${JSON.stringify({ error: "LLM provider error", message: (error as Error).message })}\n\n`);
     }
-    reply.raw.write("data: [DONE]\n\n");
     reply.raw.end();
   });
 }
