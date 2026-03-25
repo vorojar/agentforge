@@ -47,6 +47,7 @@ export interface ToolPolicy {
 
 export interface ToolRegistry {
   register(tool: Tool): void;
+  unregister(name: string): boolean;
   get(name: string): Tool | undefined;
   list(): Tool[];
   getDefinitions(): ToolDefinition[];

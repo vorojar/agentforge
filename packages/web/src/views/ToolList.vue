@@ -98,7 +98,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from "vue";
+import { ref, onMounted, computed } from "vue";
 import { getTools, getHttpTools, createHttpTool, updateHttpTool, deleteHttpTool } from "@/api";
 import { ElMessage } from "element-plus";
 
@@ -120,8 +120,14 @@ interface HttpToolItem {
   enabled: boolean;
 }
 
-const tools = ref<ToolDef[]>([]);
+const allTools = ref<ToolDef[]>([]);
 const httpTools = ref<HttpToolItem[]>([]);
+
+// Builtin tools = all registered tools minus HTTP tools
+const tools = computed(() => {
+  const httpNames = new Set(httpTools.value.map(t => t.name));
+  return allTools.value.filter(t => !httpNames.has(t.name));
+});
 const loading = ref(false);
 const httpLoading = ref(false);
 const saving = ref(false);
@@ -157,7 +163,7 @@ async function loadTools() {
   loading.value = true;
   try {
     const { data } = await getTools();
-    tools.value = data;
+    allTools.value = data;
   } catch {
     ElMessage.error("Failed to load tools");
   } finally {

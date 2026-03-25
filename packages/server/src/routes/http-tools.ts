@@ -5,6 +5,17 @@ import { createHttpTools } from "@agentforge/tools";
 export async function httpToolRoutes(fastify: FastifyInstance, opts: { ctx: AppContext }) {
   const { db, toolRegistry } = opts.ctx;
 
+  /** Sync a single HTTP tool into the runtime registry (register or replace). */
+  function syncToRegistry(httpToolId: string) {
+    const ht = db.getHttpTool(httpToolId);
+    if (!ht) return;
+    toolRegistry.unregister(ht.name);
+    if (ht.enabled) {
+      const [runtimeTool] = createHttpTools([ht]);
+      if (runtimeTool) toolRegistry.register(runtimeTool);
+    }
+  }
+
   // Create HTTP tool
   fastify.post("/api/http-tools", async (request, reply) => {
     const body = request.body as {
@@ -22,17 +33,7 @@ export async function httpToolRoutes(fastify: FastifyInstance, opts: { ctx: AppC
     }
 
     const httpTool = db.createHttpTool(body);
-
-    // Register the new tool in the runtime registry
-    const [runtimeTool] = createHttpTools([httpTool]);
-    if (runtimeTool) {
-      try {
-        toolRegistry.register(runtimeTool);
-      } catch {
-        // Tool with same name may already exist
-      }
-    }
-
+    syncToRegistry(httpTool.id);
     return reply.code(201).send(httpTool);
   });
 
@@ -55,16 +56,33 @@ export async function httpToolRoutes(fastify: FastifyInstance, opts: { ctx: AppC
   fastify.put("/api/http-tools/:id", async (request, reply) => {
     const { id } = request.params as { id: string };
     const body = request.body as Record<string, unknown>;
+
+    // Unregister old name before update (name may have changed)
+    const oldTool = db.getHttpTool(id);
+    if (oldTool) toolRegistry.unregister(oldTool.name);
+
     const updated = db.updateHttpTool(id, body);
     if (!updated) {
       return reply.code(404).send({ error: "HTTP tool not found" });
     }
+
+    // Register with new name/config
+    if (updated.enabled) {
+      const [runtimeTool] = createHttpTools([updated]);
+      if (runtimeTool) toolRegistry.register(runtimeTool);
+    }
+
     return updated;
   });
 
   // Delete HTTP tool
   fastify.delete("/api/http-tools/:id", async (request, reply) => {
     const { id } = request.params as { id: string };
+
+    // Unregister from runtime before deleting from DB
+    const httpTool = db.getHttpTool(id);
+    if (httpTool) toolRegistry.unregister(httpTool.name);
+
     const deleted = db.deleteHttpTool(id);
     if (!deleted) {
       return reply.code(404).send({ error: "HTTP tool not found" });
