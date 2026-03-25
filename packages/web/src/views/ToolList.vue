@@ -2,7 +2,6 @@
   <div>
     <div class="page-header">
       <h2>Tool Registry</h2>
-      <el-button type="primary" @click="openCreate">Add HTTP API Tool</el-button>
     </div>
 
     <!-- All registered tools (builtin + HTTP) -->
@@ -23,7 +22,10 @@
 
     <!-- HTTP API Tools management section -->
     <el-divider />
-    <h3 style="margin-bottom: 16px">HTTP API Tools</h3>
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px">
+      <h3>HTTP API Tools</h3>
+      <el-button type="primary" @click="openCreate">Add HTTP API Tool</el-button>
+    </div>
     <el-text type="info" size="small" style="display: block; margin-bottom: 16px">
       Configure external HTTP APIs as tools. Agents can call these APIs during conversations.
     </el-text>
