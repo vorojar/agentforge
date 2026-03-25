@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { loadConfig } from "./config.js";
 import { bootstrap } from "./bootstrap.js";
 import { createApp } from "./app.js";
