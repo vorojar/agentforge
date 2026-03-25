@@ -12,9 +12,6 @@ import type {
   DailyStats,
   Session,
   Message,
-  Skill,
-  SkillCreateInput,
-  SkillUpdateInput,
 } from "@agentforge/types";
 import { MIGRATIONS } from "./migrations.js";
 
@@ -353,74 +350,6 @@ export class SQLiteAdapter implements DatabaseAdapter {
       tokensOut: r.tokens_out as number,
       requests: r.requests as number,
     }));
-  }
-
-  // --- Skills ---
-
-  createSkill(input: SkillCreateInput): Skill {
-    const id = uuidv4();
-    const now = new Date().toISOString();
-    this.db.prepare(`
-      INSERT INTO skills (id, name, description, content, enabled, created_at, updated_at)
-      VALUES (?, ?, ?, ?, 1, ?, ?)
-    `).run(id, input.name, input.description ?? "", input.content, now, now);
-    return this.getSkill(id)!;
-  }
-
-  getSkill(id: string): Skill | null {
-    const row = this.db.prepare("SELECT * FROM skills WHERE id = ?").get(id) as Record<string, unknown> | undefined;
-    if (!row) return null;
-    return this.mapSkill(row);
-  }
-
-  getSkillByName(name: string): Skill | null {
-    const row = this.db.prepare("SELECT * FROM skills WHERE name = ?").get(name) as Record<string, unknown> | undefined;
-    if (!row) return null;
-    return this.mapSkill(row);
-  }
-
-  listSkills(): Skill[] {
-    const rows = this.db.prepare("SELECT * FROM skills ORDER BY created_at DESC").all() as Record<string, unknown>[];
-    return rows.map((r) => this.mapSkill(r));
-  }
-
-  updateSkill(id: string, input: SkillUpdateInput): Skill | null {
-    const existing = this.getSkill(id);
-    if (!existing) return null;
-
-    const fields: string[] = [];
-    const values: unknown[] = [];
-
-    if (input.name !== undefined) { fields.push("name = ?"); values.push(input.name); }
-    if (input.description !== undefined) { fields.push("description = ?"); values.push(input.description); }
-    if (input.content !== undefined) { fields.push("content = ?"); values.push(input.content); }
-    if (input.enabled !== undefined) { fields.push("enabled = ?"); values.push(input.enabled ? 1 : 0); }
-
-    if (fields.length === 0) return existing;
-
-    fields.push("updated_at = ?");
-    values.push(new Date().toISOString());
-    values.push(id);
-
-    this.db.prepare(`UPDATE skills SET ${fields.join(", ")} WHERE id = ?`).run(...values);
-    return this.getSkill(id)!;
-  }
-
-  deleteSkill(id: string): boolean {
-    const result = this.db.prepare("DELETE FROM skills WHERE id = ?").run(id);
-    return result.changes > 0;
-  }
-
-  private mapSkill(row: Record<string, unknown>): Skill {
-    return {
-      id: row.id as string,
-      name: row.name as string,
-      description: row.description as string,
-      content: row.content as string,
-      enabled: (row.enabled as number) === 1,
-      createdAt: row.created_at as string,
-      updatedAt: row.updated_at as string,
-    };
   }
 
   // --- Lifecycle ---

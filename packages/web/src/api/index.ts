@@ -30,13 +30,8 @@ export const deleteApiKey = (agentId: string, keyId: string) =>
 // --- Tools ---
 export const getTools = () => api.get("/tools");
 
-// --- Skills ---
+// --- Skills (read-only, loaded from filesystem) ---
 export const getSkills = () => api.get("/skills");
-export const createSkill = (data: Record<string, unknown>) =>
-  api.post("/skills", data);
-export const updateSkill = (id: string, data: Record<string, unknown>) =>
-  api.put(`/skills/${id}`, data);
-export const deleteSkill = (id: string) => api.delete(`/skills/${id}`);
 
 // --- Sessions ---
 export const getSessions = (agentId?: string) =>

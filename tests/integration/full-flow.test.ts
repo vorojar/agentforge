@@ -52,6 +52,7 @@ describe("Integration: Full Flow", () => {
         databaseUrl: ":memory:",
         llmProvider: "mock",
         llmApiKey: "test",
+        defaultModel: "mock-model",
         adminSecret,
       },
     };
@@ -158,26 +159,13 @@ describe("Integration: Full Flow", () => {
     const stats = statsRes.json();
     expect(stats.totalAgents).toBe(1);
 
-    // 9. Create and manage a skill
-    const skillRes = await app.inject({
-      method: "POST",
-      url: "/api/skills",
-      headers: { "x-admin-secret": adminSecret },
-      payload: {
-        name: "test-skill",
-        description: "A test skill",
-        content: "# Test Skill\nDo something useful.",
-      },
-    });
-    expect(skillRes.statusCode).toBe(201);
-
+    // 9. Check skills endpoint (read-only, loaded from filesystem)
     const skillsRes = await app.inject({
       method: "GET",
       url: "/api/skills",
       headers: { "x-admin-secret": adminSecret },
     });
     expect(skillsRes.statusCode).toBe(200);
-    expect(skillsRes.json().length).toBe(1);
 
     // 10. Update agent
     const updateRes = await app.inject({

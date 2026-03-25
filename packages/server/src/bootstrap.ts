@@ -1,8 +1,9 @@
+import { resolve } from "node:path";
 import type { DatabaseAdapter, LLMProvider } from "@agentforge/types";
 import { createDatabase } from "@agentforge/database";
 import { createProvider } from "@agentforge/providers";
 import { ToolRegistryImpl, createBuiltinTools } from "@agentforge/tools";
-import { SkillRegistryImpl } from "@agentforge/skills";
+import { SkillRegistryImpl, loadSkillsFromDirectory } from "@agentforge/skills";
 import { AgentLoop } from "@agentforge/core";
 import type { AppConfig } from "./config.js";
 
@@ -29,7 +30,8 @@ export function bootstrap(config: AppConfig): AppContext {
   }
 
   const skillRegistry = new SkillRegistryImpl();
-  for (const skill of db.listSkills()) {
+  const skillsDir = resolve(process.cwd(), "skills");
+  for (const skill of loadSkillsFromDirectory(skillsDir)) {
     skillRegistry.register(skill);
   }
 

@@ -5,3 +5,4 @@ dist/
 .env
 .turbo/
 .vite/
+data/agentforge.db-wal

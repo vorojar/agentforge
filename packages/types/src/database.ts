@@ -1,5 +1,4 @@
 import type { AgentConfig, AgentCreateInput, AgentUpdateInput } from "./agent.js";
-import type { Skill, SkillCreateInput, SkillUpdateInput } from "./skill.js";
 import type { Message, Session } from "./message.js";
 
 export interface ApiKey {
@@ -66,14 +65,6 @@ export interface DatabaseAdapter {
   logUsage(log: Omit<UsageLog, "id" | "createdAt">): void;
   getUsageStats(agentId?: string): UsageStats;
   getDailyStats(agentId?: string, days?: number): DailyStats[];
-
-  // Skills
-  createSkill(input: SkillCreateInput): Skill;
-  getSkill(id: string): Skill | null;
-  getSkillByName(name: string): Skill | null;
-  listSkills(): Skill[];
-  updateSkill(id: string, input: SkillUpdateInput): Skill | null;
-  deleteSkill(id: string): boolean;
 
   // Lifecycle
   close(): void;

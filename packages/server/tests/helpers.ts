@@ -32,6 +32,7 @@ export function createTestConfig(): AppConfig {
     databaseUrl: ":memory:",
     llmProvider: "mock",
     llmApiKey: "test-key",
+    defaultModel: "mock-model",
     adminSecret: "test-secret",
   };
 }
