@@ -3,6 +3,7 @@ export interface AgentConfig {
   name: string;
   description: string;
   systemPrompt: string;
+  providerId?: string;
   model: string;
   temperature: number;
   maxTokens: number;
@@ -19,6 +20,7 @@ export interface AgentCreateInput {
   name: string;
   description?: string;
   systemPrompt: string;
+  providerId?: string;
   model?: string;
   temperature?: number;
   maxTokens?: number;
@@ -32,6 +34,7 @@ export interface AgentUpdateInput {
   name?: string;
   description?: string;
   systemPrompt?: string;
+  providerId?: string;
   model?: string;
   temperature?: number;
   maxTokens?: number;

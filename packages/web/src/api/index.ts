@@ -27,6 +27,13 @@ export const createApiKey = (agentId: string, name?: string) =>
 export const deleteApiKey = (agentId: string, keyId: string) =>
   api.delete(`/agents/${agentId}/keys/${keyId}`);
 
+// --- Providers ---
+export const getProviders = () => api.get("/providers");
+export const getProviderDetail = (id: string) => api.get(`/providers/${id}`);
+export const createProviderApi = (data: Record<string, unknown>) => api.post("/providers", data);
+export const updateProviderApi = (id: string, data: Record<string, unknown>) => api.put(`/providers/${id}`, data);
+export const deleteProviderApi = (id: string) => api.delete(`/providers/${id}`);
+
 // --- Tools ---
 export const getTools = () => api.get("/tools");
 

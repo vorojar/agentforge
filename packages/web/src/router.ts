@@ -26,6 +26,11 @@ const routes = [
     component: () => import("./views/AgentEdit.vue"),
   },
   {
+    path: "/providers",
+    name: "Providers",
+    component: () => import("./views/Providers.vue"),
+  },
+  {
     path: "/tools",
     name: "ToolList",
     component: () => import("./views/ToolList.vue"),

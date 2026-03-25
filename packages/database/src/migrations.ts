@@ -1,3 +1,20 @@
+// Incremental migrations for existing databases
+export const INCREMENTAL_MIGRATIONS = [
+  // Add provider_id to agents and create providers table
+  {
+    name: "add_providers",
+    up: [
+      `CREATE TABLE IF NOT EXISTS providers (
+        id TEXT PRIMARY KEY, name TEXT NOT NULL, type TEXT NOT NULL DEFAULT 'openai',
+        api_key TEXT NOT NULL, base_url TEXT, default_model TEXT NOT NULL,
+        enabled INTEGER DEFAULT 1, is_primary INTEGER DEFAULT 0,
+        created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now'))
+      )`,
+      `ALTER TABLE agents ADD COLUMN provider_id TEXT`,
+    ],
+  },
+];
+
 export const MIGRATIONS = `
 CREATE TABLE IF NOT EXISTS agents (
   id TEXT PRIMARY KEY,
@@ -56,6 +73,19 @@ CREATE TABLE IF NOT EXISTS usage_logs (
   model TEXT NOT NULL,
   duration_ms INTEGER NOT NULL,
   created_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS providers (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  type TEXT NOT NULL DEFAULT 'openai',
+  api_key TEXT NOT NULL,
+  base_url TEXT,
+  default_model TEXT NOT NULL,
+  enabled INTEGER DEFAULT 1,
+  is_primary INTEGER DEFAULT 0,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
 );
 
 CREATE TABLE IF NOT EXISTS http_tools (

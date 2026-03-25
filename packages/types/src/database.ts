@@ -1,6 +1,7 @@
 import type { AgentConfig, AgentCreateInput, AgentUpdateInput } from "./agent.js";
 import type { Message, Session } from "./message.js";
 import type { HttpTool, HttpToolCreateInput, HttpToolUpdateInput } from "./http-tool.js";
+import type { ProviderConfig, ProviderCreateInput, ProviderUpdateInput } from "./provider-config.js";
 
 export interface ApiKey {
   id: string;
@@ -73,6 +74,14 @@ export interface DatabaseAdapter {
   listHttpTools(): HttpTool[];
   updateHttpTool(id: string, input: HttpToolUpdateInput): HttpTool | null;
   deleteHttpTool(id: string): boolean;
+
+  // Providers
+  createProvider(input: ProviderCreateInput): ProviderConfig;
+  getProvider(id: string): ProviderConfig | null;
+  listProviders(): ProviderConfig[];
+  updateProvider(id: string, input: ProviderUpdateInput): ProviderConfig | null;
+  deleteProvider(id: string): boolean;
+  getPrimaryProvider(): ProviderConfig | null;
 
   // Lifecycle
   close(): void;

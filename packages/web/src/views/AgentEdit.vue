@@ -22,21 +22,22 @@
               placeholder="Define the agent's role and behavior..." />
           </el-form-item>
 
+          <el-form-item label="Provider">
+            <el-select v-model="form.providerId" style="width: 100%" clearable placeholder="Use primary provider"
+              @change="onProviderChange">
+              <el-option v-for="p in availableProviders" :key="p.id" :label="p.name" :value="p.id">
+                <span>{{ p.name }}</span>
+                <el-tag v-if="p.isPrimary" type="success" size="small" style="margin-left: 8px">Primary</el-tag>
+              </el-option>
+            </el-select>
+          </el-form-item>
+
           <el-form-item label="Model">
             <el-select v-model="form.model" style="width: 100%" filterable allow-create default-first-option
               placeholder="Select or type a custom model name">
-              <el-option-group label="Claude">
-                <el-option label="Claude Sonnet 4.6" value="claude-sonnet-4-6-20250725" />
-                <el-option label="Claude Opus 4.6" value="claude-opus-4-6-20250725" />
-                <el-option label="Claude Haiku 4.5" value="claude-haiku-4-5-20251001" />
-              </el-option-group>
-              <el-option-group label="OpenAI">
-                <el-option label="GPT-4o" value="gpt-4o" />
-                <el-option label="GPT-4o Mini" value="gpt-4o-mini" />
-                <el-option label="o3-mini" value="o3-mini" />
-              </el-option-group>
+              <el-option v-if="selectedProviderModel" :label="selectedProviderModel + ' (default)'" :value="selectedProviderModel" />
             </el-select>
-            <el-text type="info" size="small">Can type any model name for custom/compatible providers</el-text>
+            <el-text type="info" size="small">Can type any model name</el-text>
           </el-form-item>
 
           <el-form-item label="Temperature">
@@ -207,7 +208,7 @@ import { useRoute, useRouter } from "vue-router";
 import {
   getAgent, createAgent, updateAgent,
   getTools, getSkills, getStats,
-  getHttpTools,
+  getHttpTools, getProviders,
   createApiKey, deleteApiKey,
   testChat, getAgentStats,
 } from "@/api";
@@ -226,7 +227,8 @@ const form = ref({
   name: "",
   description: "",
   systemPrompt: "",
-  model: "claude-sonnet-4-20250514",
+  providerId: "" as string,
+  model: "",
   temperature: 0.7,
   maxTokens: 4096,
   maxIterations: 15,
@@ -238,6 +240,21 @@ const form = ref({
 const availableTools = ref<Array<{ name: string; description: string }>>([]);
 const httpToolNames = ref<Set<string>>(new Set());
 const availableSkills = ref<Array<{ name: string }>>([]);
+const availableProviders = ref<Array<{ id: string; name: string; defaultModel: string; isPrimary: boolean }>>([]);
+
+const selectedProviderModel = computed(() => {
+  if (!form.value.providerId) {
+    const primary = availableProviders.value.find(p => p.isPrimary);
+    return primary?.defaultModel ?? "";
+  }
+  return availableProviders.value.find(p => p.id === form.value.providerId)?.defaultModel ?? "";
+});
+
+function onProviderChange() {
+  // When provider changes, set model to provider's default
+  const provider = availableProviders.value.find(p => p.id === form.value.providerId);
+  if (provider) form.value.model = provider.defaultModel;
+}
 
 // API tab state
 const apiKeys = ref<Array<{ id: string; keyPrefix: string; name: string; lastUsedAt: string | null }>>([]);
@@ -256,18 +273,23 @@ const chatBoxRef = ref<HTMLElement>();
 async function loadData() {
   loading.value = true;
   try {
-    const [toolsRes, skillsRes, statsRes, httpToolsRes] = await Promise.all([
+    const [toolsRes, skillsRes, statsRes, httpToolsRes, providersRes] = await Promise.all([
       getTools().catch(() => ({ data: [] })),
       getSkills().catch(() => ({ data: [] })),
       getStats().catch(() => ({ data: {} })),
       getHttpTools().catch(() => ({ data: [] })),
+      getProviders().catch(() => ({ data: [] })),
     ]);
     availableTools.value = toolsRes.data;
     availableSkills.value = skillsRes.data;
     httpToolNames.value = new Set((httpToolsRes.data as Array<{ name: string }>).map(t => t.name));
+    availableProviders.value = providersRes.data;
 
-    if (statsRes.data.defaultModel && !isEdit.value) {
-      form.value.model = statsRes.data.defaultModel;
+    if (!isEdit.value) {
+      // Set default model from primary provider
+      const primary = availableProviders.value.find(p => p.isPrimary);
+      if (primary) form.value.model = primary.defaultModel;
+      else if (statsRes.data.defaultModel) form.value.model = statsRes.data.defaultModel;
     }
 
     if (isEdit.value) {
@@ -278,6 +300,7 @@ async function loadData() {
         name: data.name,
         description: data.description,
         systemPrompt: data.systemPrompt,
+        providerId: data.providerId ?? "",
         model: data.model,
         temperature: data.temperature,
         maxTokens: data.maxTokens,

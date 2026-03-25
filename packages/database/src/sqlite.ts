@@ -15,8 +15,11 @@ import type {
   HttpTool,
   HttpToolCreateInput,
   HttpToolUpdateInput,
+  ProviderConfig,
+  ProviderCreateInput,
+  ProviderUpdateInput,
 } from "@agentforge/types";
-import { MIGRATIONS } from "./migrations.js";
+import { MIGRATIONS, INCREMENTAL_MIGRATIONS } from "./migrations.js";
 
 function hashKey(raw: string): string {
   return createHash("sha256").update(raw).digest("hex");
@@ -34,6 +37,12 @@ export class SQLiteAdapter implements DatabaseAdapter {
 
   private runMigrations(): void {
     this.db.exec(MIGRATIONS);
+    // Run incremental migrations (safe to re-run)
+    for (const migration of INCREMENTAL_MIGRATIONS) {
+      for (const sql of migration.up) {
+        try { this.db.exec(sql); } catch { /* column/table may already exist */ }
+      }
+    }
   }
 
   // --- Agents ---
@@ -42,14 +51,15 @@ export class SQLiteAdapter implements DatabaseAdapter {
     const id = uuidv4();
     const now = new Date().toISOString();
     const stmt = this.db.prepare(`
-      INSERT INTO agents (id, name, description, system_prompt, model, temperature, max_tokens, max_iterations, streaming, tools, skills, enabled, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+      INSERT INTO agents (id, name, description, system_prompt, provider_id, model, temperature, max_tokens, max_iterations, streaming, tools, skills, enabled, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
     `);
     stmt.run(
       id,
       input.name,
       input.description ?? "",
       input.systemPrompt,
+      input.providerId ?? null,
       input.model ?? "claude-sonnet-4-20250514",
       input.temperature ?? 0.7,
       input.maxTokens ?? 4096,
@@ -84,6 +94,7 @@ export class SQLiteAdapter implements DatabaseAdapter {
     if (input.name !== undefined) { fields.push("name = ?"); values.push(input.name); }
     if (input.description !== undefined) { fields.push("description = ?"); values.push(input.description); }
     if (input.systemPrompt !== undefined) { fields.push("system_prompt = ?"); values.push(input.systemPrompt); }
+    if (input.providerId !== undefined) { fields.push("provider_id = ?"); values.push(input.providerId || null); }
     if (input.model !== undefined) { fields.push("model = ?"); values.push(input.model); }
     if (input.temperature !== undefined) { fields.push("temperature = ?"); values.push(input.temperature); }
     if (input.maxTokens !== undefined) { fields.push("max_tokens = ?"); values.push(input.maxTokens); }
@@ -114,6 +125,7 @@ export class SQLiteAdapter implements DatabaseAdapter {
       name: row.name as string,
       description: row.description as string,
       systemPrompt: row.system_prompt as string,
+      providerId: (row.provider_id as string) ?? undefined,
       model: row.model as string,
       temperature: row.temperature as number,
       maxTokens: row.max_tokens as number,
@@ -435,6 +447,88 @@ export class SQLiteAdapter implements DatabaseAdapter {
       parameters: JSON.parse(row.parameters as string),
       bodyTemplate: row.body_template as string,
       enabled: (row.enabled as number) === 1,
+      createdAt: row.created_at as string,
+      updatedAt: row.updated_at as string,
+    };
+  }
+
+  // --- Providers ---
+
+  createProvider(input: ProviderCreateInput): ProviderConfig {
+    const id = uuidv4();
+    const now = new Date().toISOString();
+    // If setting as primary, clear other primaries
+    if (input.isPrimary) {
+      this.db.prepare("UPDATE providers SET is_primary = 0").run();
+    }
+    this.db.prepare(`
+      INSERT INTO providers (id, name, type, api_key, base_url, default_model, enabled, is_primary, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(id, input.name, input.type, input.apiKey, input.baseUrl ?? null, input.defaultModel, input.enabled !== false ? 1 : 0, input.isPrimary ? 1 : 0, now, now);
+    return this.getProvider(id)!;
+  }
+
+  getProvider(id: string): ProviderConfig | null {
+    const row = this.db.prepare("SELECT * FROM providers WHERE id = ?").get(id) as Record<string, unknown> | undefined;
+    if (!row) return null;
+    return this.mapProvider(row);
+  }
+
+  listProviders(): ProviderConfig[] {
+    const rows = this.db.prepare("SELECT * FROM providers ORDER BY is_primary DESC, created_at ASC").all() as Record<string, unknown>[];
+    return rows.map((r) => this.mapProvider(r));
+  }
+
+  updateProvider(id: string, input: ProviderUpdateInput): ProviderConfig | null {
+    const existing = this.getProvider(id);
+    if (!existing) return null;
+
+    // If setting as primary, clear other primaries
+    if (input.isPrimary) {
+      this.db.prepare("UPDATE providers SET is_primary = 0").run();
+    }
+
+    const fields: string[] = [];
+    const values: unknown[] = [];
+    if (input.name !== undefined) { fields.push("name = ?"); values.push(input.name); }
+    if (input.type !== undefined) { fields.push("type = ?"); values.push(input.type); }
+    if (input.apiKey !== undefined) { fields.push("api_key = ?"); values.push(input.apiKey); }
+    if (input.baseUrl !== undefined) { fields.push("base_url = ?"); values.push(input.baseUrl || null); }
+    if (input.defaultModel !== undefined) { fields.push("default_model = ?"); values.push(input.defaultModel); }
+    if (input.enabled !== undefined) { fields.push("enabled = ?"); values.push(input.enabled ? 1 : 0); }
+    if (input.isPrimary !== undefined) { fields.push("is_primary = ?"); values.push(input.isPrimary ? 1 : 0); }
+
+    if (fields.length === 0) return existing;
+    fields.push("updated_at = ?"); values.push(new Date().toISOString()); values.push(id);
+    this.db.prepare(`UPDATE providers SET ${fields.join(", ")} WHERE id = ?`).run(...values);
+    return this.getProvider(id)!;
+  }
+
+  deleteProvider(id: string): boolean {
+    const result = this.db.prepare("DELETE FROM providers WHERE id = ?").run(id);
+    return result.changes > 0;
+  }
+
+  getPrimaryProvider(): ProviderConfig | null {
+    const row = this.db.prepare("SELECT * FROM providers WHERE is_primary = 1 AND enabled = 1 LIMIT 1").get() as Record<string, unknown> | undefined;
+    if (!row) {
+      // Fallback: first enabled provider
+      const fallback = this.db.prepare("SELECT * FROM providers WHERE enabled = 1 LIMIT 1").get() as Record<string, unknown> | undefined;
+      return fallback ? this.mapProvider(fallback) : null;
+    }
+    return this.mapProvider(row);
+  }
+
+  private mapProvider(row: Record<string, unknown>): ProviderConfig {
+    return {
+      id: row.id as string,
+      name: row.name as string,
+      type: row.type as string,
+      apiKey: row.api_key as string,
+      baseUrl: (row.base_url as string) ?? undefined,
+      defaultModel: row.default_model as string,
+      enabled: (row.enabled as number) === 1,
+      isPrimary: (row.is_primary as number) === 1,
       createdAt: row.created_at as string,
       updatedAt: row.updated_at as string,
     };

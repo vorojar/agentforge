@@ -15,8 +15,14 @@ import type {
 import { ToolExecutor } from "@agentforge/tools";
 import { ContextBuilder } from "./context.js";
 
+/** Resolves an LLMProvider by provider ID (or returns default) */
+export interface ProviderResolver {
+  resolve(providerId?: string): LLMProvider;
+}
+
 export interface AgentLoopConfig {
-  provider: LLMProvider;
+  provider?: LLMProvider;
+  providerRegistry?: ProviderResolver;
   toolRegistry: ToolRegistry;
   skillRegistry?: SkillRegistry;
   db?: DatabaseAdapter;
@@ -70,6 +76,14 @@ export class AgentLoop {
     this.executor = new ToolExecutor(config.toolRegistry);
   }
 
+  private resolveProvider(agentConfig: AgentConfig): LLMProvider {
+    if (this.config.providerRegistry) {
+      return this.config.providerRegistry.resolve(agentConfig.providerId);
+    }
+    if (this.config.provider) return this.config.provider;
+    throw new Error("No LLM provider configured");
+  }
+
   async run(
     agentConfig: AgentConfig,
     message: string,
@@ -102,7 +116,8 @@ export class AgentLoop {
         i === 0 ? message : undefined
       );
 
-      const response: LLMResponse = await this.config.provider.chat({
+      const provider = this.resolveProvider(agentConfig);
+      const response: LLMResponse = await provider.chat({
         model: agentConfig.model,
         systemPrompt,
         messages,
@@ -236,7 +251,8 @@ export class AgentLoop {
         i === 0 ? message : undefined
       );
 
-      const stream = this.config.provider.stream({
+      const provider = this.resolveProvider(agentConfig);
+      const stream = provider.stream({
         model: agentConfig.model,
         systemPrompt,
         messages,

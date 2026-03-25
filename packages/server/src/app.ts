@@ -15,6 +15,7 @@ import { toolRoutes } from "./routes/tools.js";
 import { skillRoutes } from "./routes/skills.js";
 import { statsRoutes } from "./routes/stats.js";
 import { httpToolRoutes } from "./routes/http-tools.js";
+import { providerRoutes } from "./routes/providers.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 
@@ -87,6 +88,7 @@ export function createApp(ctx: AppContext) {
     scope.register(skillRoutes, { ctx });
     scope.register(statsRoutes, { ctx });
     scope.register(httpToolRoutes, { ctx });
+    scope.register(providerRoutes, { ctx });
   });
 
   return fastify;

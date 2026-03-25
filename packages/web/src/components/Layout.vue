@@ -20,6 +20,10 @@
           <el-icon><User /></el-icon>
           <span>Agents</span>
         </el-menu-item>
+        <el-menu-item index="/providers">
+          <el-icon><Connection /></el-icon>
+          <span>Providers</span>
+        </el-menu-item>
         <el-menu-item index="/tools">
           <el-icon><SetUp /></el-icon>
           <span>Tools</span>
@@ -72,6 +76,7 @@ import { useRoute } from "vue-router";
 import {
   DataAnalysis,
   User,
+  Connection,
   SetUp,
   MagicStick,
   ChatDotSquare,
@@ -92,6 +97,7 @@ const activeMenu = computed(() => {
 const pageTitles: Record<string, string> = {
   "/dashboard": "Dashboard",
   "/agents": "Agent Management",
+  "/providers": "Provider Management",
   "/tools": "Tool Registry",
   "/skills": "Skill Management",
   "/sessions": "Conversation History",
