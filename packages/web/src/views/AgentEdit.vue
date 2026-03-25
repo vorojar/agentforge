@@ -22,8 +22,8 @@
               placeholder="Define the agent's role and behavior..." />
           </el-form-item>
 
-          <el-form-item label="Provider">
-            <el-select v-model="form.providerId" style="width: 100%" clearable placeholder="Use primary provider"
+          <el-form-item label="Provider" required>
+            <el-select v-model="form.providerId" style="width: 100%" placeholder="Select a provider"
               @change="onProviderChange">
               <el-option v-for="p in availableProviders" :key="p.id" :label="p.name" :value="p.id">
                 <span>{{ p.name }}</span>
@@ -32,12 +32,13 @@
             </el-select>
           </el-form-item>
 
-          <el-form-item label="Model">
+          <el-form-item label="Model" required>
             <el-select v-model="form.model" style="width: 100%" filterable allow-create default-first-option
-              placeholder="Select or type a custom model name">
+              placeholder="Select or type a model name" :disabled="!form.providerId">
               <el-option v-if="selectedProviderModel" :label="selectedProviderModel + ' (default)'" :value="selectedProviderModel" />
             </el-select>
-            <el-text type="info" size="small">Can type any model name</el-text>
+            <el-text v-if="!form.providerId" type="warning" size="small">Please select a provider first</el-text>
+            <el-text v-else type="info" size="small">Can type any model name for this provider</el-text>
           </el-form-item>
 
           <el-form-item label="Temperature">
@@ -285,10 +286,12 @@ async function loadData() {
     availableProviders.value = providersRes.data;
 
     if (!isEdit.value) {
-      // Set default model from primary provider
-      const primary = availableProviders.value.find(p => p.isPrimary);
-      if (primary) form.value.model = primary.defaultModel;
-      else if (statsRes.data.defaultModel) form.value.model = statsRes.data.defaultModel;
+      // Auto-select primary provider and its default model for new agents
+      const primary = availableProviders.value.find(p => p.isPrimary) ?? availableProviders.value[0];
+      if (primary) {
+        form.value.providerId = primary.id;
+        form.value.model = primary.defaultModel;
+      }
     }
 
     if (isEdit.value) {
