@@ -28,6 +28,7 @@ export async function statsRoutes(fastify: FastifyInstance, opts: { ctx: AppCont
       totalRequests: usage.totalRequests,
       totalTokensIn: usage.totalTokensIn,
       totalTokensOut: usage.totalTokensOut,
+      defaultModel: opts.ctx.config.defaultModel,
     };
   });
 

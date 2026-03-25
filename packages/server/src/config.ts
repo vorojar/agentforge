@@ -5,6 +5,7 @@ export interface AppConfig {
   llmProvider: string;
   llmApiKey: string;
   llmBaseUrl?: string;
+  defaultModel: string;
   adminSecret: string;
 }
 
@@ -21,6 +22,7 @@ export function loadConfig(): AppConfig {
     llmProvider: process.env.LLM_PROVIDER ?? "claude",
     llmApiKey,
     llmBaseUrl: process.env.LLM_BASE_URL || undefined,
+    defaultModel: process.env.DEFAULT_MODEL ?? "claude-sonnet-4-20250514",
     adminSecret: process.env.ADMIN_SECRET ?? "admin",
   };
 }

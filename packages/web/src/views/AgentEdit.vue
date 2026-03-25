@@ -86,7 +86,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { getAgent, createAgent, updateAgent, getTools, getSkills } from "@/api";
+import { getAgent, createAgent, updateAgent, getTools, getSkills, getStats } from "@/api";
 import { ElMessage } from "element-plus";
 
 const route = useRoute();
@@ -114,12 +114,17 @@ const availableSkills = ref<Array<{ name: string }>>([]);
 async function loadData() {
   loading.value = true;
   try {
-    const [toolsRes, skillsRes] = await Promise.all([
+    const [toolsRes, skillsRes, statsRes] = await Promise.all([
       getTools().catch(() => ({ data: [] })),
       getSkills().catch(() => ({ data: [] })),
+      getStats().catch(() => ({ data: {} })),
     ]);
     availableTools.value = toolsRes.data;
     availableSkills.value = skillsRes.data;
+
+    if (statsRes.data.defaultModel && !isEdit.value) {
+      form.value.model = statsRes.data.defaultModel;
+    }
 
     if (isEdit.value) {
       const { data } = await getAgent(route.params.id as string);

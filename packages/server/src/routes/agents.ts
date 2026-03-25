@@ -23,6 +23,9 @@ export async function agentRoutes(fastify: FastifyInstance, opts: { ctx: AppCont
       return reply.code(400).send({ error: "name and systemPrompt are required" });
     }
 
+    if (!body.model) {
+      body.model = opts.ctx.config.defaultModel;
+    }
     const agent = db.createAgent(body);
     const { apiKey, rawKey } = db.createApiKey(agent.id, "default");
 
