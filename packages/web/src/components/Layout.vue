@@ -11,6 +11,7 @@
         text-color="#a3a6ad"
         active-text-color="#409eff"
         router
+        style="border-right: none"
       >
         <el-menu-item index="/dashboard">
           <el-icon><DataAnalysis /></el-icon>
