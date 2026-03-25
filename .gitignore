@@ -1,8 +1,9 @@
 node_modules/
 dist/
 *.db
+*.db-shm
+*.db-wal
 *.sqlite
 .env
 .turbo/
 .vite/
-data/agentforge.db-wal
