@@ -2,12 +2,12 @@
   <div>
     <div class="page-header">
       <h2>Sessions</h2>
-      <el-select v-model="filterAgent" clearable placeholder="Filter by Agent" style="width: 200px" @change="loadSessions">
+      <el-select v-model="filterAgent" clearable placeholder="Filter by Agent" style="width: 200px" @change="onFilterChange">
         <el-option v-for="a in agents" :key="a.id" :label="a.name" :value="a.id" />
       </el-select>
     </div>
 
-    <el-table :data="sessions" v-loading="loading" stripe @row-click="openSession" style="cursor: pointer">
+    <el-table :data="pagedSessions" v-loading="loading" stripe @row-click="openSession" style="cursor: pointer">
       <el-table-column prop="id" label="Session ID" min-width="200">
         <template #default="{ row }">
           <code style="font-size: 12px">{{ row.id.slice(0, 8) }}...</code>
@@ -38,21 +38,37 @@
         </template>
       </el-table-column>
     </el-table>
+
+    <div style="display: flex; justify-content: flex-end; margin-top: 16px" v-if="allSessions.length > pageSize">
+      <el-pagination
+        v-model:current-page="currentPage"
+        :page-size="pageSize"
+        :total="allSessions.length"
+        layout="total, prev, pager, next"
+      />
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from "vue";
+import { ref, computed, onMounted } from "vue";
 import { useRouter } from "vue-router";
 import { getSessions, getAgents, deleteSession } from "@/api";
 import { ElMessage } from "element-plus";
 
 const router = useRouter();
-const sessions = ref<Array<Record<string, unknown>>>([]);
+const allSessions = ref<Array<Record<string, unknown>>>([]);
 const agents = ref<Array<{ id: string; name: string }>>([]);
 const agentMap = ref<Record<string, string>>({});
 const loading = ref(false);
 const filterAgent = ref("");
+const currentPage = ref(1);
+const pageSize = 20;
+
+const pagedSessions = computed(() => {
+  const start = (currentPage.value - 1) * pageSize;
+  return allSessions.value.slice(start, start + pageSize);
+});
 
 function formatTime(iso: string): string {
   if (!iso) return "";
@@ -61,11 +77,16 @@ function formatTime(iso: string): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
 
+function onFilterChange() {
+  currentPage.value = 1;
+  loadSessions();
+}
+
 async function loadSessions() {
   loading.value = true;
   try {
     const { data } = await getSessions(filterAgent.value || undefined);
-    sessions.value = data;
+    allSessions.value = data;
   } catch {
     ElMessage.error("Failed to load sessions");
   } finally {

@@ -12,7 +12,10 @@
           :key="msg.id"
           :class="['message', `message-${msg.role}`]"
         >
-          <div class="message-role">{{ roleLabel(msg.role) }}</div>
+          <div class="message-header">
+            <span class="message-role">{{ roleLabel(msg.role) }}</span>
+            <span class="message-time" v-if="msg.createdAt">{{ formatTime(msg.createdAt) }}</span>
+          </div>
           <div class="message-content">
             <template v-if="typeof msg.content === 'string'">
               {{ msg.content }}
@@ -24,7 +27,7 @@
                   <el-tag type="warning" size="small">Tool: {{ block.name }}</el-tag>
                   <el-collapse>
                     <el-collapse-item title="Input">
-                      <pre>{{ JSON.stringify(block.input, null, 2) }}</pre>
+                      <pre class="json-block">{{ JSON.stringify(block.input, null, 2) }}</pre>
                     </el-collapse-item>
                   </el-collapse>
                 </div>
@@ -32,7 +35,7 @@
                   <el-tag :type="block.isError ? 'danger' : 'success'" size="small">
                     Tool Result
                   </el-tag>
-                  <pre>{{ block.content }}</pre>
+                  <pre class="json-block">{{ block.content }}</pre>
                 </div>
               </div>
             </template>
@@ -70,6 +73,7 @@ interface ChatMessage {
   tokensIn?: number;
   tokensOut?: number;
   durationMs?: number;
+  createdAt?: string;
 }
 
 const route = useRoute();
@@ -79,6 +83,13 @@ const loading = ref(false);
 function roleLabel(role: string) {
   const map: Record<string, string> = { user: "User", assistant: "Assistant", tool: "Tool" };
   return map[role] || role;
+}
+
+function formatTime(iso: string): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
 
 async function loadMessages() {
@@ -130,11 +141,20 @@ onMounted(loadMessages);
   background: #fdf6ec;
   margin-right: 40px;
 }
+.message-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
 .message-role {
   font-size: 12px;
   font-weight: 600;
   color: #909399;
-  margin-bottom: 4px;
+}
+.message-time {
+  font-size: 11px;
+  color: #c0c4cc;
 }
 .message-content {
   font-size: 14px;
@@ -152,9 +172,15 @@ onMounted(loadMessages);
   background: rgba(0, 0, 0, 0.03);
   border-radius: 4px;
 }
-.tool-block pre {
+.json-block {
   font-size: 12px;
   margin-top: 4px;
   white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 300px;
+  overflow: auto;
+  background: rgba(0, 0, 0, 0.02);
+  padding: 8px;
+  border-radius: 4px;
 }
 </style>

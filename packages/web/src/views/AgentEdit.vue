@@ -23,12 +23,20 @@
           </el-form-item>
 
           <el-form-item label="Model">
-            <el-select v-model="form.model" style="width: 100%" filterable allow-create>
-              <el-option label="Claude Sonnet 4" value="claude-sonnet-4-20250514" />
-              <el-option label="Claude Opus 4" value="claude-opus-4-20250514" />
-              <el-option label="GPT-4o" value="gpt-4o" />
-              <el-option label="GPT-4o Mini" value="gpt-4o-mini" />
+            <el-select v-model="form.model" style="width: 100%" filterable allow-create default-first-option
+              placeholder="Select or type a custom model name">
+              <el-option-group label="Claude">
+                <el-option label="Claude Sonnet 4.6" value="claude-sonnet-4-6-20250725" />
+                <el-option label="Claude Opus 4.6" value="claude-opus-4-6-20250725" />
+                <el-option label="Claude Haiku 4.5" value="claude-haiku-4-5-20251001" />
+              </el-option-group>
+              <el-option-group label="OpenAI">
+                <el-option label="GPT-4o" value="gpt-4o" />
+                <el-option label="GPT-4o Mini" value="gpt-4o-mini" />
+                <el-option label="o3-mini" value="o3-mini" />
+              </el-option-group>
             </el-select>
+            <el-text type="info" size="small">Can type any model name for custom/compatible providers</el-text>
           </el-form-item>
 
           <el-form-item label="Temperature">

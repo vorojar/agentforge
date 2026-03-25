@@ -2,7 +2,7 @@
   <el-container style="height: 100%">
     <el-aside width="220px" style="background: #1d1e2c">
       <div class="logo">
-        <span class="logo-icon">&#9881;</span>
+        <span class="logo-icon">⚡</span>
         <span class="logo-text">AgentForge</span>
       </div>
       <el-menu
@@ -58,6 +58,10 @@
           />
         </el-form-item>
       </el-form>
+      <template #footer>
+        <el-button type="danger" @click="clearSecret">Logout</el-button>
+        <el-button @click="showSettings = false">Close</el-button>
+      </template>
     </el-dialog>
   </el-container>
 </template>
@@ -103,6 +107,12 @@ const pageTitle = computed(() => {
 function saveSecret() {
   localStorage.setItem("adminSecret", adminSecret.value);
 }
+
+function clearSecret() {
+  localStorage.removeItem("adminSecret");
+  showSettings.value = false;
+  window.location.reload();
+}
 </script>
 
 <style scoped>
@@ -115,7 +125,7 @@ function saveSecret() {
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 .logo-icon {
-  font-size: 24px;
+  font-size: 22px;
 }
 .logo-text {
   font-size: 18px;

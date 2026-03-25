@@ -39,8 +39,9 @@
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="Actions" width="160" align="center">
+      <el-table-column label="Actions" width="220" align="center">
         <template #default="{ row }">
+          <el-button link type="success" @click="openTest(row)">Test</el-button>
           <el-button link type="primary" @click="openEdit(row)">Edit</el-button>
           <el-popconfirm title="Delete this tool?" @confirm="handleDelete(row.id)">
             <template #reference>
@@ -50,6 +51,26 @@
         </template>
       </el-table-column>
     </el-table>
+
+    <!-- HTTP Tool test dialog -->
+    <el-dialog v-model="testVisible" :title="`Test: ${testTool?.name}`" width="600px">
+      <el-form label-width="100px" v-if="testTool">
+        <el-form-item v-for="param in testParams" :key="param.name" :label="param.name">
+          <el-input v-model="param.value" :placeholder="param.description" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="testVisible = false">Close</el-button>
+        <el-button type="primary" @click="runTest" :loading="testing">Send Request</el-button>
+      </template>
+      <div v-if="testResult !== null" style="margin-top: 12px">
+        <el-divider />
+        <el-tag :type="testResultError ? 'danger' : 'success'" size="small" style="margin-bottom: 8px">
+          {{ testResultError ? 'Error' : 'Success' }}
+        </el-tag>
+        <pre style="background: #f5f7fa; padding: 12px; border-radius: 4px; font-size: 12px; max-height: 300px; overflow: auto; white-space: pre-wrap; word-break: break-all">{{ testResult }}</pre>
+      </div>
+    </el-dialog>
 
     <!-- HTTP Tool create/edit dialog -->
     <el-dialog v-model="formVisible" :title="editingTool ? 'Edit HTTP Tool' : 'Create HTTP Tool'" width="650px">
@@ -158,6 +179,63 @@ const parameterPlaceholder = `{
   },
   "required": ["orderId"]
 }`;
+
+// Test tool state
+const testVisible = ref(false);
+const testTool = ref<HttpToolItem | null>(null);
+const testParams = ref<Array<{ name: string; description: string; value: string }>>([]);
+const testResult = ref<string | null>(null);
+const testResultError = ref(false);
+const testing = ref(false);
+
+function openTest(tool: HttpToolItem) {
+  testTool.value = tool;
+  testResult.value = null;
+  testResultError.value = false;
+  const props = (tool.parameters as { properties?: Record<string, { description?: string }> })?.properties ?? {};
+  testParams.value = Object.entries(props).map(([name, schema]) => ({
+    name,
+    description: schema.description ?? "",
+    value: "",
+  }));
+  testVisible.value = true;
+}
+
+async function runTest() {
+  if (!testTool.value) return;
+  testing.value = true;
+  testResult.value = null;
+
+  let url = testTool.value.url;
+  let body = testTool.value.bodyTemplate || "";
+  for (const p of testParams.value) {
+    url = url.replaceAll(`{${p.name}}`, encodeURIComponent(p.value));
+    body = body.replaceAll(`{${p.name}}`, p.value);
+  }
+
+  try {
+    const options: RequestInit = {
+      method: testTool.value.method,
+      headers: { ...testTool.value.headers, "Content-Type": "application/json" },
+    };
+    if (["POST", "PUT", "PATCH"].includes(testTool.value.method.toUpperCase()) && body) {
+      options.body = body;
+    }
+    const res = await fetch(url, options);
+    const text = await res.text();
+    testResultError.value = !res.ok;
+    try {
+      testResult.value = JSON.stringify(JSON.parse(text), null, 2);
+    } catch {
+      testResult.value = text;
+    }
+  } catch (e) {
+    testResultError.value = true;
+    testResult.value = `Request failed: ${(e as Error).message}`;
+  } finally {
+    testing.value = false;
+  }
+}
 
 async function loadTools() {
   loading.value = true;

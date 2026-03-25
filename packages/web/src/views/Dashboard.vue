@@ -23,11 +23,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from "vue";
+import { ref, onMounted, onUnmounted } from "vue";
 import * as echarts from "echarts";
 import { getStats, getDailyStats } from "@/api";
 
 const chartRef = ref<HTMLElement>();
+let chartInstance: echarts.ECharts | null = null;
+let resizeHandler: (() => void) | null = null;
+
 const statCards = ref([
   { label: "Total Agents", value: 0 },
   { label: "Sessions Today", value: 0 },
@@ -51,7 +54,7 @@ async function loadStats() {
 
 async function loadChart() {
   if (!chartRef.value) return;
-  const chart = echarts.init(chartRef.value);
+  chartInstance = echarts.init(chartRef.value);
 
   let dates: string[] = [];
   let tokensIn: number[] = [];
@@ -66,7 +69,7 @@ async function loadChart() {
     // Use empty data
   }
 
-  chart.setOption({
+  chartInstance.setOption({
     tooltip: { trigger: "axis" },
     legend: { data: ["Tokens In", "Tokens Out"] },
     xAxis: { type: "category", data: dates },
@@ -77,11 +80,18 @@ async function loadChart() {
     ],
   });
 
-  window.addEventListener("resize", () => chart.resize());
+  resizeHandler = () => chartInstance?.resize();
+  window.addEventListener("resize", resizeHandler);
 }
 
 onMounted(() => {
   loadStats();
   loadChart();
+});
+
+onUnmounted(() => {
+  if (resizeHandler) window.removeEventListener("resize", resizeHandler);
+  chartInstance?.dispose();
+  chartInstance = null;
 });
 </script>
