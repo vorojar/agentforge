@@ -81,7 +81,8 @@ export const deleteSession = (id: string) => api.delete(`/sessions/${id}`);
 export const getStats = () => api.get("/stats");
 export const getAgentStats = (agentId: string) =>
   api.get(`/stats/agents/${agentId}`);
-export const getDailyStats = (agentId?: string) =>
-  api.get("/stats/daily", { params: agentId ? { agentId } : {} });
+export const getDailyStats = (agentId?: string, days?: number) =>
+  api.get("/stats/daily", { params: { ...(agentId ? { agentId } : {}), ...(days ? { days } : {}) } });
+export const getModelStats = () => api.get("/stats/models");
 
 export default api;

@@ -370,6 +370,19 @@ export class SQLiteAdapter implements DatabaseAdapter {
     }));
   }
 
+  getModelStats(): Array<{ model: string; requests: number; tokensIn: number; tokensOut: number }> {
+    const rows = this.db.prepare(`
+      SELECT model, COUNT(*) as requests, SUM(tokens_in) as tokens_in, SUM(tokens_out) as tokens_out
+      FROM usage_logs GROUP BY model ORDER BY requests DESC
+    `).all() as Record<string, unknown>[];
+    return rows.map(r => ({
+      model: r.model as string,
+      requests: r.requests as number,
+      tokensIn: r.tokens_in as number,
+      tokensOut: r.tokens_out as number,
+    }));
+  }
+
   // --- HTTP Tools ---
 
   createHttpTool(input: HttpToolCreateInput): HttpTool {
