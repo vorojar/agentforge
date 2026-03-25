@@ -99,6 +99,7 @@ export class ClaudeProvider implements LLMProvider {
     this.client = new Anthropic({
       apiKey: config.apiKey,
       baseURL: config.baseUrl,
+      timeout: 60_000,
     });
   }
 

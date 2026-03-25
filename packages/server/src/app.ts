@@ -28,6 +28,7 @@ export function createApp(ctx: AppContext) {
         remove: true,
       },
     },
+    requestTimeout: 120_000,
   });
 
   fastify.register(cors, {
