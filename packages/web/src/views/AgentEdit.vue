@@ -166,9 +166,8 @@ curl -X POST {{ baseUrl }}/api/chat/stream \
       <!-- Tab 4: Test Chat -->
       <el-tab-pane label="Test Chat" name="chat" :disabled="!isEdit">
         <div style="max-width: 700px">
-          <div v-if="!testApiKey" style="text-align: center; padding: 40px">
-            <p style="color: #909399; margin-bottom: 12px">No API key found. Generate one in the API tab first.</p>
-            <el-button @click="activeTab = 'api'">Go to API Tab</el-button>
+          <div v-if="chatKeyLoading" style="text-align: center; padding: 40px">
+            <p style="color: #909399">Preparing test chat...</p>
           </div>
           <div v-else>
             <div class="chat-box" ref="chatBoxRef">
@@ -198,7 +197,7 @@ curl -X POST {{ baseUrl }}/api/chat/stream \
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed, nextTick } from "vue";
+import { ref, onMounted, computed, nextTick, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import {
   getAgent, createAgent, updateAgent,
@@ -248,11 +247,27 @@ const chatLoading = ref(false);
 const chatSessionId = ref("");
 const chatBoxRef = ref<HTMLElement>();
 
-const testApiKey = computed(() => {
-  // Use first available key prefix — we need the raw key though.
-  // For test chat, we'll use the newly created key if available
-  return newlyCreatedKey.value || "";
-});
+const testApiKey = ref("");
+const chatKeyLoading = ref(false);
+
+async function ensureTestApiKey() {
+  if (testApiKey.value) return;
+  if (newlyCreatedKey.value) {
+    testApiKey.value = newlyCreatedKey.value;
+    return;
+  }
+  // Auto-create a key for testing
+  chatKeyLoading.value = true;
+  try {
+    const { data } = await createApiKey(agentId.value);
+    testApiKey.value = data.rawKey;
+    apiKeys.value.push(data);
+  } catch {
+    ElMessage.error("Failed to create API key for testing");
+  } finally {
+    chatKeyLoading.value = false;
+  }
+}
 
 async function loadData() {
   loading.value = true;
@@ -386,6 +401,10 @@ async function sendChat() {
 }
 
 onMounted(loadData);
+
+watch(activeTab, (tab) => {
+  if (tab === "chat") ensureTestApiKey();
+});
 </script>
 
 <style scoped>
