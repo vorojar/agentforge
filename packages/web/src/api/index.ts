@@ -58,6 +58,10 @@ export const chatWithAgent = (apiKey: string, message: string, sessionId?: strin
     },
   });
 
+// --- Test Chat (admin auth, no API key needed) ---
+export const testChat = (agentId: string, message: string, sessionId?: string) =>
+  api.post(`/agents/${agentId}/chat`, { message, sessionId });
+
 // --- Sessions ---
 export const getSessions = (agentId?: string) =>
   api.get("/sessions", { params: agentId ? { agentId } : {} });

@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import type { AppContext } from "../bootstrap.js";
 
 export async function agentRoutes(fastify: FastifyInstance, opts: { ctx: AppContext }) {
-  const { db } = opts.ctx;
+  const { db, agentLoop } = opts.ctx;
 
   // Create agent
   fastify.post("/api/agents", async (request, reply) => {
@@ -99,5 +99,41 @@ export async function agentRoutes(fastify: FastifyInstance, opts: { ctx: AppCont
       return reply.code(404).send({ error: "API key not found" });
     }
     return { success: true };
+  });
+
+  // Test chat (admin auth, no API key needed)
+  fastify.post("/api/agents/:id/chat", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const agent = db.getAgent(id);
+    if (!agent) return reply.code(404).send({ error: "Agent not found" });
+
+    const body = request.body as { message: string; sessionId?: string };
+    if (!body.message) return reply.code(400).send({ error: "message is required" });
+
+    const result = await agentLoop.run(agent, body.message, body.sessionId);
+    return { reply: result.reply, sessionId: result.sessionId, toolCalls: result.toolCalls, usage: result.usage };
+  });
+
+  // Test chat streaming (admin auth, no API key needed)
+  fastify.post("/api/agents/:id/chat/stream", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const agent = db.getAgent(id);
+    if (!agent) return reply.code(404).send({ error: "Agent not found" });
+
+    const body = request.body as { message: string; sessionId?: string };
+    if (!body.message) return reply.code(400).send({ error: "message is required" });
+
+    reply.raw.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+    });
+
+    const stream = agentLoop.runStream(agent, body.message, body.sessionId);
+    for await (const chunk of stream) {
+      reply.raw.write(`data: ${JSON.stringify(chunk)}\n\n`);
+    }
+    reply.raw.write("data: [DONE]\n\n");
+    reply.raw.end();
   });
 }

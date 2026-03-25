@@ -166,10 +166,7 @@ curl -X POST {{ baseUrl }}/api/chat/stream \
       <!-- Tab 4: Test Chat -->
       <el-tab-pane label="Test Chat" name="chat" :disabled="!isEdit">
         <div style="max-width: 700px">
-          <div v-if="chatKeyLoading" style="text-align: center; padding: 40px">
-            <p style="color: #909399">Preparing test chat...</p>
-          </div>
-          <div v-else>
+          <div>
             <div class="chat-box" ref="chatBoxRef">
               <div v-for="(msg, i) in chatMessages" :key="i" :class="['chat-msg', `chat-msg-${msg.role}`]">
                 <div class="chat-msg-role">{{ msg.role === 'user' ? 'You' : 'Agent' }}</div>
@@ -197,14 +194,14 @@ curl -X POST {{ baseUrl }}/api/chat/stream \
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed, nextTick, watch } from "vue";
+import { ref, onMounted, computed, nextTick } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import {
   getAgent, createAgent, updateAgent,
   getTools, getSkills, getStats,
   getHttpTools,
   createApiKey, deleteApiKey,
-  chatWithAgent, getAgentStats,
+  testChat, getAgentStats,
 } from "@/api";
 import { ElMessage } from "element-plus";
 
@@ -247,27 +244,6 @@ const chatLoading = ref(false);
 const chatSessionId = ref("");
 const chatBoxRef = ref<HTMLElement>();
 
-const testApiKey = ref("");
-const chatKeyLoading = ref(false);
-
-async function ensureTestApiKey() {
-  if (testApiKey.value) return;
-  if (newlyCreatedKey.value) {
-    testApiKey.value = newlyCreatedKey.value;
-    return;
-  }
-  // Auto-create a key for testing
-  chatKeyLoading.value = true;
-  try {
-    const { data } = await createApiKey(agentId.value);
-    testApiKey.value = data.rawKey;
-    apiKeys.value.push(data);
-  } catch {
-    ElMessage.error("Failed to create API key for testing");
-  } finally {
-    chatKeyLoading.value = false;
-  }
-}
 
 async function loadData() {
   loading.value = true;
@@ -373,7 +349,7 @@ function copyKey(key: string) {
 
 async function sendChat() {
   const msg = chatInput.value.trim();
-  if (!msg || !testApiKey.value) return;
+  if (!msg) return;
 
   chatMessages.value.push({ role: "user", text: msg });
   chatInput.value = "";
@@ -395,7 +371,7 @@ async function sendChat() {
 
 async function sendChatNonStream(msg: string) {
   try {
-    const { data } = await chatWithAgent(testApiKey.value, msg, chatSessionId.value || undefined);
+    const { data } = await testChat(agentId.value, msg, chatSessionId.value || undefined);
     chatSessionId.value = data.sessionId;
     chatMessages.value.push({
       role: "assistant",
@@ -410,11 +386,11 @@ async function sendChatNonStream(msg: string) {
 
 async function sendChatStream(msg: string) {
   try {
-    const response = await fetch("/api/chat/stream", {
+    const response = await fetch(`/api/agents/${agentId.value}/chat/stream`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${testApiKey.value}`,
+        "X-Admin-Secret": localStorage.getItem("adminSecret") || "",
       },
       body: JSON.stringify({ message: msg, sessionId: chatSessionId.value || undefined }),
     });
@@ -469,10 +445,6 @@ async function sendChatStream(msg: string) {
 }
 
 onMounted(loadData);
-
-watch(activeTab, (tab) => {
-  if (tab === "chat") ensureTestApiKey();
-});
 </script>
 
 <style scoped>
