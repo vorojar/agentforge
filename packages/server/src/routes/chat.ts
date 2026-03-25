@@ -1,20 +1,16 @@
 import type { FastifyInstance } from "fastify";
 import type { AppContext } from "../bootstrap.js";
+import { pipeStreamToSSE } from "../sse.js";
 
 export async function chatRoutes(fastify: FastifyInstance, opts: { ctx: AppContext }) {
   const { agentLoop } = opts.ctx;
 
-  // Non-streaming chat
   fastify.post("/api/chat", async (request, reply) => {
     const agentConfig = request.agentConfig;
-    if (!agentConfig) {
-      return reply.code(401).send({ error: "No agent resolved" });
-    }
+    if (!agentConfig) return reply.code(401).send({ error: "No agent resolved" });
 
     const body = request.body as { message: string; sessionId?: string };
-    if (!body.message) {
-      return reply.code(400).send({ error: "message is required" });
-    }
+    if (!body.message) return reply.code(400).send({ error: "message is required" });
 
     try {
       const result = await agentLoop.run(agentConfig, body.message, body.sessionId);
@@ -25,34 +21,13 @@ export async function chatRoutes(fastify: FastifyInstance, opts: { ctx: AppConte
     }
   });
 
-  // Streaming chat
   fastify.post("/api/chat/stream", async (request, reply) => {
     const agentConfig = request.agentConfig;
-    if (!agentConfig) {
-      return reply.code(401).send({ error: "No agent resolved" });
-    }
+    if (!agentConfig) return reply.code(401).send({ error: "No agent resolved" });
 
     const body = request.body as { message: string; sessionId?: string };
-    if (!body.message) {
-      return reply.code(400).send({ error: "message is required" });
-    }
+    if (!body.message) return reply.code(400).send({ error: "message is required" });
 
-    reply.raw.writeHead(200, {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
-      Connection: "keep-alive",
-    });
-
-    try {
-      const stream = agentLoop.runStream(agentConfig, body.message, body.sessionId);
-      for await (const chunk of stream) {
-        reply.raw.write(`data: ${JSON.stringify(chunk)}\n\n`);
-      }
-      reply.raw.write("data: [DONE]\n\n");
-    } catch (error) {
-      request.log.error(error, "Streaming chat request failed");
-      reply.raw.write(`data: ${JSON.stringify({ error: "LLM provider error", message: (error as Error).message })}\n\n`);
-    }
-    reply.raw.end();
+    await pipeStreamToSSE(reply, agentLoop.runStream(agentConfig, body.message, body.sessionId), request.log);
   });
 }

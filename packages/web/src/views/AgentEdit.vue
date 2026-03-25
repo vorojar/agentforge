@@ -1,7 +1,7 @@
 <template>
   <div>
     <div class="page-header">
-      <h2>{{ isEdit ? agentName : "Create Agent" }}</h2>
+      <h2>{{ isEdit ? form.name || "Agent" : "Create Agent" }}</h2>
       <el-button @click="$router.push('/agents')">Back</el-button>
     </div>
 
@@ -221,7 +221,6 @@ const agentId = computed(() => route.params.id as string);
 const loading = ref(false);
 const saving = ref(false);
 const activeTab = ref("basic");
-const agentName = ref("Agent");
 
 const form = ref({
   name: "",
@@ -294,7 +293,6 @@ async function loadData() {
 
     if (isEdit.value) {
       const { data } = await getAgent(agentId.value);
-      agentName.value = data.name;
       apiKeys.value = data.apiKeys || [];
       Object.assign(form.value, {
         name: data.name,
@@ -335,7 +333,6 @@ async function handleSave() {
     if (isEdit.value) {
       await updateAgent(agentId.value, form.value);
       ElMessage.success("Agent updated");
-      agentName.value = form.value.name;
     } else {
       const { data } = await createAgent(form.value);
       ElMessage.success("Agent created");

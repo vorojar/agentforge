@@ -401,7 +401,7 @@ export class AgentLoop {
 
   private persistMessage(
     sessionId: string,
-    agentId: string,
+    _agentId: string,
     role: "user" | "assistant",
     content: string | ContentBlock[],
     tokensIn?: number,

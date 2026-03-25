@@ -370,6 +370,25 @@ export class SQLiteAdapter implements DatabaseAdapter {
     }));
   }
 
+  getSessionCounts(): { total: number; today: number } {
+    const total = (this.db.prepare("SELECT COUNT(*) as c FROM sessions").get() as { c: number }).c;
+    const today = (this.db.prepare("SELECT COUNT(*) as c FROM sessions WHERE date(created_at) = date('now')").get() as { c: number }).c;
+    return { total, today };
+  }
+
+  getAgentUsageStats(): Array<{ agentId: string; totalRequests: number; totalTokensIn: number; totalTokensOut: number }> {
+    const rows = this.db.prepare(`
+      SELECT agent_id, COUNT(*) as requests, COALESCE(SUM(tokens_in), 0) as tokens_in, COALESCE(SUM(tokens_out), 0) as tokens_out
+      FROM usage_logs GROUP BY agent_id ORDER BY requests DESC
+    `).all() as Record<string, unknown>[];
+    return rows.map(r => ({
+      agentId: r.agent_id as string,
+      totalRequests: r.requests as number,
+      totalTokensIn: r.tokens_in as number,
+      totalTokensOut: r.tokens_out as number,
+    }));
+  }
+
   getModelStats(): Array<{ model: string; requests: number; tokensIn: number; tokensOut: number }> {
     const rows = this.db.prepare(`
       SELECT model, COUNT(*) as requests, SUM(tokens_in) as tokens_in, SUM(tokens_out) as tokens_out

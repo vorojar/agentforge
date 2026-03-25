@@ -6,18 +6,14 @@ export async function statsRoutes(fastify: FastifyInstance, opts: { ctx: AppCont
 
   // Aggregate stats
   fastify.get("/api/stats", async () => {
-    const agents = db.listAgents();
     const usage = db.getUsageStats();
+    const sessions = db.getSessionCounts();
     const todayStats = db.getDailyStats(undefined, 1);
     const today = todayStats.length > 0 ? todayStats[todayStats.length - 1] : null;
-    const allSessions = db.listSessions();
-    const nowDate = new Date().toISOString().slice(0, 10);
 
     return {
-      totalAgents: agents.length,
-      activeAgents: agents.filter((a) => a.enabled).length,
-      totalSessions: allSessions.length,
-      sessionsToday: allSessions.filter(s => s.createdAt.slice(0, 10) === nowDate).length,
+      totalSessions: sessions.total,
+      sessionsToday: sessions.today,
       tokensToday: today ? today.tokensIn + today.tokensOut : 0,
       totalRequests: usage.totalRequests,
       totalTokensIn: usage.totalTokensIn,
@@ -47,12 +43,12 @@ export async function statsRoutes(fastify: FastifyInstance, opts: { ctx: AppCont
     return db.getModelStats();
   });
 
-  // Agent usage breakdown
+  // Agent usage breakdown (single GROUP BY query, no N+1)
   fastify.get("/api/stats/agents", async () => {
     const agents = db.listAgents();
-    return agents.map(a => {
-      const usage = db.getUsageStats(a.id);
-      return { id: a.id, name: a.name, ...usage };
-    }).filter(a => a.totalRequests > 0).sort((a, b) => b.totalRequests - a.totalRequests);
+    const agentMap = new Map(agents.map(a => [a.id, a.name]));
+    return db.getAgentUsageStats()
+      .map(u => ({ ...u, name: agentMap.get(u.agentId) ?? u.agentId }))
+      .filter(u => u.totalRequests > 0);
   });
 }

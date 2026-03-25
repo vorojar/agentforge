@@ -67,7 +67,9 @@ export interface DatabaseAdapter {
   logUsage(log: Omit<UsageLog, "id" | "createdAt">): void;
   getUsageStats(agentId?: string): UsageStats;
   getDailyStats(agentId?: string, days?: number): DailyStats[];
+  getSessionCounts(): { total: number; today: number };
   getModelStats(): Array<{ model: string; requests: number; tokensIn: number; tokensOut: number }>;
+  getAgentUsageStats(): Array<{ agentId: string; totalRequests: number; totalTokensIn: number; totalTokensOut: number }>;
 
   // HTTP Tools
   createHttpTool(input: HttpToolCreateInput): HttpTool;

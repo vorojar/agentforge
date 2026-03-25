@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import type { AppContext } from "../bootstrap.js";
+import { pipeStreamToSSE } from "../sse.js";
 
 export async function agentRoutes(fastify: FastifyInstance, opts: { ctx: AppContext }) {
   const { db, agentLoop } = opts.ctx;
@@ -128,22 +129,6 @@ export async function agentRoutes(fastify: FastifyInstance, opts: { ctx: AppCont
     const body = request.body as { message: string; sessionId?: string };
     if (!body.message) return reply.code(400).send({ error: "message is required" });
 
-    reply.raw.writeHead(200, {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
-      Connection: "keep-alive",
-    });
-
-    try {
-      const stream = agentLoop.runStream(agent, body.message, body.sessionId);
-      for await (const chunk of stream) {
-        reply.raw.write(`data: ${JSON.stringify(chunk)}\n\n`);
-      }
-      reply.raw.write("data: [DONE]\n\n");
-    } catch (error) {
-      request.log.error(error, "Test streaming chat request failed");
-      reply.raw.write(`data: ${JSON.stringify({ error: "LLM provider error", message: (error as Error).message })}\n\n`);
-    }
-    reply.raw.end();
+    await pipeStreamToSSE(reply, agentLoop.runStream(agent, body.message, body.sessionId), request.log);
   });
 }

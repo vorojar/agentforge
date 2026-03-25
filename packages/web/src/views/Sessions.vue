@@ -25,7 +25,7 @@
       </el-table-column>
       <el-table-column prop="updatedAt" label="Last Activity" min-width="160">
         <template #default="{ row }">
-          {{ formatTime(row.updatedAt) }}
+          {{ formatDateTime(row.updatedAt) }}
         </template>
       </el-table-column>
       <el-table-column label="Actions" width="100" align="center">
@@ -55,6 +55,7 @@ import { ref, computed, onMounted } from "vue";
 import { useRouter } from "vue-router";
 import { getSessions, getAgents, deleteSession } from "@/api";
 import { ElMessage } from "element-plus";
+import { formatDateTime } from "@/utils/format";
 
 const router = useRouter();
 const allSessions = ref<Array<Record<string, unknown>>>([]);
@@ -69,13 +70,6 @@ const pagedSessions = computed(() => {
   const start = (currentPage.value - 1) * pageSize;
   return allSessions.value.slice(start, start + pageSize);
 });
-
-function formatTime(iso: string): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
-}
 
 function onFilterChange() {
   currentPage.value = 1;

@@ -55,6 +55,7 @@ import { ref, onMounted } from "vue";
 import { useRoute } from "vue-router";
 import { getSessionMessages } from "@/api";
 import { ElMessage } from "element-plus";
+import { formatTime } from "@/utils/format";
 
 interface ContentBlock {
   type: string;
@@ -83,13 +84,6 @@ const loading = ref(false);
 function roleLabel(role: string) {
   const map: Record<string, string> = { user: "User", assistant: "Assistant", tool: "Tool" };
   return map[role] || role;
-}
-
-function formatTime(iso: string): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
 
 async function loadMessages() {
