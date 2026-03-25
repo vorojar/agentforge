@@ -203,7 +203,7 @@ import {
   createApiKey, deleteApiKey,
   testChat, getAgentStats,
 } from "@/api";
-import { ElMessage } from "element-plus";
+import { ElMessage, ElMessageBox } from "element-plus";
 
 const route = useRoute();
 const router = useRouter();
@@ -323,12 +323,19 @@ async function handleSave() {
 
 async function generateKey() {
   try {
-    const { data } = await createApiKey(agentId.value);
+    const { value: keyName } = await ElMessageBox.prompt("Give this key a name (for your reference)", "New API Key", {
+      inputValue: "",
+      inputPlaceholder: "e.g. production, dev-test, mobile-app",
+      confirmButtonText: "Generate",
+      cancelButtonText: "Cancel",
+    });
+    const name = keyName?.trim() || "default";
+    const { data } = await createApiKey(agentId.value, name);
     newlyCreatedKey.value = data.rawKey;
     apiKeys.value.unshift(data);
     ElMessage.success("API key generated");
   } catch {
-    ElMessage.error("Failed to generate key");
+    // user cancelled or error
   }
 }
 
