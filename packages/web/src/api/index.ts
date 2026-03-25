@@ -30,8 +30,33 @@ export const deleteApiKey = (agentId: string, keyId: string) =>
 // --- Tools ---
 export const getTools = () => api.get("/tools");
 
+// --- HTTP Tools ---
+export const getHttpTools = () => api.get("/http-tools");
+export const createHttpTool = (data: Record<string, unknown>) =>
+  api.post("/http-tools", data);
+export const updateHttpTool = (id: string, data: Record<string, unknown>) =>
+  api.put(`/http-tools/${id}`, data);
+export const deleteHttpTool = (id: string) => api.delete(`/http-tools/${id}`);
+
 // --- Skills (read-only, loaded from filesystem) ---
 export const getSkills = () => api.get("/skills");
+export const importSkill = (file: File) => {
+  const formData = new FormData();
+  formData.append("file", file);
+  return api.post("/skills/import", formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+};
+export const reloadSkills = () => api.post("/skills/reload");
+
+// --- Chat (uses agent API key, not admin secret) ---
+export const chatWithAgent = (apiKey: string, message: string, sessionId?: string) =>
+  axios.post("/api/chat", { message, sessionId }, {
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+  });
 
 // --- Sessions ---
 export const getSessions = (agentId?: string) =>

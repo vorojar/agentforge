@@ -4,3 +4,4 @@ export * from "./skill.js";
 export * from "./llm.js";
 export * from "./message.js";
 export * from "./database.js";
+export * from "./http-tool.js";

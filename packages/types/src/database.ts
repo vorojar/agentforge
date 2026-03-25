@@ -1,5 +1,6 @@
 import type { AgentConfig, AgentCreateInput, AgentUpdateInput } from "./agent.js";
 import type { Message, Session } from "./message.js";
+import type { HttpTool, HttpToolCreateInput, HttpToolUpdateInput } from "./http-tool.js";
 
 export interface ApiKey {
   id: string;
@@ -65,6 +66,13 @@ export interface DatabaseAdapter {
   logUsage(log: Omit<UsageLog, "id" | "createdAt">): void;
   getUsageStats(agentId?: string): UsageStats;
   getDailyStats(agentId?: string, days?: number): DailyStats[];
+
+  // HTTP Tools
+  createHttpTool(input: HttpToolCreateInput): HttpTool;
+  getHttpTool(id: string): HttpTool | null;
+  listHttpTools(): HttpTool[];
+  updateHttpTool(id: string, input: HttpToolUpdateInput): HttpTool | null;
+  deleteHttpTool(id: string): boolean;
 
   // Lifecycle
   close(): void;

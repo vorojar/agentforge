@@ -2,10 +2,23 @@
   <div>
     <div class="page-header">
       <h2>Skills</h2>
-      <el-text type="info" size="small">
-        Skills are loaded from the <code>skills/</code> directory (Claude Code convention)
-      </el-text>
+      <div>
+        <el-button @click="handleReload" :loading="reloading" size="small">Reload</el-button>
+        <el-upload
+          :auto-upload="true"
+          :show-file-list="false"
+          accept=".zip"
+          :before-upload="handleImport"
+          style="display: inline-block; margin-left: 8px"
+        >
+          <el-button type="primary">Import Skill (.zip)</el-button>
+        </el-upload>
+      </div>
     </div>
+
+    <el-text type="info" size="small" style="display: block; margin-bottom: 16px">
+      Skills are loaded from the <code>skills/</code> directory. Each skill is a subdirectory with a <code>SKILL.md</code> entry point.
+    </el-text>
 
     <el-table :data="skills" v-loading="loading" stripe>
       <el-table-column prop="name" label="Name" width="200" />
@@ -25,8 +38,9 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from "vue";
-import { getSkills } from "@/api";
+import { getSkills, importSkill, reloadSkills } from "@/api";
 import { ElMessage } from "element-plus";
+import type { UploadRawFile } from "element-plus";
 
 interface SkillItem {
   id: string;
@@ -37,6 +51,7 @@ interface SkillItem {
 
 const skills = ref<SkillItem[]>([]);
 const loading = ref(false);
+const reloading = ref(false);
 const dialogVisible = ref(false);
 const selectedSkill = ref<SkillItem | null>(null);
 
@@ -55,6 +70,30 @@ async function loadSkills() {
 function viewSkill(skill: SkillItem) {
   selectedSkill.value = skill;
   dialogVisible.value = true;
+}
+
+async function handleImport(file: UploadRawFile) {
+  try {
+    const { data } = await importSkill(file);
+    ElMessage.success(`Imported skills: ${data.imported.join(", ")}`);
+    loadSkills();
+  } catch {
+    ElMessage.error("Failed to import skill");
+  }
+  return false; // prevent default upload
+}
+
+async function handleReload() {
+  reloading.value = true;
+  try {
+    const { data } = await reloadSkills();
+    ElMessage.success(`Reloaded ${data.reloaded} skills`);
+    loadSkills();
+  } catch {
+    ElMessage.error("Failed to reload skills");
+  } finally {
+    reloading.value = false;
+  }
 }
 
 onMounted(loadSkills);

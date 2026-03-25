@@ -379,6 +379,94 @@ describe("SQLiteAdapter", () => {
     });
   });
 
+  // --- HTTP Tool CRUD ---
+
+  describe("HTTP Tools", () => {
+    it("should create an HTTP tool with defaults", () => {
+      const tool = db.createHttpTool({
+        name: "query_order",
+        url: "https://api.example.com/orders/{orderId}",
+      });
+      expect(tool.id).toBeDefined();
+      expect(tool.name).toBe("query_order");
+      expect(tool.description).toBe("");
+      expect(tool.method).toBe("GET");
+      expect(tool.url).toBe("https://api.example.com/orders/{orderId}");
+      expect(tool.headers).toEqual({});
+      expect(tool.parameters).toEqual({ type: "object", properties: {} });
+      expect(tool.bodyTemplate).toBe("");
+      expect(tool.enabled).toBe(true);
+      expect(tool.createdAt).toBeDefined();
+      expect(tool.updatedAt).toBeDefined();
+    });
+
+    it("should create an HTTP tool with custom values", () => {
+      const tool = db.createHttpTool({
+        name: "create_order",
+        description: "Create a new order",
+        method: "POST",
+        url: "https://api.example.com/orders",
+        headers: { Authorization: "Bearer token123" },
+        parameters: {
+          type: "object",
+          properties: { item: { type: "string" }, quantity: { type: "number" } },
+          required: ["item"],
+        },
+        bodyTemplate: '{"item": "{item}", "qty": {quantity}}',
+      });
+      expect(tool.name).toBe("create_order");
+      expect(tool.description).toBe("Create a new order");
+      expect(tool.method).toBe("POST");
+      expect(tool.headers).toEqual({ Authorization: "Bearer token123" });
+      expect(tool.parameters.required).toEqual(["item"]);
+      expect(tool.bodyTemplate).toBe('{"item": "{item}", "qty": {quantity}}');
+    });
+
+    it("should get an HTTP tool by id", () => {
+      const created = db.createHttpTool({ name: "t1", url: "https://example.com" });
+      const fetched = db.getHttpTool(created.id);
+      expect(fetched).toEqual(created);
+    });
+
+    it("should return null for non-existent HTTP tool", () => {
+      expect(db.getHttpTool("non-existent")).toBeNull();
+    });
+
+    it("should list HTTP tools", () => {
+      db.createHttpTool({ name: "t1", url: "https://example.com/1" });
+      db.createHttpTool({ name: "t2", url: "https://example.com/2" });
+      const tools = db.listHttpTools();
+      expect(tools).toHaveLength(2);
+    });
+
+    it("should update an HTTP tool", () => {
+      const tool = db.createHttpTool({ name: "old_name", url: "https://old.com" });
+      const updated = db.updateHttpTool(tool.id, {
+        name: "new_name",
+        method: "POST",
+        enabled: false,
+      });
+      expect(updated!.name).toBe("new_name");
+      expect(updated!.method).toBe("POST");
+      expect(updated!.enabled).toBe(false);
+      expect(updated!.url).toBe("https://old.com");
+    });
+
+    it("should return null when updating non-existent HTTP tool", () => {
+      expect(db.updateHttpTool("non-existent", { name: "X" })).toBeNull();
+    });
+
+    it("should delete an HTTP tool", () => {
+      const tool = db.createHttpTool({ name: "del_me", url: "https://example.com" });
+      expect(db.deleteHttpTool(tool.id)).toBe(true);
+      expect(db.getHttpTool(tool.id)).toBeNull();
+    });
+
+    it("should return false when deleting non-existent HTTP tool", () => {
+      expect(db.deleteHttpTool("non-existent")).toBe(false);
+    });
+  });
+
   // --- createDatabase factory ---
 
   describe("createDatabase", () => {

@@ -12,6 +12,9 @@ import type {
   DailyStats,
   Session,
   Message,
+  HttpTool,
+  HttpToolCreateInput,
+  HttpToolUpdateInput,
 } from "@agentforge/types";
 import { MIGRATIONS } from "./migrations.js";
 
@@ -350,6 +353,88 @@ export class SQLiteAdapter implements DatabaseAdapter {
       tokensOut: r.tokens_out as number,
       requests: r.requests as number,
     }));
+  }
+
+  // --- HTTP Tools ---
+
+  createHttpTool(input: HttpToolCreateInput): HttpTool {
+    const id = uuidv4();
+    const now = new Date().toISOString();
+    const stmt = this.db.prepare(`
+      INSERT INTO http_tools (id, name, description, method, url, headers, parameters, body_template, enabled, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+    `);
+    stmt.run(
+      id,
+      input.name,
+      input.description ?? "",
+      input.method ?? "GET",
+      input.url,
+      JSON.stringify(input.headers ?? {}),
+      JSON.stringify(input.parameters ?? { type: "object", properties: {} }),
+      input.bodyTemplate ?? "",
+      now,
+      now,
+    );
+    return this.getHttpTool(id)!;
+  }
+
+  getHttpTool(id: string): HttpTool | null {
+    const row = this.db.prepare("SELECT * FROM http_tools WHERE id = ?").get(id) as Record<string, unknown> | undefined;
+    if (!row) return null;
+    return this.mapHttpTool(row);
+  }
+
+  listHttpTools(): HttpTool[] {
+    const rows = this.db.prepare("SELECT * FROM http_tools ORDER BY created_at DESC").all() as Record<string, unknown>[];
+    return rows.map((r) => this.mapHttpTool(r));
+  }
+
+  updateHttpTool(id: string, input: HttpToolUpdateInput): HttpTool | null {
+    const existing = this.getHttpTool(id);
+    if (!existing) return null;
+
+    const fields: string[] = [];
+    const values: unknown[] = [];
+
+    if (input.name !== undefined) { fields.push("name = ?"); values.push(input.name); }
+    if (input.description !== undefined) { fields.push("description = ?"); values.push(input.description); }
+    if (input.method !== undefined) { fields.push("method = ?"); values.push(input.method); }
+    if (input.url !== undefined) { fields.push("url = ?"); values.push(input.url); }
+    if (input.headers !== undefined) { fields.push("headers = ?"); values.push(JSON.stringify(input.headers)); }
+    if (input.parameters !== undefined) { fields.push("parameters = ?"); values.push(JSON.stringify(input.parameters)); }
+    if (input.bodyTemplate !== undefined) { fields.push("body_template = ?"); values.push(input.bodyTemplate); }
+    if (input.enabled !== undefined) { fields.push("enabled = ?"); values.push(input.enabled ? 1 : 0); }
+
+    if (fields.length === 0) return existing;
+
+    fields.push("updated_at = ?");
+    values.push(new Date().toISOString());
+    values.push(id);
+
+    this.db.prepare(`UPDATE http_tools SET ${fields.join(", ")} WHERE id = ?`).run(...values);
+    return this.getHttpTool(id)!;
+  }
+
+  deleteHttpTool(id: string): boolean {
+    const result = this.db.prepare("DELETE FROM http_tools WHERE id = ?").run(id);
+    return result.changes > 0;
+  }
+
+  private mapHttpTool(row: Record<string, unknown>): HttpTool {
+    return {
+      id: row.id as string,
+      name: row.name as string,
+      description: row.description as string,
+      method: row.method as string,
+      url: row.url as string,
+      headers: JSON.parse(row.headers as string),
+      parameters: JSON.parse(row.parameters as string),
+      bodyTemplate: row.body_template as string,
+      enabled: (row.enabled as number) === 1,
+      createdAt: row.created_at as string,
+      updatedAt: row.updated_at as string,
+    };
   }
 
   // --- Lifecycle ---

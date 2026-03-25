@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import Fastify from "fastify";
 import cors from "@fastify/cors";
+import multipart from "@fastify/multipart";
 import fastifyStatic from "@fastify/static";
 import type { AppContext } from "./bootstrap.js";
 import "./auth.js"; // type augmentation for FastifyRequest.agentConfig
@@ -13,6 +14,7 @@ import { sessionRoutes } from "./routes/sessions.js";
 import { toolRoutes } from "./routes/tools.js";
 import { skillRoutes } from "./routes/skills.js";
 import { statsRoutes } from "./routes/stats.js";
+import { httpToolRoutes } from "./routes/http-tools.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 
@@ -20,6 +22,7 @@ export function createApp(ctx: AppContext) {
   const fastify = Fastify({ logger: true });
 
   fastify.register(cors, { origin: true });
+  fastify.register(multipart, { limits: { fileSize: 10 * 1024 * 1024 } });
 
   // Serve Vue3 admin UI static files in production
   const webDistPath = join(__dirname, "../../web/dist");
@@ -83,6 +86,7 @@ export function createApp(ctx: AppContext) {
     scope.register(toolRoutes, { ctx });
     scope.register(skillRoutes, { ctx });
     scope.register(statsRoutes, { ctx });
+    scope.register(httpToolRoutes, { ctx });
   });
 
   return fastify;

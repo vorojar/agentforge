@@ -2,7 +2,7 @@ import { resolve } from "node:path";
 import type { DatabaseAdapter, LLMProvider } from "@agentforge/types";
 import { createDatabase } from "@agentforge/database";
 import { createProvider } from "@agentforge/providers";
-import { ToolRegistryImpl, createBuiltinTools } from "@agentforge/tools";
+import { ToolRegistryImpl, createBuiltinTools, createHttpTools } from "@agentforge/tools";
 import { SkillRegistryImpl, loadSkillsFromDirectory } from "@agentforge/skills";
 import { AgentLoop } from "@agentforge/core";
 import type { AppConfig } from "./config.js";
@@ -26,6 +26,9 @@ export function bootstrap(config: AppConfig): AppContext {
 
   const toolRegistry = new ToolRegistryImpl();
   for (const tool of createBuiltinTools()) {
+    toolRegistry.register(tool);
+  }
+  for (const tool of createHttpTools(db.listHttpTools())) {
     toolRegistry.register(tool);
   }
 

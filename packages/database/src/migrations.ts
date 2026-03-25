@@ -58,4 +58,17 @@ CREATE TABLE IF NOT EXISTS usage_logs (
   created_at TEXT DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS http_tools (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL UNIQUE,
+  description TEXT DEFAULT '',
+  method TEXT NOT NULL DEFAULT 'GET',
+  url TEXT NOT NULL,
+  headers TEXT DEFAULT '{}',
+  parameters TEXT DEFAULT '{}',
+  body_template TEXT DEFAULT '',
+  enabled INTEGER DEFAULT 1,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+);
 `;
