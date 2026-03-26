@@ -594,49 +594,95 @@ export class SQLiteAdapter implements DatabaseAdapter {
 
     if (rows.length === 0) return [];
 
-    // If query embedding provided and chunks have embeddings, use vector search
+    // --- BM25 keyword scoring ---
+    const bm25Scores = this.bm25Score(query, rows.map(r => r.content));
+
+    // --- Vector scoring ---
     const hasEmbeddings = queryEmbedding && rows.some(r => r.embedding);
-    if (hasEmbeddings) {
-      return rows
-        .filter(r => r.embedding)
-        .map(r => {
-          const chunkEmb = Array.from(new Float32Array(r.embedding!.buffer, r.embedding!.byteOffset, r.embedding!.byteLength / 4));
-          let dot = 0, normA = 0, normB = 0;
-          for (let i = 0; i < queryEmbedding.length && i < chunkEmb.length; i++) {
-            dot += queryEmbedding[i] * chunkEmb[i];
-            normA += queryEmbedding[i] * queryEmbedding[i];
-            normB += chunkEmb[i] * chunkEmb[i];
-          }
-          const denom = Math.sqrt(normA) * Math.sqrt(normB);
-          const score = denom === 0 ? 0 : dot / denom;
-          return { sourceName: r.source_name, content: r.content, score };
-        })
-        .filter(r => r.score > 0.3)
-        .sort((a, b) => b.score - a.score)
-        .slice(0, limit);
-    }
-
-    // Fallback: keyword search
-    const parts = query.toLowerCase().split(/\s+/).filter(t => t.length > 0);
-    const terms: string[] = [];
-    for (const part of parts) {
-      if (/[\u4e00-\u9fff\u3400-\u4dbf]/.test(part)) {
-        terms.push(part);
-        for (const ch of part) {
-          if (/[\u4e00-\u9fff\u3400-\u4dbf]/.test(ch)) terms.push(ch);
-        }
-      } else if (part.length > 1) {
-        terms.push(part);
+    const vectorScores: number[] = rows.map(r => {
+      if (!hasEmbeddings || !r.embedding) return 0;
+      const chunkEmb = Array.from(new Float32Array(r.embedding.buffer, r.embedding.byteOffset, r.embedding.byteLength / 4));
+      let dot = 0, normA = 0, normB = 0;
+      for (let i = 0; i < queryEmbedding!.length && i < chunkEmb.length; i++) {
+        dot += queryEmbedding![i] * chunkEmb[i];
+        normA += queryEmbedding![i] * queryEmbedding![i];
+        normB += chunkEmb[i] * chunkEmb[i];
       }
-    }
-    const uniqueTerms = [...new Set(terms)];
-    if (uniqueTerms.length === 0) return [];
+      const denom = Math.sqrt(normA) * Math.sqrt(normB);
+      return denom === 0 ? 0 : dot / denom;
+    });
 
-    return rows.map(r => {
-      const lower = r.content.toLowerCase();
-      const score = uniqueTerms.reduce((s, t) => s + (lower.includes(t) ? 1 : 0), 0) / uniqueTerms.length;
+    // --- Hybrid: weighted combination ---
+    // Vector weight 0.6, BM25 weight 0.4 (when both available)
+    const vectorWeight = hasEmbeddings ? 0.6 : 0;
+    const bm25Weight = hasEmbeddings ? 0.4 : 1.0;
+
+    return rows.map((r, i) => {
+      const score = vectorScores[i] * vectorWeight + bm25Scores[i] * bm25Weight;
       return { sourceName: r.source_name, content: r.content, score };
-    }).filter(r => r.score > 0).sort((a, b) => b.score - a.score).slice(0, limit);
+    }).filter(r => r.score > 0.05).sort((a, b) => b.score - a.score).slice(0, limit);
+  }
+
+  /** BM25-inspired scoring: TF with document length normalization */
+  private bm25Score(query: string, docs: string[]): number[] {
+    // Tokenize query: CJK chars individually + latin words
+    const queryTerms = this.tokenize(query);
+    if (queryTerms.length === 0) return docs.map(() => 0);
+
+    const avgDl = docs.reduce((s, d) => s + d.length, 0) / docs.length || 1;
+    const k1 = 1.5;
+    const b = 0.75;
+
+    // IDF: how many docs contain each term
+    const df = new Map<string, number>();
+    for (const term of queryTerms) {
+      if (df.has(term)) continue;
+      let count = 0;
+      for (const doc of docs) {
+        if (doc.toLowerCase().includes(term)) count++;
+      }
+      df.set(term, count);
+    }
+    const N = docs.length;
+
+    return docs.map(doc => {
+      const lower = doc.toLowerCase();
+      const dl = doc.length;
+      let score = 0;
+      for (const term of queryTerms) {
+        // Count term frequency (occurrences in doc)
+        let tf = 0;
+        let pos = 0;
+        while ((pos = lower.indexOf(term, pos)) !== -1) { tf++; pos += term.length; }
+        if (tf === 0) continue;
+
+        const termDf = df.get(term) ?? 0;
+        const idf = Math.log((N - termDf + 0.5) / (termDf + 0.5) + 1);
+        const tfNorm = (tf * (k1 + 1)) / (tf + k1 * (1 - b + b * (dl / avgDl)));
+        score += idf * tfNorm;
+      }
+      return score;
+    }).map((s, _, arr) => {
+      // Normalize to 0-1 range
+      const max = Math.max(...arr);
+      return max > 0 ? s / max : 0;
+    });
+  }
+
+  private tokenize(text: string): string[] {
+    const terms: string[] = [];
+    const lower = text.toLowerCase();
+    // Extract CJK characters individually
+    for (const ch of lower) {
+      if (/[\u4e00-\u9fff\u3400-\u4dbf]/.test(ch)) terms.push(ch);
+    }
+    // Extract latin/number words (2+ chars)
+    const words = lower.match(/[a-z0-9]{2,}/g);
+    if (words) terms.push(...words);
+    // Also keep full CJK substrings from the query (for multi-char matching)
+    const cjkParts = lower.match(/[\u4e00-\u9fff\u3400-\u4dbf]{2,}/g);
+    if (cjkParts) terms.push(...cjkParts);
+    return [...new Set(terms)];
   }
 
   listKnowledgeSources(agentId: string): Array<{ sourceName: string; chunkCount: number }> {
