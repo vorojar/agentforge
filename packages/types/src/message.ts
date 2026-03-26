@@ -43,6 +43,7 @@ export interface Session {
   totalTokensIn?: number;
   totalTokensOut?: number;
   totalCacheRead?: number;
+  firstMessage?: string;
   createdAt: string;
   updatedAt: string;
 }

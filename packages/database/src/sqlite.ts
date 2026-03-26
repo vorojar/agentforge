@@ -223,7 +223,8 @@ export class SQLiteAdapter implements DatabaseAdapter {
     const sql = `SELECT s.*, COUNT(m.id) as message_count,
       COALESCE(SUM(m.tokens_in), 0) as total_tokens_in,
       COALESCE(SUM(m.tokens_out), 0) as total_tokens_out,
-      COALESCE(SUM(m.cache_read_tokens), 0) as total_cache_read
+      COALESCE(SUM(m.cache_read_tokens), 0) as total_cache_read,
+      (SELECT content FROM messages WHERE session_id = s.id AND role = 'user' ORDER BY created_at ASC LIMIT 1) as first_message
       FROM sessions s LEFT JOIN messages m ON m.session_id = s.id
       ${agentId ? "WHERE s.agent_id = ?" : ""}
       GROUP BY s.id ORDER BY s.updated_at DESC`;
@@ -246,6 +247,7 @@ export class SQLiteAdapter implements DatabaseAdapter {
       totalTokensIn: (row.total_tokens_in as number) ?? undefined,
       totalTokensOut: (row.total_tokens_out as number) ?? undefined,
       totalCacheRead: (row.total_cache_read as number) ?? undefined,
+      firstMessage: (row.first_message as string) ?? undefined,
       createdAt: row.created_at as string,
       updatedAt: row.updated_at as string,
     };

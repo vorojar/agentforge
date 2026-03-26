@@ -8,9 +8,9 @@
     </div>
 
     <el-table :data="pagedSessions" v-loading="loading" stripe @row-click="openSession" style="cursor: pointer">
-      <el-table-column prop="id" label="Session ID" min-width="200">
+      <el-table-column label="Conversation" min-width="250">
         <template #default="{ row }">
-          <code style="font-size: 12px">{{ row.id.slice(0, 8) }}...</code>
+          <span style="color: #303133">{{ truncate(row.firstMessage, 60) || '(empty)' }}</span>
         </template>
       </el-table-column>
       <el-table-column prop="agentId" label="Agent" min-width="120">
@@ -67,6 +67,11 @@ import { useRouter } from "vue-router";
 import { getSessions, getAgents, deleteSession } from "@/api";
 import { ElMessage } from "element-plus";
 import { formatDateTime } from "@/utils/format";
+
+function truncate(text: string | undefined, max: number): string {
+  if (!text) return "";
+  return text.length > max ? text.slice(0, max) + "..." : text;
+}
 
 const router = useRouter();
 const allSessions = ref<Array<Record<string, unknown>>>([]);
