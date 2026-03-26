@@ -92,7 +92,50 @@
         </div>
       </el-tab-pane>
 
-      <!-- Tab 3: API -->
+      <!-- Tab 3: Knowledge -->
+      <el-tab-pane label="Knowledge" name="knowledge" :disabled="!isEdit">
+        <div style="max-width: 700px">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px">
+            <h3>Knowledge Base</h3>
+            <el-button type="primary" size="small" @click="showKnowledgeUpload = true">Upload Document</el-button>
+          </div>
+          <p style="color: #909399; font-size: 13px; margin-bottom: 16px">
+            Upload documents so this agent can answer questions based on their content.
+          </p>
+
+          <el-table :data="knowledgeSources" size="small" v-loading="knowledgeLoading">
+            <el-table-column prop="sourceName" label="Document" min-width="200" />
+            <el-table-column prop="chunkCount" label="Chunks" width="100" align="center" />
+            <el-table-column label="Actions" width="100" align="center">
+              <template #default="{ row }">
+                <el-popconfirm title="Delete this document?" @confirm="deleteKnowledge(row.sourceName)">
+                  <template #reference>
+                    <el-button link type="danger" size="small">Delete</el-button>
+                  </template>
+                </el-popconfirm>
+              </template>
+            </el-table-column>
+          </el-table>
+
+          <el-dialog v-model="showKnowledgeUpload" title="Upload Knowledge Document" width="550px">
+            <el-form label-width="100px">
+              <el-form-item label="Name" required>
+                <el-input v-model="knowledgeForm.name" placeholder="e.g. Product FAQ, User Manual" />
+              </el-form-item>
+              <el-form-item label="Content" required>
+                <el-input v-model="knowledgeForm.content" type="textarea" :rows="12"
+                  placeholder="Paste document text content here..." />
+              </el-form-item>
+            </el-form>
+            <template #footer>
+              <el-button @click="showKnowledgeUpload = false">Cancel</el-button>
+              <el-button type="primary" @click="uploadKnowledge" :loading="knowledgeUploading">Upload</el-button>
+            </template>
+          </el-dialog>
+        </div>
+      </el-tab-pane>
+
+      <!-- Tab 4: API -->
       <el-tab-pane label="API" name="api" :disabled="!isEdit">
         <div style="max-width: 700px">
           <h3 style="margin-bottom: 16px">Usage Stats</h3>
@@ -212,6 +255,7 @@ import {
   getHttpTools, getProviders,
   createApiKey, deleteApiKey,
   testChat, getAgentStats,
+  getKnowledgeSources, uploadKnowledgeApi, deleteKnowledgeApi,
 } from "@/api";
 import { ElMessage, ElMessageBox } from "element-plus";
 
@@ -269,6 +313,50 @@ const chatLoading = ref(false);
 const chatSessionId = ref("");
 const chatBoxRef = ref<HTMLElement>();
 
+// Knowledge state
+const knowledgeSources = ref<Array<{ sourceName: string; chunkCount: number }>>([]);
+const knowledgeLoading = ref(false);
+const showKnowledgeUpload = ref(false);
+const knowledgeUploading = ref(false);
+const knowledgeForm = ref({ name: "", content: "" });
+
+async function loadKnowledge() {
+  if (!isEdit.value) return;
+  knowledgeLoading.value = true;
+  try {
+    const { data } = await getKnowledgeSources(agentId.value);
+    knowledgeSources.value = data;
+  } catch { /* ignore */ }
+  finally { knowledgeLoading.value = false; }
+}
+
+async function uploadKnowledge() {
+  if (!knowledgeForm.value.name || !knowledgeForm.value.content) {
+    ElMessage.warning("Name and content are required");
+    return;
+  }
+  knowledgeUploading.value = true;
+  try {
+    const { data } = await uploadKnowledgeApi(agentId.value, knowledgeForm.value);
+    ElMessage.success(`Uploaded: ${data.chunks} chunks`);
+    showKnowledgeUpload.value = false;
+    knowledgeForm.value = { name: "", content: "" };
+    loadKnowledge();
+  } catch {
+    ElMessage.error("Failed to upload");
+  } finally { knowledgeUploading.value = false; }
+}
+
+async function deleteKnowledge(sourceName: string) {
+  try {
+    await deleteKnowledgeApi(agentId.value, sourceName);
+    ElMessage.success("Deleted");
+    loadKnowledge();
+  } catch {
+    ElMessage.error("Failed to delete");
+  }
+}
+
 
 async function loadData() {
   loading.value = true;
@@ -310,6 +398,8 @@ async function loadData() {
         tools: data.tools,
         skills: data.skills,
       });
+
+      loadKnowledge();
 
       // Load agent usage stats
       try {

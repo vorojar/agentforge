@@ -69,6 +69,13 @@ export const chatWithAgent = (apiKey: string, message: string, sessionId?: strin
 export const testChat = (agentId: string, message: string, sessionId?: string) =>
   api.post(`/agents/${agentId}/chat`, { message, sessionId });
 
+// --- Knowledge ---
+export const getKnowledgeSources = (agentId: string) => api.get(`/agents/${agentId}/knowledge`);
+export const uploadKnowledgeApi = (agentId: string, data: { name: string; content: string }) =>
+  api.post(`/agents/${agentId}/knowledge`, data);
+export const deleteKnowledgeApi = (agentId: string, sourceName: string) =>
+  api.delete(`/agents/${agentId}/knowledge/${encodeURIComponent(sourceName)}`);
+
 // --- Sessions ---
 export const getSessions = (agentId?: string) =>
   api.get("/sessions", { params: agentId ? { agentId } : {} });
