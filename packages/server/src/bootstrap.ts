@@ -20,6 +20,8 @@ export interface AppContext {
 export class ProviderRegistry {
   private providers = new Map<string, LLMProvider>();
   private primaryId: string | null = null;
+  private cooldowns = new Map<string, number>();
+  private cooldownMs = 60_000;
 
   register(id: string, provider: LLMProvider, isPrimary: boolean) {
     this.providers.set(id, provider);
@@ -37,15 +39,79 @@ export class ProviderRegistry {
     return first.done ? undefined : first.value;
   }
 
-  /** Resolve provider for an agent: by providerId or fallback to primary */
+  /** Resolve provider for an agent: by providerId or fallback to primary, with failover */
   resolve(providerId?: string): LLMProvider {
+    // If specific provider requested, try it first
     if (providerId) {
       const p = this.providers.get(providerId);
-      if (p) return p;
+      if (p && this.isAvailable(providerId)) return this.wrapWithFailover(providerId, p);
     }
-    const primary = this.getPrimary();
-    if (!primary) throw new Error("No LLM provider configured");
-    return primary;
+    // Try primary
+    if (this.primaryId && this.isAvailable(this.primaryId)) {
+      const p = this.providers.get(this.primaryId);
+      if (p) return this.wrapWithFailover(this.primaryId, p);
+    }
+    // Fallback: first available
+    for (const [id, p] of this.providers) {
+      if (this.isAvailable(id)) return this.wrapWithFailover(id, p);
+    }
+    throw new Error("All LLM providers are unavailable (in cooldown)");
+  }
+
+  private isAvailable(id: string): boolean {
+    const until = this.cooldowns.get(id);
+    if (!until) return true;
+    if (Date.now() >= until) {
+      this.cooldowns.delete(id);
+      return true;
+    }
+    return false;
+  }
+
+  private markDown(id: string): void {
+    this.cooldowns.set(id, Date.now() + this.cooldownMs);
+  }
+
+  private wrapWithFailover(primaryId: string, primary: LLMProvider): LLMProvider {
+    const registry = this;
+    return {
+      name: primary.name,
+      chat: async (request) => {
+        try {
+          return await primary.chat(request);
+        } catch (error) {
+          registry.markDown(primaryId);
+          for (const [id, p] of registry.providers) {
+            if (id !== primaryId && registry.isAvailable(id)) {
+              try {
+                return await p.chat(request);
+              } catch {
+                registry.markDown(id);
+              }
+            }
+          }
+          throw error;
+        }
+      },
+      stream: async function* (request) {
+        try {
+          yield* primary.stream(request);
+        } catch (error) {
+          registry.markDown(primaryId);
+          for (const [id, p] of registry.providers) {
+            if (id !== primaryId && registry.isAvailable(id)) {
+              try {
+                yield* p.stream(request);
+                return;
+              } catch {
+                registry.markDown(id);
+              }
+            }
+          }
+          throw error;
+        }
+      },
+    } as LLMProvider;
   }
 
   reload(db: DatabaseAdapter) {

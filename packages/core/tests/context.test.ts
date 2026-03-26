@@ -80,22 +80,21 @@ describe("ContextBuilder", () => {
   });
 
   it("truncates old messages when over token budget", () => {
-    // maxTokens=100, budget = 100*8*0.8 = 640 tokens ~ 2560 chars
-    const config = makeAgentConfig({ maxTokens: 100 });
+    const config = makeAgentConfig({});
     const builder = new ContextBuilder(config);
 
     const longMessage = "x".repeat(1000); // ~250 tokens each
-    const messages: LLMMessage[] = [
-      { role: "user", content: longMessage },
-      { role: "assistant", content: longMessage },
-      { role: "user", content: longMessage },
-      { role: "assistant", content: longMessage },
-    ];
+    // Need >10 messages so minKeep doesn't prevent truncation
+    const messages: LLMMessage[] = [];
+    for (let i = 0; i < 14; i++) {
+      messages.push({ role: i % 2 === 0 ? "user" : "assistant", content: longMessage });
+    }
 
-    const { messages: result } = builder.build(messages, "new question");
+    // Pass a small maxHistoryTokens to force truncation
+    const { messages: result } = builder.build(messages, "new question", 500);
 
-    // Should have fewer messages than the original 4
-    expect(result.length).toBeLessThan(4);
+    // Should have fewer messages than the original 14
+    expect(result.length).toBeLessThan(14);
     // Should keep the most recent messages
     expect(result[result.length - 1]).toEqual({
       role: "assistant",

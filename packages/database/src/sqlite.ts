@@ -566,6 +566,44 @@ export class SQLiteAdapter implements DatabaseAdapter {
     };
   }
 
+  // --- Knowledge Chunks ---
+
+  ingestKnowledge(agentId: string, sourceName: string, chunks: string[]): number {
+    this.db.prepare("DELETE FROM knowledge_chunks WHERE agent_id = ? AND source_name = ?").run(agentId, sourceName);
+    const stmt = this.db.prepare("INSERT INTO knowledge_chunks (id, agent_id, source_name, chunk_index, content) VALUES (?, ?, ?, ?, ?)");
+    for (let i = 0; i < chunks.length; i++) {
+      stmt.run(uuidv4(), agentId, sourceName, i, chunks[i]);
+    }
+    return chunks.length;
+  }
+
+  searchKnowledge(agentId: string, query: string, limit: number = 5): Array<{ sourceName: string; content: string; score: number }> {
+    const terms = query.toLowerCase().split(/\s+/).filter(t => t.length > 1);
+    if (terms.length === 0) return [];
+
+    const rows = this.db.prepare(
+      "SELECT source_name, content FROM knowledge_chunks WHERE agent_id = ? ORDER BY chunk_index ASC"
+    ).all(agentId) as Array<{ source_name: string; content: string }>;
+
+    return rows.map(r => {
+      const lower = r.content.toLowerCase();
+      const score = terms.reduce((s, t) => s + (lower.includes(t) ? 1 : 0), 0) / terms.length;
+      return { sourceName: r.source_name, content: r.content, score };
+    }).filter(r => r.score > 0).sort((a, b) => b.score - a.score).slice(0, limit);
+  }
+
+  listKnowledgeSources(agentId: string): Array<{ sourceName: string; chunkCount: number }> {
+    const rows = this.db.prepare(
+      "SELECT source_name, COUNT(*) as cnt FROM knowledge_chunks WHERE agent_id = ? GROUP BY source_name"
+    ).all(agentId) as Array<{ source_name: string; cnt: number }>;
+    return rows.map(r => ({ sourceName: r.source_name, chunkCount: r.cnt }));
+  }
+
+  deleteKnowledgeSource(agentId: string, sourceName: string): boolean {
+    const result = this.db.prepare("DELETE FROM knowledge_chunks WHERE agent_id = ? AND source_name = ?").run(agentId, sourceName);
+    return result.changes > 0;
+  }
+
   // --- Lifecycle ---
 
   close(): void {
