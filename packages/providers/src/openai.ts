@@ -144,6 +144,9 @@ export class OpenAIProvider implements LLMProvider {
       }
     }
 
+    const usageAny = response.usage as unknown as Record<string, Record<string, number>> | undefined;
+    const cacheReadTokens = usageAny?.prompt_tokens_details?.cached_tokens || undefined;
+
     return {
       content,
       stopReason: mapFinishReason(choice.finish_reason),
@@ -151,6 +154,7 @@ export class OpenAIProvider implements LLMProvider {
       usage: {
         tokensIn: response.usage?.prompt_tokens ?? 0,
         tokensOut: response.usage?.completion_tokens ?? 0,
+        cacheReadTokens,
       },
     };
   }

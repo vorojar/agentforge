@@ -37,6 +37,8 @@ export interface LLMStreamChunk {
 export interface LLMUsage {
   tokensIn: number;
   tokensOut: number;
+  cacheReadTokens?: number;
+  cacheCreationTokens?: number;
 }
 
 export interface LLMProvider {

@@ -220,7 +220,8 @@ export class SQLiteAdapter implements DatabaseAdapter {
   }
 
   listSessions(agentId?: string): Session[] {
-    const sql = `SELECT s.*, COUNT(m.id) as message_count
+    const sql = `SELECT s.*, COUNT(m.id) as message_count,
+      COALESCE(SUM(m.tokens_in), 0) + COALESCE(SUM(m.tokens_out), 0) as total_tokens
       FROM sessions s LEFT JOIN messages m ON m.session_id = s.id
       ${agentId ? "WHERE s.agent_id = ?" : ""}
       GROUP BY s.id ORDER BY s.updated_at DESC`;
@@ -240,6 +241,7 @@ export class SQLiteAdapter implements DatabaseAdapter {
       id: row.id as string,
       agentId: row.agent_id as string,
       messageCount: (row.message_count as number) ?? undefined,
+      totalTokens: (row.total_tokens as number) ?? undefined,
       createdAt: row.created_at as string,
       updatedAt: row.updated_at as string,
     };
@@ -255,8 +257,8 @@ export class SQLiteAdapter implements DatabaseAdapter {
       : JSON.stringify(message.content);
 
     this.db.prepare(`
-      INSERT INTO messages (id, session_id, role, content, model, tokens_in, tokens_out, duration_ms, tool_calls, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO messages (id, session_id, role, content, model, tokens_in, tokens_out, cache_read_tokens, duration_ms, tool_calls, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id,
       message.sessionId,
@@ -265,6 +267,7 @@ export class SQLiteAdapter implements DatabaseAdapter {
       message.model ?? null,
       message.tokensIn ?? 0,
       message.tokensOut ?? 0,
+      message.cacheReadTokens ?? 0,
       message.durationMs ?? 0,
       message.toolCalls ?? null,
       now,

@@ -13,6 +13,12 @@ export const INCREMENTAL_MIGRATIONS = [
       `ALTER TABLE agents ADD COLUMN provider_id TEXT`,
     ],
   },
+  {
+    name: "add_cache_tokens",
+    up: [
+      `ALTER TABLE messages ADD COLUMN cache_read_tokens INTEGER DEFAULT 0`,
+    ],
+  },
 ];
 
 export const MIGRATIONS = `

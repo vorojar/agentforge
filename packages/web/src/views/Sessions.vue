@@ -23,6 +23,11 @@
           {{ row.messageCount ?? 0 }}
         </template>
       </el-table-column>
+      <el-table-column prop="totalTokens" label="Tokens" width="120" align="right">
+        <template #default="{ row }">
+          {{ (row.totalTokens ?? 0).toLocaleString() }}
+        </template>
+      </el-table-column>
       <el-table-column prop="updatedAt" label="Last Activity" min-width="160">
         <template #default="{ row }">
           {{ formatDateTime(row.updatedAt) }}

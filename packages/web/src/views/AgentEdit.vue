@@ -220,6 +220,11 @@ curl -X POST {{ baseUrl }}/api/chat/stream \
                     {{ tc.name }}
                   </el-tag>
                 </div>
+                <div v-if="msg.usage" style="font-size: 11px; color: #c0c4cc; margin-top: 4px">
+                  {{ (msg.usage.tokensIn + msg.usage.tokensOut).toLocaleString() }} tokens
+                  ({{ msg.usage.tokensIn.toLocaleString() }}↑ {{ msg.usage.tokensOut.toLocaleString() }}↓)
+                  · {{ (msg.usage.durationMs / 1000).toFixed(1) }}s
+                </div>
               </div>
               <div v-if="chatLoading" class="chat-msg chat-msg-assistant">
                 <div class="chat-msg-role">Agent</div>
@@ -298,7 +303,7 @@ const agentUsage = ref({ totalRequests: 0, totalTokensIn: 0, totalTokensOut: 0 }
 const baseUrl = ref(window.location.origin);
 
 // Test chat state
-const chatMessages = ref<Array<{ role: string; text: string; toolCalls?: Array<{ name: string }> }>>([]);
+const chatMessages = ref<Array<{ role: string; text: string; toolCalls?: Array<{ name: string }>; usage?: { tokensIn: number; tokensOut: number; durationMs: number } }>>([]);
 const chatInput = ref("");
 const chatLoading = ref(false);
 const chatSessionId = ref("");
@@ -496,6 +501,7 @@ async function sendChatNonStream(msg: string) {
       role: "assistant",
       text: data.reply,
       toolCalls: data.toolCalls,
+      usage: data.usage,
     });
   } catch (e: unknown) {
     const errMsg = (e as { response?: { data?: { error?: string } } })?.response?.data?.error || "Request failed";

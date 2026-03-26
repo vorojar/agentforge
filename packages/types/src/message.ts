@@ -30,6 +30,7 @@ export interface Message {
   model?: string;
   tokensIn?: number;
   tokensOut?: number;
+  cacheReadTokens?: number;
   durationMs?: number;
   toolCalls?: string;
   createdAt: string;
@@ -39,6 +40,7 @@ export interface Session {
   id: string;
   agentId: string;
   messageCount?: number;
+  totalTokens?: number;
   createdAt: string;
   updatedAt: string;
 }
