@@ -132,9 +132,7 @@ export async function skillRoutes(fastify: FastifyInstance, opts: { ctx: AppCont
     const content = `---\nname: ${name}\ndescription: ${description}\n---\n\n# ${name}\n\nSkill instructions here.\n`;
     writeFileSync(join(skillDir, "SKILL.md"), content, "utf-8");
     mkdirSync(join(skillDir, "examples"), { recursive: true });
-    writeFileSync(join(skillDir, "examples", "README.md"), "# Examples\n\nAdd example outputs here to guide the AI response format.\n", "utf-8");
     mkdirSync(join(skillDir, "references"), { recursive: true });
-    writeFileSync(join(skillDir, "references", "README.md"), "# References\n\nAdd reference documents here (domain knowledge, data tables, etc.).\n", "utf-8");
 
     // Reload so the registry picks it up
     const skills = loadSkillsFromDirectory(skillsDir);
