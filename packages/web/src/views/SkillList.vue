@@ -3,7 +3,7 @@
     <!-- List View -->
     <div v-if="!editingSkill">
       <div class="page-header">
-        <h2>Skills</h2>
+        <span></span>
         <div style="display: flex; gap: 8px">
           <el-button @click="reloadAllSkills">Reload</el-button>
           <el-button type="primary" @click="showCreateDialog = true">Create Skill</el-button>

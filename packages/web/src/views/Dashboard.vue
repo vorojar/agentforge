@@ -1,9 +1,5 @@
 <template>
   <div>
-    <div class="page-header">
-      <h2>Dashboard</h2>
-    </div>
-
     <!-- Summary cards -->
     <el-row :gutter="16" style="margin-bottom: 20px">
       <el-col :span="6" v-for="card in statCards" :key="card.label">

@@ -1,7 +1,7 @@
 <template>
   <div>
     <div class="page-header">
-      <h2>Tool Registry</h2>
+      <span></span>
     </div>
 
     <!-- All registered tools (builtin + HTTP) -->

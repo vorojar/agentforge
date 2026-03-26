@@ -1,7 +1,7 @@
 <template>
   <div>
     <div class="page-header">
-      <h2>Sessions</h2>
+      <span></span>
       <el-select v-model="filterAgent" clearable placeholder="Filter by Agent" style="width: 200px" @change="onFilterChange">
         <el-option v-for="a in agents" :key="a.id" :label="a.name" :value="a.id" />
       </el-select>

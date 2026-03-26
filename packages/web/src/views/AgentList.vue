@@ -1,7 +1,7 @@
 <template>
   <div>
     <div class="page-header">
-      <h2>Agents</h2>
+      <span></span>
       <el-button type="primary" @click="$router.push('/agents/new')">
         <el-icon><Plus /></el-icon> Create Agent
       </el-button>

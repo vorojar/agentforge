@@ -1,7 +1,7 @@
 <template>
   <div>
     <div class="page-header">
-      <h2>Providers</h2>
+      <span></span>
       <el-button type="primary" @click="openCreate">Add Provider</el-button>
     </div>
 
