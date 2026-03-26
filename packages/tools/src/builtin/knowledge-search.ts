@@ -1,6 +1,7 @@
 import type { Tool, DatabaseAdapter } from "@agentforge/types";
+import type { EmbeddingClient } from "../embedding.js";
 
-export function createKnowledgeSearchTool(db: DatabaseAdapter): Tool {
+export function createKnowledgeSearchTool(db: DatabaseAdapter, embedder?: EmbeddingClient): Tool {
   return {
     name: "search_knowledge",
     description: "Search the agent's knowledge base (uploaded documents) for relevant information. Use this when the user asks about topics that might be covered in uploaded documents.",
@@ -18,7 +19,16 @@ export function createKnowledgeSearchTool(db: DatabaseAdapter): Tool {
       const agentId = context?.agentId;
       if (!agentId) return { content: "No agent context available", isError: true };
 
-      const results = db.searchKnowledge(agentId, input.query as string, 5);
+      // Generate query embedding for semantic search
+      let queryEmbedding: number[] | undefined;
+      if (embedder) {
+        try {
+          const [emb] = await embedder.embed([input.query as string]);
+          queryEmbedding = emb;
+        } catch { /* fallback to keyword search */ }
+      }
+
+      const results = db.searchKnowledge(agentId, input.query as string, 5, queryEmbedding);
       if (results.length === 0) {
         return { content: "No relevant documents found in knowledge base." };
       }

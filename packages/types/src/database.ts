@@ -87,8 +87,8 @@ export interface DatabaseAdapter {
   getPrimaryProvider(): ProviderConfig | null;
 
   // Knowledge
-  ingestKnowledge(agentId: string, sourceName: string, chunks: string[]): number;
-  searchKnowledge(agentId: string, query: string, limit?: number): Array<{ sourceName: string; content: string; score: number }>;
+  ingestKnowledge(agentId: string, sourceName: string, chunks: string[], embeddings?: number[][]): number;
+  searchKnowledge(agentId: string, query: string, limit?: number, queryEmbedding?: number[]): Array<{ sourceName: string; content: string; score: number }>;
   listKnowledgeSources(agentId: string): Array<{ sourceName: string; chunkCount: number }>;
   deleteKnowledgeSource(agentId: string, sourceName: string): boolean;
 

@@ -577,25 +577,51 @@ export class SQLiteAdapter implements DatabaseAdapter {
 
   // --- Knowledge Chunks ---
 
-  ingestKnowledge(agentId: string, sourceName: string, chunks: string[]): number {
+  ingestKnowledge(agentId: string, sourceName: string, chunks: string[], embeddings?: number[][]): number {
     this.db.prepare("DELETE FROM knowledge_chunks WHERE agent_id = ? AND source_name = ?").run(agentId, sourceName);
-    const stmt = this.db.prepare("INSERT INTO knowledge_chunks (id, agent_id, source_name, chunk_index, content) VALUES (?, ?, ?, ?, ?)");
+    const stmt = this.db.prepare("INSERT INTO knowledge_chunks (id, agent_id, source_name, chunk_index, content, embedding) VALUES (?, ?, ?, ?, ?, ?)");
     for (let i = 0; i < chunks.length; i++) {
-      stmt.run(uuidv4(), agentId, sourceName, i, chunks[i]);
+      const emb = embeddings?.[i] ? Buffer.from(new Float32Array(embeddings[i]).buffer) : null;
+      stmt.run(uuidv4(), agentId, sourceName, i, chunks[i], emb);
     }
     return chunks.length;
   }
 
-  searchKnowledge(agentId: string, query: string, limit: number = 5): Array<{ sourceName: string; content: string; score: number }> {
-    // Extract search terms: split by whitespace, then also extract CJK character bigrams
+  searchKnowledge(agentId: string, query: string, limit: number = 5, queryEmbedding?: number[]): Array<{ sourceName: string; content: string; score: number }> {
+    const rows = this.db.prepare(
+      "SELECT source_name, content, embedding FROM knowledge_chunks WHERE agent_id = ? ORDER BY chunk_index ASC"
+    ).all(agentId) as Array<{ source_name: string; content: string; embedding: Buffer | null }>;
+
+    if (rows.length === 0) return [];
+
+    // If query embedding provided and chunks have embeddings, use vector search
+    const hasEmbeddings = queryEmbedding && rows.some(r => r.embedding);
+    if (hasEmbeddings) {
+      return rows
+        .filter(r => r.embedding)
+        .map(r => {
+          const chunkEmb = Array.from(new Float32Array(r.embedding!.buffer, r.embedding!.byteOffset, r.embedding!.byteLength / 4));
+          let dot = 0, normA = 0, normB = 0;
+          for (let i = 0; i < queryEmbedding.length && i < chunkEmb.length; i++) {
+            dot += queryEmbedding[i] * chunkEmb[i];
+            normA += queryEmbedding[i] * queryEmbedding[i];
+            normB += chunkEmb[i] * chunkEmb[i];
+          }
+          const denom = Math.sqrt(normA) * Math.sqrt(normB);
+          const score = denom === 0 ? 0 : dot / denom;
+          return { sourceName: r.source_name, content: r.content, score };
+        })
+        .filter(r => r.score > 0.3)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, limit);
+    }
+
+    // Fallback: keyword search
     const parts = query.toLowerCase().split(/\s+/).filter(t => t.length > 0);
     const terms: string[] = [];
     for (const part of parts) {
-      // Check if part contains CJK characters
       if (/[\u4e00-\u9fff\u3400-\u4dbf]/.test(part)) {
-        // Add the whole part as a term (substring match)
         terms.push(part);
-        // Also add individual CJK characters for partial matching
         for (const ch of part) {
           if (/[\u4e00-\u9fff\u3400-\u4dbf]/.test(ch)) terms.push(ch);
         }
@@ -603,13 +629,8 @@ export class SQLiteAdapter implements DatabaseAdapter {
         terms.push(part);
       }
     }
-    // Deduplicate
     const uniqueTerms = [...new Set(terms)];
     if (uniqueTerms.length === 0) return [];
-
-    const rows = this.db.prepare(
-      "SELECT source_name, content FROM knowledge_chunks WHERE agent_id = ? ORDER BY chunk_index ASC"
-    ).all(agentId) as Array<{ source_name: string; content: string }>;
 
     return rows.map(r => {
       const lower = r.content.toLowerCase();

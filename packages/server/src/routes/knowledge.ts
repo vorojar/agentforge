@@ -1,9 +1,11 @@
 import type { FastifyInstance } from "fastify";
 import type { AppContext } from "../bootstrap.js";
 import { chunkText } from "@agentforge/tools/chunker";
+import type { EmbeddingClient } from "@agentforge/tools";
 
 export async function knowledgeRoutes(fastify: FastifyInstance, opts: { ctx: AppContext }) {
   const { db } = opts.ctx;
+  const embedder = opts.ctx.embedder;
 
   // Upload knowledge file (text content in body)
   fastify.post("/api/agents/:id/knowledge", async (request, reply) => {
@@ -15,8 +17,27 @@ export async function knowledgeRoutes(fastify: FastifyInstance, opts: { ctx: App
     if (!body.name || !body.content) return reply.code(400).send({ error: "name and content are required" });
 
     const chunks = chunkText(body.content);
-    const count = db.ingestKnowledge(id, body.name, chunks);
-    return { sourceName: body.name, chunks: count };
+
+    // Generate embeddings if available
+    let embeddings: number[][] | undefined;
+    if (embedder) {
+      try {
+        // Batch in groups of 10 to avoid rate limits
+        embeddings = [];
+        for (let i = 0; i < chunks.length; i += 10) {
+          const batch = chunks.slice(i, i + 10);
+          const batchEmbs = await embedder.embed(batch);
+          embeddings.push(...batchEmbs);
+        }
+        request.log.info(`Embedded ${chunks.length} chunks for ${body.name}`);
+      } catch (error) {
+        request.log.warn(error, "Embedding failed, storing without vectors");
+        embeddings = undefined;
+      }
+    }
+
+    const count = db.ingestKnowledge(id, body.name, chunks, embeddings);
+    return { sourceName: body.name, chunks: count, embedded: !!embeddings };
   });
 
   // List knowledge sources for agent
@@ -32,7 +53,16 @@ export async function knowledgeRoutes(fastify: FastifyInstance, opts: { ctx: App
     const { id } = request.params as { id: string };
     const body = request.body as { query: string; limit?: number };
     if (!body.query) return reply.code(400).send({ error: "query is required" });
-    return db.searchKnowledge(id, body.query, body.limit);
+
+    let queryEmbedding: number[] | undefined;
+    if (embedder) {
+      try {
+        const [emb] = await embedder.embed([body.query]);
+        queryEmbedding = emb;
+      } catch { /* fallback to keyword search */ }
+    }
+
+    return db.searchKnowledge(id, body.query, body.limit, queryEmbedding);
   });
 
   // Delete knowledge source

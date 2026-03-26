@@ -2,7 +2,8 @@ import { resolve } from "node:path";
 import type { DatabaseAdapter, LLMProvider, ProviderConfig } from "@agentforge/types";
 import { createDatabase } from "@agentforge/database";
 import { createProvider } from "@agentforge/providers";
-import { ToolRegistryImpl, createBuiltinTools, createHttpTools, createKnowledgeSearchTool } from "@agentforge/tools";
+import { ToolRegistryImpl, createBuiltinTools, createHttpTools, createKnowledgeSearchTool, VolcanoEmbedding } from "@agentforge/tools";
+import type { EmbeddingClient } from "@agentforge/tools";
 import { SkillRegistryImpl, loadSkillsFromDirectory } from "@agentforge/skills";
 import { AgentLoop } from "@agentforge/core";
 import type { AppConfig } from "./config.js";
@@ -13,6 +14,7 @@ export interface AppContext {
   toolRegistry: ToolRegistryImpl;
   skillRegistry: SkillRegistryImpl;
   agentLoop: AgentLoop;
+  embedder?: EmbeddingClient;
   config: AppConfig;
 }
 
@@ -155,7 +157,8 @@ export function bootstrap(config: AppConfig): AppContext {
   for (const tool of createHttpTools(db.listHttpTools())) {
     toolRegistry.register(tool);
   }
-  toolRegistry.register(createKnowledgeSearchTool(db));
+  // Embedder created later — register knowledge tool after embedder init
+  // (moved below)
 
   const skillRegistry = new SkillRegistryImpl();
   const skillsDir = resolve(process.cwd(), "skills");
@@ -170,5 +173,17 @@ export function bootstrap(config: AppConfig): AppContext {
     db,
   });
 
-  return { db, providerRegistry, toolRegistry, skillRegistry, agentLoop, config };
+  // Create embedding client if configured
+  let embedder: EmbeddingClient | undefined;
+  const embKey = process.env.VOLCANO_EMBEDDING_KEY;
+  if (embKey) {
+    embedder = new VolcanoEmbedding({
+      apiKey: embKey,
+      model: process.env.VOLCANO_EMBEDDING_MODEL,
+    });
+  }
+
+  toolRegistry.register(createKnowledgeSearchTool(db, embedder));
+
+  return { db, providerRegistry, toolRegistry, skillRegistry, agentLoop, embedder, config };
 }

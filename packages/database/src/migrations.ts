@@ -19,6 +19,12 @@ export const INCREMENTAL_MIGRATIONS = [
       `ALTER TABLE messages ADD COLUMN cache_read_tokens INTEGER DEFAULT 0`,
     ],
   },
+  {
+    name: "add_chunk_embedding",
+    up: [
+      `ALTER TABLE knowledge_chunks ADD COLUMN embedding BLOB`,
+    ],
+  },
 ];
 
 export const MIGRATIONS = `
