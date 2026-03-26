@@ -45,16 +45,16 @@ export const updateHttpTool = (id: string, data: Record<string, unknown>) =>
   api.put(`/http-tools/${id}`, data);
 export const deleteHttpTool = (id: string) => api.delete(`/http-tools/${id}`);
 
-// --- Skills (read-only, loaded from filesystem) ---
+// --- Skills ---
 export const getSkills = () => api.get("/skills");
-export const importSkill = (file: File) => {
-  const formData = new FormData();
-  formData.append("file", file);
-  return api.post("/skills/import", formData, {
-    headers: { "Content-Type": "multipart/form-data" },
-  });
-};
 export const reloadSkills = () => api.post("/skills/reload");
+
+// --- Skills Editor ---
+export const getSkillFiles = (name: string) => api.get(`/skills/${name}/files`);
+export const getSkillFile = (name: string, path: string) => api.get(`/skills/${name}/files/${path}`);
+export const saveSkillFile = (name: string, path: string, content: string) => api.put(`/skills/${name}/files/${path}`, { content });
+export const deleteSkillFile = (name: string, path: string) => api.delete(`/skills/${name}/files/${path}`);
+export const createSkillApi = (data: { name: string; description: string }) => api.post("/skills", data);
 
 // --- Chat (uses agent API key, not admin secret) ---
 export const chatWithAgent = (apiKey: string, message: string, sessionId?: string) =>
