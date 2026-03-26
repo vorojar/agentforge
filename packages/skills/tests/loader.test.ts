@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { loadSkillsFromDirectory } from "../src/loader.js";
+import { loadSkillsFromDirectory, loadSkillContent } from "../src/loader.js";
 
 describe("loadSkillsFromDirectory", () => {
   const testDir = join(tmpdir(), "agentforge-skill-test-" + Date.now());
@@ -34,7 +34,12 @@ Say hello to the user.`
     expect(skills[0].id).toBe("greeting");
     expect(skills[0].name).toBe("greeting");
     expect(skills[0].description).toBe("A greeting skill");
-    expect(skills[0].content).toContain("Say hello to the user.");
+    expect(skills[0].dirPath).toBe(skillDir);
+    // Content is lazy — empty on load
+    expect(skills[0].content).toBe("");
+    // loadSkillContent reads from disk
+    const content = loadSkillContent(skills[0]);
+    expect(content).toContain("Say hello to the user.");
     expect(skills[0].enabled).toBe(true);
   });
 
@@ -65,7 +70,7 @@ Body`
     expect(skills).toHaveLength(0);
   });
 
-  it("includes template.md content", () => {
+  it("includes template.md content on demand", () => {
     const skillDir = join(testDir, "with-template");
     mkdirSync(skillDir);
     writeFileSync(
@@ -80,11 +85,12 @@ description: Has template
     writeFileSync(join(skillDir, "template.md"), "Fill in: {{ name }}");
 
     const skills = loadSkillsFromDirectory(testDir);
-    expect(skills[0].content).toContain("# Main instructions");
-    expect(skills[0].content).toContain("Fill in: {{ name }}");
+    const content = loadSkillContent(skills[0]);
+    expect(content).toContain("# Main instructions");
+    expect(content).toContain("Fill in: {{ name }}");
   });
 
-  it("includes examples/ content", () => {
+  it("includes examples/ content on demand", () => {
     const skillDir = join(testDir, "with-examples");
     mkdirSync(skillDir);
     mkdirSync(join(skillDir, "examples"));
@@ -100,7 +106,29 @@ description: Has examples
     writeFileSync(join(skillDir, "examples", "sample.md"), "Example output here");
 
     const skills = loadSkillsFromDirectory(testDir);
-    expect(skills[0].content).toContain("Example output here");
+    const content = loadSkillContent(skills[0]);
+    expect(content).toContain("Example output here");
+  });
+
+  it("includes references/ content on demand", () => {
+    const skillDir = join(testDir, "with-refs");
+    mkdirSync(skillDir);
+    mkdirSync(join(skillDir, "references"));
+    writeFileSync(
+      join(skillDir, "SKILL.md"),
+      `---
+name: referenced
+description: Has references
+---
+
+# Instructions`
+    );
+    writeFileSync(join(skillDir, "references", "api-docs.md"), "API reference content");
+
+    const skills = loadSkillsFromDirectory(testDir);
+    const content = loadSkillContent(skills[0]);
+    expect(content).toContain("API reference content");
+    expect(content).toContain("## Reference: api-docs");
   });
 
   it("returns empty array for non-existent directory", () => {

@@ -1,5 +1,6 @@
 import type { AgentConfig, LLMMessage, SkillRegistry } from "@agentforge/types";
 import { estimateTokens, estimateMessagesTokens } from "./token-utils.js";
+import { loadSkillContent } from "@agentforge/skills";
 
 export class ContextBuilder {
   constructor(
@@ -22,7 +23,9 @@ export class ContextBuilder {
     ) {
       const match = this.skillRegistry.match(userInput);
       if (match && match.score > 0) {
-        systemPrompt += `\n\n## Skill: ${match.skill.name}\n${match.skill.content}`;
+        // Lazy load full content from filesystem (supports hot editing)
+        const content = loadSkillContent(match.skill);
+        systemPrompt += `\n\n## Skill: ${match.skill.name}\n${content}`;
       }
     }
 

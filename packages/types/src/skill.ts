@@ -3,6 +3,8 @@ export interface Skill {
   name: string;
   description: string;
   content: string;
+  /** Filesystem path to skill directory (for lazy loading supporting files) */
+  dirPath?: string;
   enabled: boolean;
   createdAt: string;
   updatedAt: string;
