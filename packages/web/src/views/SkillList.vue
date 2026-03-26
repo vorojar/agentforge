@@ -21,6 +21,11 @@
             </template>
             <p style="font-size: 13px; color: #606266; margin-bottom: 12px; min-height: 36px">{{ skill.description }}</p>
             <el-button size="small" type="primary" @click="openEditor(skill)">Edit</el-button>
+            <el-popconfirm :title="`Delete skill '${skill.name}'?`" @confirm="deleteSkill(skill.id)">
+              <template #reference>
+                <el-button size="small" type="danger">Delete</el-button>
+              </template>
+            </el-popconfirm>
           </el-card>
         </el-col>
       </el-row>
@@ -36,7 +41,8 @@
         </el-form>
         <template #footer>
           <el-button @click="showCreateDialog = false">Cancel</el-button>
-          <el-button type="primary" @click="createSkill" :loading="creating">Create</el-button>
+          <el-button type="primary" @click="createSkill" :loading="creating"
+            :disabled="!newSkillName.trim() || !newSkillDesc.trim()">Create</el-button>
         </template>
       </el-dialog>
     </div>
@@ -106,7 +112,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from "vue";
-import { getSkills, reloadSkills, getSkillFiles, getSkillFile, saveSkillFile, deleteSkillFile, createSkillApi } from "@/api";
+import { getSkills, reloadSkills, getSkillFiles, getSkillFile, saveSkillFile, deleteSkillFile, createSkillApi, deleteSkillApi } from "@/api";
 import { ElMessage, ElMessageBox } from "element-plus";
 
 interface SkillItem { id: string; name: string; description: string }
@@ -163,6 +169,7 @@ async function loadFileTree() {
     const dirs = new Set<string>();
     for (const f of data as Array<{ path: string; type: string }>) {
       const parts = f.path.split("/");
+      // Ensure parent directories are in the tree
       for (let i = 0; i < parts.length - 1; i++) {
         const dirPath = parts.slice(0, i + 1).join("/");
         if (!dirs.has(dirPath)) {
@@ -170,7 +177,12 @@ async function loadFileTree() {
           nodes.push({ path: dirPath, name: parts[i], type: "directory", depth: i });
         }
       }
-      if (f.type === "file") {
+      if (f.type === "directory") {
+        if (!dirs.has(f.path)) {
+          dirs.add(f.path);
+          nodes.push({ path: f.path, name: parts[parts.length - 1], type: "directory", depth: parts.length - 1 });
+        }
+      } else {
         nodes.push({ path: f.path, name: parts[parts.length - 1], type: "file", depth: parts.length - 1 });
       }
     }
@@ -245,6 +257,14 @@ async function createSkill() {
     ElMessage.success("Skill created");
   } catch { ElMessage.error("Failed to create skill"); }
   finally { creating.value = false; }
+}
+
+async function deleteSkill(name: string) {
+  try {
+    await deleteSkillApi(name);
+    ElMessage.success("Skill deleted");
+    await reloadAllSkills();
+  } catch { ElMessage.error("Failed to delete skill"); }
 }
 
 onMounted(loadSkills);

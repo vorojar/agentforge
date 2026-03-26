@@ -55,6 +55,7 @@ export const getSkillFile = (name: string, path: string) => api.get(`/skills/${n
 export const saveSkillFile = (name: string, path: string, content: string) => api.put(`/skills/${name}/files/${path}`, { content });
 export const deleteSkillFile = (name: string, path: string) => api.delete(`/skills/${name}/files/${path}`);
 export const createSkillApi = (data: { name: string; description: string }) => api.post("/skills", data);
+export const deleteSkillApi = (name: string) => api.delete(`/skills/${name}`);
 
 // --- Chat (uses agent API key, not admin secret) ---
 export const chatWithAgent = (apiKey: string, message: string, sessionId?: string) =>

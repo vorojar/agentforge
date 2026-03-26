@@ -7,6 +7,7 @@ import {
   unlinkSync,
   readdirSync,
   statSync,
+  rmSync,
 } from "node:fs";
 import type { FastifyInstance } from "fastify";
 import AdmZip from "adm-zip";
@@ -142,6 +143,21 @@ export async function skillRoutes(fastify: FastifyInstance, opts: { ctx: AppCont
 
     const created = skillRegistry.get(name);
     return reply.code(201).send(created ?? { name, description });
+  });
+
+  // DELETE /api/skills/:name — Delete entire skill
+  fastify.delete("/api/skills/:name", async (request, reply) => {
+    const { name } = request.params as { name: string };
+    const skillDir = join(skillsDir, name);
+    assertInsideDir(skillDir, skillsDir);
+    if (!existsSync(skillDir)) {
+      return reply.code(404).send({ error: "Skill not found" });
+    }
+    rmSync(skillDir, { recursive: true, force: true });
+    // Reload registry
+    const skills = loadSkillsFromDirectory(skillsDir);
+    for (const skill of skills) { skillRegistry.register(skill); }
+    return { success: true };
   });
 
   // GET /api/skills/:name/files — List all files in a skill directory
