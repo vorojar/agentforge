@@ -2,7 +2,7 @@ import { resolve } from "node:path";
 import type { DatabaseAdapter, LLMProvider, ProviderConfig } from "@agentforge/types";
 import { createDatabase } from "@agentforge/database";
 import { createProvider } from "@agentforge/providers";
-import { ToolRegistryImpl, createBuiltinTools, createHttpTools } from "@agentforge/tools";
+import { ToolRegistryImpl, createBuiltinTools, createHttpTools, createKnowledgeSearchTool } from "@agentforge/tools";
 import { SkillRegistryImpl, loadSkillsFromDirectory } from "@agentforge/skills";
 import { AgentLoop } from "@agentforge/core";
 import type { AppConfig } from "./config.js";
@@ -155,6 +155,7 @@ export function bootstrap(config: AppConfig): AppContext {
   for (const tool of createHttpTools(db.listHttpTools())) {
     toolRegistry.register(tool);
   }
+  toolRegistry.register(createKnowledgeSearchTool(db));
 
   const skillRegistry = new SkillRegistryImpl();
   const skillsDir = resolve(process.cwd(), "skills");
