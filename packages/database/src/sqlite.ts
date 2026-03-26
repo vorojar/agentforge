@@ -578,8 +578,25 @@ export class SQLiteAdapter implements DatabaseAdapter {
   }
 
   searchKnowledge(agentId: string, query: string, limit: number = 5): Array<{ sourceName: string; content: string; score: number }> {
-    const terms = query.toLowerCase().split(/\s+/).filter(t => t.length > 1);
-    if (terms.length === 0) return [];
+    // Extract search terms: split by whitespace, then also extract CJK character bigrams
+    const parts = query.toLowerCase().split(/\s+/).filter(t => t.length > 0);
+    const terms: string[] = [];
+    for (const part of parts) {
+      // Check if part contains CJK characters
+      if (/[\u4e00-\u9fff\u3400-\u4dbf]/.test(part)) {
+        // Add the whole part as a term (substring match)
+        terms.push(part);
+        // Also add individual CJK characters for partial matching
+        for (const ch of part) {
+          if (/[\u4e00-\u9fff\u3400-\u4dbf]/.test(ch)) terms.push(ch);
+        }
+      } else if (part.length > 1) {
+        terms.push(part);
+      }
+    }
+    // Deduplicate
+    const uniqueTerms = [...new Set(terms)];
+    if (uniqueTerms.length === 0) return [];
 
     const rows = this.db.prepare(
       "SELECT source_name, content FROM knowledge_chunks WHERE agent_id = ? ORDER BY chunk_index ASC"
@@ -587,7 +604,7 @@ export class SQLiteAdapter implements DatabaseAdapter {
 
     return rows.map(r => {
       const lower = r.content.toLowerCase();
-      const score = terms.reduce((s, t) => s + (lower.includes(t) ? 1 : 0), 0) / terms.length;
+      const score = uniqueTerms.reduce((s, t) => s + (lower.includes(t) ? 1 : 0), 0) / uniqueTerms.length;
       return { sourceName: r.source_name, content: r.content, score };
     }).filter(r => r.score > 0).sort((a, b) => b.score - a.score).slice(0, limit);
   }

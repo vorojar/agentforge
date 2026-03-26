@@ -147,9 +147,10 @@ const allTools = ref<ToolDef[]>([]);
 const httpTools = ref<HttpToolItem[]>([]);
 
 // Builtin tools = all registered tools minus HTTP tools
+const HIDDEN_TOOLS = new Set(["search_knowledge"]);
 const tools = computed(() => {
   const httpNames = new Set(httpTools.value.map(t => t.name));
-  return allTools.value.filter(t => !httpNames.has(t.name));
+  return allTools.value.filter(t => !httpNames.has(t.name) && !HIDDEN_TOOLS.has(t.name));
 });
 const loading = ref(false);
 const httpLoading = ref(false);

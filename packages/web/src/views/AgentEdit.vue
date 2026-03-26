@@ -71,7 +71,7 @@
             Select which tools this agent can use. Leave empty to allow all.
           </p>
           <el-checkbox-group v-model="form.tools">
-            <el-checkbox v-for="tool in availableTools" :key="tool.name" :label="tool.name" :value="tool.name"
+            <el-checkbox v-for="tool in availableTools.filter(t => t.name !== 'search_knowledge')" :key="tool.name" :label="tool.name" :value="tool.name"
               style="display: block; margin-bottom: 8px">
               <span>{{ tool.name }}</span>
               <el-tag v-if="httpToolNames.has(tool.name)" size="small" type="warning" style="margin-left: 8px">HTTP</el-tag>

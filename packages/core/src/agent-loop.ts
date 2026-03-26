@@ -56,12 +56,20 @@ function extractText(content: ContentBlock[]): string {
     .join("");
 }
 
+/** Internal tools that are always available (not shown in whitelist UI) */
+const AUTO_INJECT_TOOLS = ["search_knowledge"];
+
 function getToolDefinitions(
   registry: ToolRegistry,
   toolNames: string[]
 ): ToolDefinition[] {
   if (toolNames.length === 0) return [];
-  const tools = registry.getByNames(toolNames);
+  // Include explicitly whitelisted tools + auto-injected tools
+  const names = [...toolNames];
+  for (const name of AUTO_INJECT_TOOLS) {
+    if (!names.includes(name) && registry.get(name)) names.push(name);
+  }
+  const tools = registry.getByNames(names);
   return tools.map(({ name, description, parameters }) => ({
     name,
     description,
