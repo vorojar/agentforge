@@ -40,7 +40,9 @@ export interface Session {
   id: string;
   agentId: string;
   messageCount?: number;
-  totalTokens?: number;
+  totalTokensIn?: number;
+  totalTokensOut?: number;
+  totalCacheRead?: number;
   createdAt: string;
   updatedAt: string;
 }

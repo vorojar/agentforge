@@ -221,7 +221,9 @@ export class SQLiteAdapter implements DatabaseAdapter {
 
   listSessions(agentId?: string): Session[] {
     const sql = `SELECT s.*, COUNT(m.id) as message_count,
-      COALESCE(SUM(m.tokens_in), 0) + COALESCE(SUM(m.tokens_out), 0) as total_tokens
+      COALESCE(SUM(m.tokens_in), 0) as total_tokens_in,
+      COALESCE(SUM(m.tokens_out), 0) as total_tokens_out,
+      COALESCE(SUM(m.cache_read_tokens), 0) as total_cache_read
       FROM sessions s LEFT JOIN messages m ON m.session_id = s.id
       ${agentId ? "WHERE s.agent_id = ?" : ""}
       GROUP BY s.id ORDER BY s.updated_at DESC`;
@@ -241,7 +243,9 @@ export class SQLiteAdapter implements DatabaseAdapter {
       id: row.id as string,
       agentId: row.agent_id as string,
       messageCount: (row.message_count as number) ?? undefined,
-      totalTokens: (row.total_tokens as number) ?? undefined,
+      totalTokensIn: (row.total_tokens_in as number) ?? undefined,
+      totalTokensOut: (row.total_tokens_out as number) ?? undefined,
+      totalCacheRead: (row.total_cache_read as number) ?? undefined,
       createdAt: row.created_at as string,
       updatedAt: row.updated_at as string,
     };

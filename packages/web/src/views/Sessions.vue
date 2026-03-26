@@ -23,9 +23,15 @@
           {{ row.messageCount ?? 0 }}
         </template>
       </el-table-column>
-      <el-table-column prop="totalTokens" label="Tokens" width="120" align="right">
+      <el-table-column label="Tokens" min-width="200">
         <template #default="{ row }">
-          {{ (row.totalTokens ?? 0).toLocaleString() }}
+          <span>{{ ((row.totalTokensIn ?? 0) + (row.totalTokensOut ?? 0)).toLocaleString() }}</span>
+          <span style="color: #909399; font-size: 12px; margin-left: 4px">
+            ({{ (row.totalTokensIn ?? 0).toLocaleString() }}↑ {{ (row.totalTokensOut ?? 0).toLocaleString() }}↓)
+          </span>
+          <span v-if="row.totalCacheRead > 0" style="color: #67c23a; font-size: 12px; margin-left: 4px">
+            {{ Math.round(row.totalCacheRead / (row.totalTokensIn || 1) * 100) }}% cache
+          </span>
         </template>
       </el-table-column>
       <el-table-column prop="updatedAt" label="Last Activity" min-width="160">
