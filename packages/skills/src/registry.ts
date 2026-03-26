@@ -8,6 +8,10 @@ export class SkillRegistryImpl implements SkillRegistry {
     this.skills.set(skill.name, skill);
   }
 
+  clear(): void {
+    this.skills.clear();
+  }
+
   get(name: string): Skill | undefined {
     return this.skills.get(name);
   }

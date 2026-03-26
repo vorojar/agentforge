@@ -64,6 +64,7 @@ export async function skillRoutes(fastify: FastifyInstance, opts: { ctx: AppCont
     zip.extractAllTo(skillsDir, true);
 
     // Reload skill registry
+    skillRegistry.clear();
     const skills = loadSkillsFromDirectory(skillsDir);
     for (const skill of skills) {
       skillRegistry.register(skill);
@@ -77,6 +78,7 @@ export async function skillRoutes(fastify: FastifyInstance, opts: { ctx: AppCont
 
   // POST /api/skills/reload — Reload all skills from filesystem
   fastify.post("/api/skills/reload", async (_request, reply) => {
+    skillRegistry.clear();
     const skills = loadSkillsFromDirectory(skillsDir);
     for (const skill of skills) {
       skillRegistry.register(skill);
@@ -136,6 +138,7 @@ export async function skillRoutes(fastify: FastifyInstance, opts: { ctx: AppCont
     mkdirSync(join(skillDir, "references"), { recursive: true });
 
     // Reload so the registry picks it up
+    skillRegistry.clear();
     const skills = loadSkillsFromDirectory(skillsDir);
     for (const skill of skills) {
       skillRegistry.register(skill);
@@ -155,8 +158,8 @@ export async function skillRoutes(fastify: FastifyInstance, opts: { ctx: AppCont
     }
     rmSync(skillDir, { recursive: true, force: true });
     // Reload registry
-    const skills = loadSkillsFromDirectory(skillsDir);
-    for (const skill of skills) { skillRegistry.register(skill); }
+    skillRegistry.clear();
+    for (const skill of loadSkillsFromDirectory(skillsDir)) { skillRegistry.register(skill); }
     return { success: true };
   });
 
