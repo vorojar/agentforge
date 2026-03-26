@@ -97,7 +97,13 @@
         <div style="max-width: 700px">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px">
             <h3>Knowledge Base</h3>
-            <el-button type="primary" size="small" @click="showKnowledgeUpload = true">Upload Document</el-button>
+            <el-upload
+              :show-file-list="false"
+              :before-upload="handleKnowledgeFile"
+              accept=".txt,.md,.csv,.json,.log,.html,.xml"
+            >
+              <el-button type="primary" size="small" :loading="knowledgeUploading">Upload File</el-button>
+            </el-upload>
           </div>
           <p style="color: #909399; font-size: 13px; margin-bottom: 16px">
             Upload documents so this agent can answer questions based on their content.
@@ -117,21 +123,6 @@
             </el-table-column>
           </el-table>
 
-          <el-dialog v-model="showKnowledgeUpload" title="Upload Knowledge Document" width="550px">
-            <el-form label-width="100px">
-              <el-form-item label="Name" required>
-                <el-input v-model="knowledgeForm.name" placeholder="e.g. Product FAQ, User Manual" />
-              </el-form-item>
-              <el-form-item label="Content" required>
-                <el-input v-model="knowledgeForm.content" type="textarea" :rows="12"
-                  placeholder="Paste document text content here..." />
-              </el-form-item>
-            </el-form>
-            <template #footer>
-              <el-button @click="showKnowledgeUpload = false">Cancel</el-button>
-              <el-button type="primary" @click="uploadKnowledge" :loading="knowledgeUploading">Upload</el-button>
-            </template>
-          </el-dialog>
         </div>
       </el-tab-pane>
 
@@ -316,9 +307,7 @@ const chatBoxRef = ref<HTMLElement>();
 // Knowledge state
 const knowledgeSources = ref<Array<{ sourceName: string; chunkCount: number }>>([]);
 const knowledgeLoading = ref(false);
-const showKnowledgeUpload = ref(false);
 const knowledgeUploading = ref(false);
-const knowledgeForm = ref({ name: "", content: "" });
 
 async function loadKnowledge() {
   if (!isEdit.value) return;
@@ -330,21 +319,23 @@ async function loadKnowledge() {
   finally { knowledgeLoading.value = false; }
 }
 
-async function uploadKnowledge() {
-  if (!knowledgeForm.value.name || !knowledgeForm.value.content) {
-    ElMessage.warning("Name and content are required");
-    return;
-  }
-  knowledgeUploading.value = true;
-  try {
-    const { data } = await uploadKnowledgeApi(agentId.value, knowledgeForm.value);
-    ElMessage.success(`Uploaded: ${data.chunks} chunks`);
-    showKnowledgeUpload.value = false;
-    knowledgeForm.value = { name: "", content: "" };
-    loadKnowledge();
-  } catch {
-    ElMessage.error("Failed to upload");
-  } finally { knowledgeUploading.value = false; }
+function handleKnowledgeFile(file: File) {
+  const reader = new FileReader();
+  reader.onload = async () => {
+    const content = reader.result as string;
+    if (!content.trim()) { ElMessage.warning("File is empty"); return; }
+    const name = file.name.replace(/\.[^.]+$/, "");
+    knowledgeUploading.value = true;
+    try {
+      const { data } = await uploadKnowledgeApi(agentId.value, { name, content });
+      ElMessage.success(`${file.name} uploaded: ${data.chunks} chunks`);
+      loadKnowledge();
+    } catch {
+      ElMessage.error("Failed to upload");
+    } finally { knowledgeUploading.value = false; }
+  };
+  reader.readAsText(file);
+  return false; // prevent default upload
 }
 
 async function deleteKnowledge(sourceName: string) {
