@@ -1,6 +1,8 @@
 import Database from "better-sqlite3";
 import { v4 as uuidv4 } from "uuid";
 import { createHash, randomBytes } from "node:crypto";
+import { mkdirSync } from "node:fs";
+import { dirname } from "node:path";
 import type {
   DatabaseAdapter,
   AgentConfig,
@@ -29,6 +31,7 @@ export class SQLiteAdapter implements DatabaseAdapter {
   private db: Database.Database;
 
   constructor(path: string) {
+    mkdirSync(dirname(path), { recursive: true });
     this.db = new Database(path);
     this.db.pragma("journal_mode = WAL");
     this.db.pragma("foreign_keys = ON");
