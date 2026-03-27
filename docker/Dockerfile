@@ -1,7 +1,7 @@
 # Stage 1: Build
 FROM swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/node:20-slim AS builder
 
-RUN corepack enable && corepack prepare pnpm@9 --activate
+RUN npm install -g pnpm@9 --registry=https://registry.npmmirror.com
 
 WORKDIR /app
 
@@ -15,7 +15,7 @@ COPY packages/core/package.json packages/core/tsconfig.json packages/core/
 COPY packages/server/package.json packages/server/tsconfig.json packages/server/
 COPY packages/web/package.json packages/web/tsconfig.json packages/web/vite.config.ts packages/web/index.html packages/web/
 
-RUN pnpm install --frozen-lockfile
+RUN pnpm install --frozen-lockfile --registry=https://registry.npmmirror.com
 
 COPY packages/ packages/
 COPY skills/ skills/
@@ -25,7 +25,7 @@ RUN pnpm -r build
 # Stage 2: Production
 FROM swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/node:20-slim AS production
 
-RUN corepack enable && corepack prepare pnpm@9 --activate
+RUN npm install -g pnpm@9 --registry=https://registry.npmmirror.com
 
 WORKDIR /app
 
@@ -39,7 +39,7 @@ COPY packages/core/package.json packages/core/
 COPY packages/server/package.json packages/server/
 COPY packages/web/package.json packages/web/
 
-RUN pnpm install --frozen-lockfile --prod
+RUN pnpm install --frozen-lockfile --prod --registry=https://registry.npmmirror.com
 
 COPY --from=builder /app/packages/types/dist packages/types/dist
 COPY --from=builder /app/packages/database/dist packages/database/dist
