@@ -186,13 +186,72 @@
 
           <h3 style="margin-bottom: 16px">API Documentation</h3>
           <div style="background: #f5f7fa; padding: 16px; border-radius: 4px">
-            <h4 style="margin-bottom: 8px">Chat (non-streaming)</h4>
+
+            <h4 style="margin-bottom: 8px">Request Body</h4>
+            <el-table :data="apiParamDocs" size="small" border style="margin-bottom: 16px; font-size: 12px">
+              <el-table-column prop="field" label="字段" width="120" />
+              <el-table-column prop="type" label="类型" width="120" />
+              <el-table-column prop="required" label="必填" width="60" align="center" />
+              <el-table-column prop="desc" label="说明" />
+            </el-table>
+
+            <h4 style="margin-bottom: 6px; margin-top: 4px">images 字段结构</h4>
+            <el-text type="info" size="small" style="display: block; margin-bottom: 8px">
+              images 是数组，每个元素为以下两种格式之一：
+            </el-text>
+            <el-table :data="imageParamDocs" size="small" border style="margin-bottom: 16px; font-size: 12px">
+              <el-table-column prop="format" label="格式" width="100" />
+              <el-table-column prop="field" label="字段" width="120" />
+              <el-table-column prop="type" label="类型" width="80" />
+              <el-table-column prop="desc" label="说明" />
+            </el-table>
+
+            <el-divider />
+
+            <h4 style="margin-bottom: 8px">Chat (non-streaming) — 纯文本</h4>
             <pre style="font-size: 12px; white-space: pre-wrap; margin: 0">POST {{ baseUrl }}/api/chat
 
 curl -X POST {{ baseUrl }}/api/chat \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_API_KEY" \
   -d '{"message": "Hello", "sessionId": "optional-session-id"}'</pre>
+
+            <el-divider />
+
+            <h4 style="margin-bottom: 8px">Chat (non-streaming) — 携带图片（base64）</h4>
+            <pre style="font-size: 12px; white-space: pre-wrap; margin: 0">POST {{ baseUrl }}/api/chat
+
+curl -X POST {{ baseUrl }}/api/chat \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -d '{
+  "message": "请描述这张图片",
+  "images": [
+    {
+      "type": "base64",
+      "mediaType": "image/jpeg",
+      "data": "/9j/4AAQSkZJRgAB..."
+    }
+  ]
+}'</pre>
+
+            <el-divider />
+
+            <h4 style="margin-bottom: 8px">Chat (non-streaming) — 携带图片（URL）</h4>
+            <pre style="font-size: 12px; white-space: pre-wrap; margin: 0">POST {{ baseUrl }}/api/chat
+
+curl -X POST {{ baseUrl }}/api/chat \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -d '{
+  "message": "请描述这张图片",
+  "images": [
+    {
+      "type": "url",
+      "url": "https://example.com/image.jpg"
+    }
+  ]
+}'</pre>
 
             <el-divider />
 
@@ -203,6 +262,15 @@ curl -X POST {{ baseUrl }}/api/chat/stream \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_API_KEY" \
   -d '{"message": "Hello"}'</pre>
+
+            <el-divider />
+
+            <h4 style="margin-bottom: 8px">Streaming 响应事件格式（SSE）</h4>
+            <el-table :data="sseEventDocs" size="small" border style="font-size: 12px">
+              <el-table-column prop="event" label="event.type" width="140" />
+              <el-table-column prop="data" label="event.data 结构" width="220" />
+              <el-table-column prop="desc" label="说明" />
+            </el-table>
           </div>
         </div>
       </el-tab-pane>
@@ -324,6 +392,29 @@ const apiKeys = ref<Array<{ id: string; keyPrefix: string; name: string; lastUse
 const newlyCreatedKey = ref("");
 const agentUsage = ref({ totalRequests: 0, totalTokensIn: 0, totalTokensOut: 0 });
 const baseUrl = ref(window.location.origin);
+
+// API 文档数据
+const apiParamDocs = [
+  { field: "message", type: "string", required: "否*", desc: "用户消息文本。message 和 images 至少提供一个" },
+  { field: "sessionId", type: "string", required: "否", desc: "会话 ID，用于保持多轮对话上下文。不传则创建新会话" },
+  { field: "images", type: "array", required: "否*", desc: "图片数组，支持 base64 内联或 URL 两种格式。message 和 images 至少提供一个" },
+];
+
+const imageParamDocs = [
+  { format: "base64", field: "type", type: "string", desc: '固定值 "base64"' },
+  { format: "base64", field: "mediaType", type: "string", desc: '图片 MIME 类型，如 "image/jpeg"、"image/png"、"image/webp"、"image/gif"' },
+  { format: "base64", field: "data", type: "string", desc: "图片的 base64 编码字符串（不含 data:xxx;base64, 前缀）" },
+  { format: "url", field: "type", type: "string", desc: '固定值 "url"' },
+  { format: "url", field: "url", type: "string", desc: "图片的完整 HTTP/HTTPS URL，需确保模型可访问" },
+];
+
+const sseEventDocs = [
+  { event: "thinking", data: "string", desc: "AI 思考过程文本片段（流式累积，仅支持思考模式的模型）" },
+  { event: "text", data: "string", desc: "AI 回复正文文本片段（流式累积）" },
+  { event: "tool_call", data: '{ name: string, input: object }', desc: "Agent 调用工具时触发" },
+  { event: "tool_result", data: '{ name: string, result: string }', desc: "工具执行完成后触发" },
+  { event: "done", data: '{ reply, sessionId, usage }', desc: "流式输出结束，包含完整回复、会话 ID 和 token 用量" },
+];
 
 // Test chat state
 interface ChatMessage {
