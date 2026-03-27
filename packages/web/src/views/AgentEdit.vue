@@ -189,26 +189,26 @@
 
             <h4 style="margin-bottom: 8px">Request Body</h4>
             <el-table :data="apiParamDocs" size="small" border style="margin-bottom: 16px; font-size: 12px">
-              <el-table-column prop="field" label="字段" width="120" />
-              <el-table-column prop="type" label="类型" width="120" />
-              <el-table-column prop="required" label="必填" width="60" align="center" />
-              <el-table-column prop="desc" label="说明" />
+              <el-table-column prop="field" label="Field" width="120" />
+              <el-table-column prop="type" label="Type" width="120" />
+              <el-table-column prop="required" label="Required" width="60" align="center" />
+              <el-table-column prop="desc" label="Description" />
             </el-table>
 
-            <h4 style="margin-bottom: 6px; margin-top: 4px">images 字段结构</h4>
+            <h4 style="margin-bottom: 6px; margin-top: 4px">images field structure</h4>
             <el-text type="info" size="small" style="display: block; margin-bottom: 8px">
-              images 是数组，每个元素为以下两种格式之一：
+              images is an array, each element is one of two formats:
             </el-text>
             <el-table :data="imageParamDocs" size="small" border style="margin-bottom: 16px; font-size: 12px">
-              <el-table-column prop="format" label="格式" width="100" />
-              <el-table-column prop="field" label="字段" width="120" />
-              <el-table-column prop="type" label="类型" width="80" />
-              <el-table-column prop="desc" label="说明" />
+              <el-table-column prop="format" label="Format" width="100" />
+              <el-table-column prop="field" label="Field" width="120" />
+              <el-table-column prop="type" label="Type" width="80" />
+              <el-table-column prop="desc" label="Description" />
             </el-table>
 
             <el-divider />
 
-            <h4 style="margin-bottom: 8px">Chat (non-streaming) — 纯文本</h4>
+            <h4 style="margin-bottom: 8px">Chat (non-streaming) — Text only</h4>
             <pre style="font-size: 12px; white-space: pre-wrap; margin: 0">POST {{ baseUrl }}/api/chat
 
 curl -X POST {{ baseUrl }}/api/chat \
@@ -218,14 +218,14 @@ curl -X POST {{ baseUrl }}/api/chat \
 
             <el-divider />
 
-            <h4 style="margin-bottom: 8px">Chat (non-streaming) — 携带图片（base64）</h4>
+            <h4 style="margin-bottom: 8px">Chat (non-streaming) — With image (base64)</h4>
             <pre style="font-size: 12px; white-space: pre-wrap; margin: 0">POST {{ baseUrl }}/api/chat
 
 curl -X POST {{ baseUrl }}/api/chat \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_API_KEY" \
   -d '{
-  "message": "请描述这张图片",
+  "message": "Describe this image",
   "images": [
     {
       "type": "base64",
@@ -237,14 +237,14 @@ curl -X POST {{ baseUrl }}/api/chat \
 
             <el-divider />
 
-            <h4 style="margin-bottom: 8px">Chat (non-streaming) — 携带图片（URL）</h4>
+            <h4 style="margin-bottom: 8px">Chat (non-streaming) — With image (URL)</h4>
             <pre style="font-size: 12px; white-space: pre-wrap; margin: 0">POST {{ baseUrl }}/api/chat
 
 curl -X POST {{ baseUrl }}/api/chat \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_API_KEY" \
   -d '{
-  "message": "请描述这张图片",
+  "message": "Describe this image",
   "images": [
     {
       "type": "url",
@@ -265,11 +265,11 @@ curl -X POST {{ baseUrl }}/api/chat/stream \
 
             <el-divider />
 
-            <h4 style="margin-bottom: 8px">Streaming 响应事件格式（SSE）</h4>
+            <h4 style="margin-bottom: 8px">Streaming response events (SSE)</h4>
             <el-table :data="sseEventDocs" size="small" border style="font-size: 12px">
               <el-table-column prop="event" label="event.type" width="140" />
-              <el-table-column prop="data" label="event.data 结构" width="220" />
-              <el-table-column prop="desc" label="说明" />
+              <el-table-column prop="data" label="event.data structure" width="220" />
+              <el-table-column prop="desc" label="Description" />
             </el-table>
           </div>
         </div>
@@ -282,15 +282,15 @@ curl -X POST {{ baseUrl }}/api/chat/stream \
             <div class="chat-box" ref="chatBoxRef">
               <div v-for="(msg, i) in chatMessages" :key="i" :class="['chat-msg', `chat-msg-${msg.role}`]">
                 <div class="chat-msg-role">{{ msg.role === 'user' ? 'You' : 'Agent' }}</div>
-                <!-- 思考过程折叠展示 -->
+                <!-- Thinking collapse -->
                 <div v-if="msg.thinking" class="chat-msg-thinking">
                   <div class="chat-msg-thinking-header" @click="toggleThinking(i)">
                     <el-icon style="margin-right: 4px"><CaretRight v-if="!msg.thinkingExpanded" /><CaretBottom v-else /></el-icon>
-                    <span>思考过程</span>
+                    <span>Thinking</span>
                   </div>
                   <div v-if="msg.thinkingExpanded" class="chat-msg-thinking-body">{{ msg.thinking }}</div>
                 </div>
-                <!-- 用户消息展示图片 -->
+                <!-- User message images -->
                 <div v-if="msg.images?.length" style="margin-bottom: 6px; display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end">
                   <img v-for="(img, ii) in msg.images" :key="ii" :src="img" style="max-width: 180px; max-height: 180px; border-radius: 6px; object-fit: cover; border: 1px solid #e4e7ed" />
                 </div>
@@ -311,7 +311,7 @@ curl -X POST {{ baseUrl }}/api/chat/stream \
                 <div class="chat-msg-text" style="color: #909399">Thinking...</div>
               </div>
             </div>
-            <!-- 图片预览区 -->
+            <!-- Image preview area -->
             <div v-if="pendingImages.length" style="display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 0; border-top: 1px solid #e4e7ed; margin-top: 4px">
               <div v-for="(img, i) in pendingImages" :key="i" style="position: relative">
                 <img :src="img" style="width: 60px; height: 60px; object-fit: cover; border-radius: 4px; border: 1px solid #e4e7ed" />
@@ -393,27 +393,27 @@ const newlyCreatedKey = ref("");
 const agentUsage = ref({ totalRequests: 0, totalTokensIn: 0, totalTokensOut: 0 });
 const baseUrl = ref(window.location.origin);
 
-// API 文档数据
+// API doc data
 const apiParamDocs = [
-  { field: "message", type: "string", required: "否*", desc: "用户消息文本。message 和 images 至少提供一个" },
-  { field: "sessionId", type: "string", required: "否", desc: "会话 ID，用于保持多轮对话上下文。不传则创建新会话" },
-  { field: "images", type: "array", required: "否*", desc: "图片数组，支持 base64 内联或 URL 两种格式。message 和 images 至少提供一个" },
+  { field: "message", type: "string", required: "No*", desc: "User message text. At least one of message or images is required" },
+  { field: "sessionId", type: "string", required: "No", desc: "Session ID for multi-turn context. Creates new session if omitted" },
+  { field: "images", type: "array", required: "No*", desc: "Image array, supports base64 inline or URL formats. At least one of message or images is required" },
 ];
 
 const imageParamDocs = [
-  { format: "base64", field: "type", type: "string", desc: '固定值 "base64"' },
-  { format: "base64", field: "mediaType", type: "string", desc: '图片 MIME 类型，如 "image/jpeg"、"image/png"、"image/webp"、"image/gif"' },
-  { format: "base64", field: "data", type: "string", desc: "图片的 base64 编码字符串（不含 data:xxx;base64, 前缀）" },
-  { format: "url", field: "type", type: "string", desc: '固定值 "url"' },
-  { format: "url", field: "url", type: "string", desc: "图片的完整 HTTP/HTTPS URL，需确保模型可访问" },
+  { format: "base64", field: "type", type: "string", desc: 'Fixed value "base64"' },
+  { format: "base64", field: "mediaType", type: "string", desc: 'Image MIME type, e.g. "image/jpeg", "image/png", "image/webp", "image/gif"' },
+  { format: "base64", field: "data", type: "string", desc: "Base64 encoded image string (without data:xxx;base64, prefix)" },
+  { format: "url", field: "type", type: "string", desc: 'Fixed value "url"' },
+  { format: "url", field: "url", type: "string", desc: "Full HTTP/HTTPS URL of the image, must be accessible by the model" },
 ];
 
 const sseEventDocs = [
-  { event: "thinking", data: "string", desc: "AI 思考过程文本片段（流式累积，仅支持思考模式的模型）" },
-  { event: "text", data: "string", desc: "AI 回复正文文本片段（流式累积）" },
-  { event: "tool_call", data: '{ name: string, input: object }', desc: "Agent 调用工具时触发" },
-  { event: "tool_result", data: '{ name: string, result: string }', desc: "工具执行完成后触发" },
-  { event: "done", data: '{ reply, sessionId, usage }', desc: "流式输出结束，包含完整回复、会话 ID 和 token 用量" },
+  { event: "thinking", data: "string", desc: "AI thinking process text fragment (streaming, only for thinking-enabled models)" },
+  { event: "text", data: "string", desc: "AI reply text fragment (streaming)" },
+  { event: "tool_call", data: '{ name: string, input: object }', desc: "Triggered when agent calls a tool" },
+  { event: "tool_result", data: '{ name: string, result: string }', desc: "Triggered after tool execution completes" },
+  { event: "done", data: '{ reply, sessionId, usage }', desc: "Stream ended, contains full reply, session ID and token usage" },
 ];
 
 // Test chat state
@@ -613,7 +613,7 @@ function copyKey(key: string) {
   ElMessage.success("Copied to clipboard");
 }
 
-/** 将 base64 dataURL 转换为 {type, data, mediaType} 格式供后端使用 */
+/** Convert base64 dataURL to {type, data, mediaType} for backend */
 function parseImageDataUrl(dataUrl: string): { data: string; mediaType: string } | null {
   const match = dataUrl.match(/^data:(image\/[^;]+);base64,(.+)$/);
   if (!match) return null;
@@ -690,7 +690,7 @@ async function sendChatStream(msg: string, images: string[]) {
       return;
     }
 
-    // 添加一条空的 assistant 消息，流式填充
+    // Add empty assistant message for streaming
     const assistantMsg: ChatMessage = { role: "assistant", text: "", thinking: "", thinkingExpanded: false, toolCalls: [] };
     chatMessages.value.push(assistantMsg);
     const msgIndex = chatMessages.value.length - 1;
@@ -722,7 +722,7 @@ async function sendChatStream(msg: string, images: string[]) {
             chatMessages.value[msgIndex].toolCalls!.push({ name: event.data.name });
           } else if (event.type === "done") {
             chatSessionId.value = event.data.sessionId;
-            // 有思考内容时默认折叠展示
+            // Collapse thinking content by default
             if (chatMessages.value[msgIndex].thinking) {
               chatMessages.value[msgIndex].thinkingExpanded = false;
             }
