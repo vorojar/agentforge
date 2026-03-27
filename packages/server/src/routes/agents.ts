@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import type { AppContext } from "../bootstrap.js";
 import { pipeStreamToSSE } from "../sse.js";
+import type { ImageBlock } from "@agentforge/types";
 
 export async function agentRoutes(fastify: FastifyInstance, opts: { ctx: AppContext }) {
   const { db, agentLoop } = opts.ctx;
@@ -108,11 +109,13 @@ export async function agentRoutes(fastify: FastifyInstance, opts: { ctx: AppCont
     const agent = db.getAgent(id);
     if (!agent) return reply.code(404).send({ error: "Agent not found" });
 
-    const body = request.body as { message: string; sessionId?: string };
-    if (!body.message) return reply.code(400).send({ error: "message is required" });
+    const body = request.body as { message: string; sessionId?: string; images?: Array<{ type: "base64"; data: string; mediaType: string } | { type: "url"; url: string }> };
+    if (!body.message && !body.images?.length) return reply.code(400).send({ error: "message or images is required" });
+
+    const imageBlocks: ImageBlock[] | undefined = body.images?.map(img => ({ type: "image" as const, source: img }));
 
     try {
-      const result = await agentLoop.run(agent, body.message, body.sessionId);
+      const result = await agentLoop.run(agent, body.message ?? "", body.sessionId, imageBlocks);
       return { reply: result.reply, sessionId: result.sessionId, toolCalls: result.toolCalls, usage: result.usage };
     } catch (error) {
       request.log.error(error, "Test chat request failed");
@@ -126,9 +129,11 @@ export async function agentRoutes(fastify: FastifyInstance, opts: { ctx: AppCont
     const agent = db.getAgent(id);
     if (!agent) return reply.code(404).send({ error: "Agent not found" });
 
-    const body = request.body as { message: string; sessionId?: string };
-    if (!body.message) return reply.code(400).send({ error: "message is required" });
+    const body = request.body as { message: string; sessionId?: string; images?: Array<{ type: "base64"; data: string; mediaType: string } | { type: "url"; url: string }> };
+    if (!body.message && !body.images?.length) return reply.code(400).send({ error: "message or images is required" });
 
-    await pipeStreamToSSE(reply, agentLoop.runStream(agent, body.message, body.sessionId), request.log);
+    const imageBlocks: ImageBlock[] | undefined = body.images?.map(img => ({ type: "image" as const, source: img }));
+
+    await pipeStreamToSSE(reply, agentLoop.runStream(agent, body.message ?? "", body.sessionId, imageBlocks), request.log);
   });
 }

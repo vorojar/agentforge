@@ -12,6 +12,7 @@ import type {
 type AnthropicMessageParam = Anthropic.MessageParam;
 type AnthropicContentBlock =
   | Anthropic.TextBlockParam
+  | Anthropic.ImageBlockParam
   | Anthropic.ToolUseBlockParam
   | Anthropic.ToolResultBlockParam;
 type AnthropicTool = Anthropic.Tool;
@@ -26,6 +27,25 @@ function toAnthropicMessages(messages: LLMMessage[]): AnthropicMessageParam[] {
       switch (block.type) {
         case "text":
           return { type: "text" as const, text: block.text };
+        case "image":
+          if (block.source.type === "base64") {
+            return {
+              type: "image" as const,
+              source: {
+                type: "base64" as const,
+                media_type: block.source.mediaType as Anthropic.Base64ImageSource["media_type"],
+                data: block.source.data,
+              },
+            };
+          } else {
+            return {
+              type: "image" as const,
+              source: {
+                type: "url" as const,
+                url: block.source.url,
+              },
+            };
+          }
         case "tool_use":
           return {
             type: "tool_use" as const,
@@ -135,11 +155,12 @@ export class ClaudeProvider implements LLMProvider {
     });
 
     for await (const event of stream) {
-      if (
-        event.type === "content_block_delta" &&
-        event.delta.type === "text_delta"
-      ) {
-        yield { type: "text", text: event.delta.text };
+      if (event.type === "content_block_delta") {
+        if (event.delta.type === "text_delta") {
+          yield { type: "text", text: event.delta.text };
+        } else if (event.delta.type === "thinking_delta") {
+          yield { type: "thinking", text: (event.delta as { type: string; thinking: string }).thinking };
+        }
       }
     }
 

@@ -214,7 +214,19 @@ curl -X POST {{ baseUrl }}/api/chat/stream \
             <div class="chat-box" ref="chatBoxRef">
               <div v-for="(msg, i) in chatMessages" :key="i" :class="['chat-msg', `chat-msg-${msg.role}`]">
                 <div class="chat-msg-role">{{ msg.role === 'user' ? 'You' : 'Agent' }}</div>
-                <div class="chat-msg-text">{{ msg.text }}</div>
+                <!-- 思考过程折叠展示 -->
+                <div v-if="msg.thinking" class="chat-msg-thinking">
+                  <div class="chat-msg-thinking-header" @click="toggleThinking(i)">
+                    <el-icon style="margin-right: 4px"><CaretRight v-if="!msg.thinkingExpanded" /><CaretBottom v-else /></el-icon>
+                    <span>思考过程</span>
+                  </div>
+                  <div v-if="msg.thinkingExpanded" class="chat-msg-thinking-body">{{ msg.thinking }}</div>
+                </div>
+                <!-- 用户消息展示图片 -->
+                <div v-if="msg.images?.length" style="margin-bottom: 6px; display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end">
+                  <img v-for="(img, ii) in msg.images" :key="ii" :src="img" style="max-width: 180px; max-height: 180px; border-radius: 6px; object-fit: cover; border: 1px solid #e4e7ed" />
+                </div>
+                <div class="chat-msg-text" style="white-space: pre-wrap">{{ msg.text }}</div>
                 <div v-if="msg.toolCalls?.length" class="chat-msg-tools">
                   <el-tag v-for="tc in msg.toolCalls" :key="tc.name" size="small" type="warning" style="margin-right: 4px">
                     {{ tc.name }}
@@ -231,8 +243,18 @@ curl -X POST {{ baseUrl }}/api/chat/stream \
                 <div class="chat-msg-text" style="color: #909399">Thinking...</div>
               </div>
             </div>
-            <div style="display: flex; gap: 8px; margin-top: 8px">
-              <el-input v-model="chatInput" placeholder="Type a message..." @keyup.enter="sendChat" :disabled="chatLoading" />
+            <!-- 图片预览区 -->
+            <div v-if="pendingImages.length" style="display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 0; border-top: 1px solid #e4e7ed; margin-top: 4px">
+              <div v-for="(img, i) in pendingImages" :key="i" style="position: relative">
+                <img :src="img" style="width: 60px; height: 60px; object-fit: cover; border-radius: 4px; border: 1px solid #e4e7ed" />
+                <el-icon @click="removePendingImage(i)" style="position: absolute; top: -6px; right: -6px; cursor: pointer; background: #fff; border-radius: 50%; color: #f56c6c; font-size: 16px"><CircleClose /></el-icon>
+              </div>
+            </div>
+            <div style="display: flex; gap: 8px; margin-top: 8px; align-items: flex-end">
+              <el-upload :show-file-list="false" :before-upload="handleChatImage" accept="image/*" style="flex-shrink: 0">
+                <el-button :icon="Picture" circle />
+              </el-upload>
+              <el-input v-model="chatInput" placeholder="Type a message..." @keyup.enter="sendChat" :disabled="chatLoading" style="flex: 1" />
               <el-button type="primary" @click="sendChat" :loading="chatLoading">Send</el-button>
             </div>
           </div>
@@ -254,6 +276,7 @@ import {
   getKnowledgeSources, uploadKnowledgeApi, deleteKnowledgeApi,
 } from "@/api";
 import { ElMessage, ElMessageBox } from "element-plus";
+import { Picture, CaretRight, CaretBottom, CircleClose } from "@element-plus/icons-vue";
 
 const route = useRoute();
 const router = useRouter();
@@ -303,11 +326,39 @@ const agentUsage = ref({ totalRequests: 0, totalTokensIn: 0, totalTokensOut: 0 }
 const baseUrl = ref(window.location.origin);
 
 // Test chat state
-const chatMessages = ref<Array<{ role: string; text: string; toolCalls?: Array<{ name: string }>; usage?: { tokensIn: number; tokensOut: number; durationMs: number } }>>([]);
+interface ChatMessage {
+  role: string;
+  text: string;
+  thinking?: string;
+  thinkingExpanded?: boolean;
+  images?: string[];
+  toolCalls?: Array<{ name: string }>;
+  usage?: { tokensIn: number; tokensOut: number; durationMs: number };
+}
+const chatMessages = ref<ChatMessage[]>([]);
 const chatInput = ref("");
 const chatLoading = ref(false);
 const chatSessionId = ref("");
 const chatBoxRef = ref<HTMLElement>();
+const pendingImages = ref<string[]>([]);
+
+function toggleThinking(index: number) {
+  const msg = chatMessages.value[index];
+  if (msg) msg.thinkingExpanded = !msg.thinkingExpanded;
+}
+
+function removePendingImage(index: number) {
+  pendingImages.value.splice(index, 1);
+}
+
+function handleChatImage(file: File) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    pendingImages.value.push(reader.result as string);
+  };
+  reader.readAsDataURL(file);
+  return false;
+}
 
 // Knowledge state
 const knowledgeSources = ref<Array<{ sourceName: string; chunkCount: number }>>([]);
@@ -471,21 +522,30 @@ function copyKey(key: string) {
   ElMessage.success("Copied to clipboard");
 }
 
+/** 将 base64 dataURL 转换为 {type, data, mediaType} 格式供后端使用 */
+function parseImageDataUrl(dataUrl: string): { data: string; mediaType: string } | null {
+  const match = dataUrl.match(/^data:(image\/[^;]+);base64,(.+)$/);
+  if (!match) return null;
+  return { mediaType: match[1], data: match[2] };
+}
+
 async function sendChat() {
   const msg = chatInput.value.trim();
-  if (!msg) return;
+  const images = [...pendingImages.value];
+  if (!msg && !images.length) return;
 
-  chatMessages.value.push({ role: "user", text: msg });
+  chatMessages.value.push({ role: "user", text: msg, images: images.length ? [...images] : undefined });
   chatInput.value = "";
+  pendingImages.value = [];
   chatLoading.value = true;
 
   await nextTick();
   if (chatBoxRef.value) chatBoxRef.value.scrollTop = chatBoxRef.value.scrollHeight;
 
   if (form.value.streaming) {
-    await sendChatStream(msg);
+    await sendChatStream(msg, images);
   } else {
-    await sendChatNonStream(msg);
+    await sendChatNonStream(msg, images);
   }
 
   chatLoading.value = false;
@@ -493,9 +553,14 @@ async function sendChat() {
   if (chatBoxRef.value) chatBoxRef.value.scrollTop = chatBoxRef.value.scrollHeight;
 }
 
-async function sendChatNonStream(msg: string) {
+async function sendChatNonStream(msg: string, images: string[]) {
   try {
-    const { data } = await testChat(agentId.value, msg, chatSessionId.value || undefined);
+    const imageBlocks = images.map(img => {
+      const parsed = parseImageDataUrl(img);
+      return parsed ? { type: "base64" as const, ...parsed } : null;
+    }).filter(Boolean);
+
+    const { data } = await testChat(agentId.value, msg, chatSessionId.value || undefined, imageBlocks.length ? imageBlocks as Array<{ type: "base64"; data: string; mediaType: string }> : undefined);
     chatSessionId.value = data.sessionId;
     chatMessages.value.push({
       role: "assistant",
@@ -509,15 +574,24 @@ async function sendChatNonStream(msg: string) {
   }
 }
 
-async function sendChatStream(msg: string) {
+async function sendChatStream(msg: string, images: string[]) {
   try {
+    const imageBlocks = images.map(img => {
+      const parsed = parseImageDataUrl(img);
+      return parsed ? { type: "base64" as const, ...parsed } : null;
+    }).filter(Boolean);
+
     const response = await fetch(`/api/agents/${agentId.value}/chat/stream`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "X-Admin-Secret": localStorage.getItem("adminSecret") || "",
       },
-      body: JSON.stringify({ message: msg, sessionId: chatSessionId.value || undefined }),
+      body: JSON.stringify({
+        message: msg,
+        sessionId: chatSessionId.value || undefined,
+        images: imageBlocks.length ? imageBlocks : undefined,
+      }),
     });
 
     if (!response.ok) {
@@ -525,8 +599,8 @@ async function sendChatStream(msg: string) {
       return;
     }
 
-    // Add an empty assistant message that we'll stream into
-    const assistantMsg = { role: "assistant", text: "", toolCalls: [] as Array<{ name: string }> };
+    // 添加一条空的 assistant 消息，流式填充
+    const assistantMsg: ChatMessage = { role: "assistant", text: "", thinking: "", thinkingExpanded: false, toolCalls: [] };
     chatMessages.value.push(assistantMsg);
     const msgIndex = chatMessages.value.length - 1;
 
@@ -549,12 +623,18 @@ async function sendChatStream(msg: string) {
 
         try {
           const event = JSON.parse(payload);
-          if (event.type === "text") {
+          if (event.type === "thinking") {
+            chatMessages.value[msgIndex].thinking = (chatMessages.value[msgIndex].thinking ?? "") + event.data;
+          } else if (event.type === "text") {
             chatMessages.value[msgIndex].text += event.data;
           } else if (event.type === "tool_call") {
             chatMessages.value[msgIndex].toolCalls!.push({ name: event.data.name });
           } else if (event.type === "done") {
             chatSessionId.value = event.data.sessionId;
+            // 有思考内容时默认折叠展示
+            if (chatMessages.value[msgIndex].thinking) {
+              chatMessages.value[msgIndex].thinkingExpanded = false;
+            }
           }
         } catch {
           // skip malformed lines
@@ -607,5 +687,35 @@ onMounted(loadData);
 }
 .chat-msg-tools {
   margin-top: 4px;
+}
+.chat-msg-thinking {
+  margin-bottom: 6px;
+  border: 1px solid #e6a23c;
+  border-radius: 6px;
+  overflow: hidden;
+  font-size: 12px;
+}
+.chat-msg-thinking-header {
+  display: flex;
+  align-items: center;
+  padding: 4px 8px;
+  background: #fdf6ec;
+  color: #e6a23c;
+  cursor: pointer;
+  user-select: none;
+  font-weight: 500;
+}
+.chat-msg-thinking-header:hover {
+  background: #faecd8;
+}
+.chat-msg-thinking-body {
+  padding: 8px;
+  background: #fff;
+  color: #606266;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 300px;
+  overflow-y: auto;
+  line-height: 1.6;
 }
 </style>

@@ -44,6 +44,8 @@ export const createHttpTool = (data: Record<string, unknown>) =>
 export const updateHttpTool = (id: string, data: Record<string, unknown>) =>
   api.put(`/http-tools/${id}`, data);
 export const deleteHttpTool = (id: string) => api.delete(`/http-tools/${id}`);
+export const testHttpTool = (id: string, params: Record<string, string>) =>
+  api.post(`/http-tools/${id}/test`, params);
 
 // --- Skills ---
 export const getSkills = () => api.get("/skills");
@@ -67,8 +69,13 @@ export const chatWithAgent = (apiKey: string, message: string, sessionId?: strin
   });
 
 // --- Test Chat (admin auth, no API key needed) ---
-export const testChat = (agentId: string, message: string, sessionId?: string) =>
-  api.post(`/agents/${agentId}/chat`, { message, sessionId });
+export const testChat = (
+  agentId: string,
+  message: string,
+  sessionId?: string,
+  images?: Array<{ type: "base64"; data: string; mediaType: string }>
+) =>
+  api.post(`/agents/${agentId}/chat`, { message, sessionId, images });
 
 // --- Knowledge ---
 export const getKnowledgeSources = (agentId: string) => api.get(`/agents/${agentId}/knowledge`);

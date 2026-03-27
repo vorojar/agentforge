@@ -59,17 +59,39 @@ function toOpenAIMessages(
         tool_calls: toolCalls.length > 0 ? toolCalls : undefined,
       });
     } else {
-      // user role - may contain tool_result blocks
+      // user role - may contain text, image, tool_result blocks
+      const userParts: OpenAI.Chat.Completions.ChatCompletionContentPart[] = [];
+      const toolResults: OpenAI.Chat.Completions.ChatCompletionToolMessageParam[] = [];
+
       for (const block of msg.content) {
         if (block.type === "text") {
-          result.push({ role: "user", content: block.text });
+          userParts.push({ type: "text", text: block.text });
+        } else if (block.type === "image") {
+          if (block.source.type === "base64") {
+            userParts.push({
+              type: "image_url",
+              image_url: { url: `data:${block.source.mediaType};base64,${block.source.data}` },
+            });
+          } else {
+            userParts.push({
+              type: "image_url",
+              image_url: { url: block.source.url },
+            });
+          }
         } else if (block.type === "tool_result") {
-          result.push({
+          toolResults.push({
             role: "tool",
             tool_call_id: block.toolUseId,
             content: block.content,
           });
         }
+      }
+
+      if (userParts.length > 0) {
+        result.push({ role: "user", content: userParts });
+      }
+      for (const tr of toolResults) {
+        result.push(tr);
       }
     }
   }

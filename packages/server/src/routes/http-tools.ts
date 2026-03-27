@@ -89,4 +89,39 @@ export async function httpToolRoutes(fastify: FastifyInstance, opts: { ctx: AppC
     }
     return { success: true };
   });
+
+  // Test HTTP tool (server-side proxy to avoid CORS/header restrictions in browser)
+  fastify.post("/api/http-tools/:id/test", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const ht = db.getHttpTool(id);
+    if (!ht) return reply.code(404).send({ error: "HTTP tool not found" });
+
+    const params = (request.body as Record<string, string>) ?? {};
+
+    let url = ht.url;
+    let body = ht.bodyTemplate;
+    for (const [key, value] of Object.entries(params)) {
+      const placeholder = `{${key}}`;
+      url = url.replaceAll(placeholder, encodeURIComponent(String(value)));
+      if (body) body = body.replaceAll(placeholder, String(value));
+    }
+
+    const options: RequestInit = {
+      method: ht.method,
+      headers: { ...ht.headers, "Content-Type": "application/json" },
+    };
+    if (["POST", "PUT", "PATCH"].includes(ht.method.toUpperCase()) && body) {
+      options.body = body;
+    }
+
+    try {
+      const response = await fetch(url, options);
+      const text = await response.text();
+      let parsed: unknown;
+      try { parsed = JSON.parse(text); } catch { parsed = text; }
+      return reply.send({ ok: response.ok, status: response.status, body: parsed });
+    } catch (error) {
+      return reply.code(502).send({ ok: false, error: (error as Error).message });
+    }
+  });
 }

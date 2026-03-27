@@ -7,3 +7,4 @@ dist/
 .env
 .turbo/
 .vite/
+skills/

@@ -122,7 +122,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, computed } from "vue";
-import { getTools, getHttpTools, createHttpTool, updateHttpTool, deleteHttpTool } from "@/api";
+import { getTools, getHttpTools, createHttpTool, updateHttpTool, deleteHttpTool, testHttpTool } from "@/api";
 import { ElMessage } from "element-plus";
 
 interface ToolDef {
@@ -209,28 +209,18 @@ async function runTest() {
   testing.value = true;
   testResult.value = null;
 
-  let url = testTool.value.url;
-  let body = testTool.value.bodyTemplate || "";
+  const params: Record<string, string> = {};
   for (const p of testParams.value) {
-    url = url.replaceAll(`{${p.name}}`, encodeURIComponent(p.value));
-    body = body.replaceAll(`{${p.name}}`, p.value);
+    params[p.name] = p.value;
   }
 
   try {
-    const options: RequestInit = {
-      method: testTool.value.method,
-      headers: { ...testTool.value.headers, "Content-Type": "application/json" },
-    };
-    if (["POST", "PUT", "PATCH"].includes(testTool.value.method.toUpperCase()) && body) {
-      options.body = body;
-    }
-    const res = await fetch(url, options);
-    const text = await res.text();
-    testResultError.value = !res.ok;
-    try {
-      testResult.value = JSON.stringify(JSON.parse(text), null, 2);
-    } catch {
-      testResult.value = text;
+    const { data } = await testHttpTool(testTool.value.id, params);
+    testResultError.value = !data.ok;
+    if (data.error) {
+      testResult.value = data.error;
+    } else {
+      testResult.value = typeof data.body === "string" ? data.body : JSON.stringify(data.body, null, 2);
     }
   } catch (e) {
     testResultError.value = true;

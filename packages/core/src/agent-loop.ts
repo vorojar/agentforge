@@ -8,6 +8,7 @@ import type {
   ToolResultBlock,
   ToolUseBlock,
   ContentBlock,
+  ImageBlock,
   SkillRegistry,
   DatabaseAdapter,
   AgentConfig,
@@ -41,6 +42,7 @@ export interface AgentRunResult {
 
 export type StreamEvent =
   | { type: "text"; data: string }
+  | { type: "thinking"; data: string }
   | { type: "tool_call"; data: { name: string; input: Record<string, unknown> } }
   | { type: "tool_result"; data: { name: string; result: string } }
   | { type: "done"; data: { reply: string; sessionId: string; usage: { tokensIn: number; tokensOut: number; durationMs: number } } };
@@ -92,10 +94,20 @@ export class AgentLoop {
     throw new Error("No LLM provider configured");
   }
 
+  /** 将文本和可选的图片块组合成 user 消息内容 */
+  private buildUserContent(message: string, images?: ImageBlock[]): string | ContentBlock[] {
+    if (!images || images.length === 0) return message;
+    const blocks: ContentBlock[] = [];
+    for (const img of images) blocks.push(img);
+    if (message) blocks.push({ type: "text", text: message });
+    return blocks;
+  }
+
   async run(
     agentConfig: AgentConfig,
     message: string,
-    sessionId?: string
+    sessionId?: string,
+    images?: ImageBlock[]
   ): Promise<AgentRunResult> {
     const startTime = Date.now();
     const sid = sessionId ?? this.createSession(agentConfig);
@@ -109,9 +121,10 @@ export class AgentLoop {
       agentConfig.tools
     );
 
-    // Add user message
-    history.push({ role: "user", content: message });
-    this.persistMessage(sid, agentConfig.id, "user", message);
+    // Add user message (with optional images)
+    const userContent = this.buildUserContent(message, images);
+    history.push({ role: "user", content: userContent });
+    this.persistMessage(sid, agentConfig.id, "user", userContent);
 
     let totalTokensIn = 0;
     let totalTokensOut = 0;
@@ -231,7 +244,8 @@ export class AgentLoop {
   async *runStream(
     agentConfig: AgentConfig,
     message: string,
-    sessionId?: string
+    sessionId?: string,
+    images?: ImageBlock[]
   ): AsyncGenerator<StreamEvent> {
     const startTime = Date.now();
     const sid = sessionId ?? this.createSession(agentConfig);
@@ -245,8 +259,9 @@ export class AgentLoop {
       agentConfig.tools
     );
 
-    history.push({ role: "user", content: message });
-    this.persistMessage(sid, agentConfig.id, "user", message);
+    const userContent = this.buildUserContent(message, images);
+    history.push({ role: "user", content: userContent });
+    this.persistMessage(sid, agentConfig.id, "user", userContent);
 
     let totalTokensIn = 0;
     let totalTokensOut = 0;
@@ -274,7 +289,9 @@ export class AgentLoop {
       let currentToolUse: { id: string; name: string; inputJson: string } | null = null;
 
       for await (const chunk of stream) {
-        if (chunk.type === "text" && chunk.text) {
+        if (chunk.type === "thinking" && chunk.text) {
+          yield { type: "thinking", data: chunk.text };
+        } else if (chunk.type === "text" && chunk.text) {
           accumulatedText += chunk.text;
           contentBlocks.push({ type: "text", text: chunk.text });
           yield { type: "text", data: chunk.text };
