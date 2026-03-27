@@ -30,6 +30,7 @@ export function createApp(ctx: AppContext) {
       },
     },
     requestTimeout: 120_000,
+    bodyLimit: 20 * 1024 * 1024, // 20MB for image uploads
   });
 
   fastify.register(cors, {
