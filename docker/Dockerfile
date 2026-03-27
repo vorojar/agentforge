@@ -1,5 +1,5 @@
 # Stage 1: Build
-FROM node:20-slim AS builder
+FROM swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/node:20-slim AS builder
 
 RUN corepack enable && corepack prepare pnpm@9 --activate
 
@@ -23,7 +23,7 @@ COPY skills/ skills/
 RUN pnpm -r build
 
 # Stage 2: Production
-FROM node:20-slim AS production
+FROM swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/node:20-slim AS production
 
 RUN corepack enable && corepack prepare pnpm@9 --activate
 
