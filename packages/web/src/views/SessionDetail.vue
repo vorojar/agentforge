@@ -22,7 +22,15 @@
             </template>
             <template v-else>
               <div v-for="(block, i) in msg.content" :key="i">
-                <div v-if="block.type === 'text'">{{ block.text }}</div>
+                <div v-if="block.type === 'image'" style="margin: 8px 0">
+                  <img v-if="block.source?.type === 'base64'"
+                    :src="`data:${block.source.mediaType};base64,${block.source.data}`"
+                    style="max-width: 300px; max-height: 300px; border-radius: 8px" />
+                  <img v-else-if="block.source?.type === 'url'"
+                    :src="block.source.url"
+                    style="max-width: 300px; max-height: 300px; border-radius: 8px" />
+                </div>
+                <div v-else-if="block.type === 'text'">{{ block.text }}</div>
                 <div v-else-if="block.type === 'tool_use'" class="tool-block">
                   <el-tag type="warning" size="small">Tool: {{ block.name }}</el-tag>
                   <el-collapse>
@@ -65,6 +73,7 @@ interface ContentBlock {
   content?: string;
   isError?: boolean;
   toolUseId?: string;
+  source?: { type: string; data?: string; mediaType?: string; url?: string };
 }
 
 interface ChatMessage {

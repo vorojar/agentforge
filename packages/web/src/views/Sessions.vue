@@ -10,7 +10,7 @@
     <el-table :data="pagedSessions" v-loading="loading" stripe @row-click="openSession" style="cursor: pointer">
       <el-table-column label="Conversation" min-width="250">
         <template #default="{ row }">
-          <span style="color: #303133">{{ truncate(row.firstMessage, 60) || '(empty)' }}</span>
+          <span style="color: #303133">{{ extractPreview(row.firstMessage) }}</span>
         </template>
       </el-table-column>
       <el-table-column prop="agentId" label="Agent" min-width="120">
@@ -68,9 +68,19 @@ import { getSessions, getAgents, deleteSession } from "@/api";
 import { ElMessage } from "element-plus";
 import { formatDateTime } from "@/utils/format";
 
-function truncate(text: string | undefined, max: number): string {
-  if (!text) return "";
-  return text.length > max ? text.slice(0, max) + "..." : text;
+function extractPreview(raw: string | undefined): string {
+  if (!raw) return "(empty)";
+  // Try parsing as JSON array (image + text blocks)
+  if (raw.startsWith("[")) {
+    try {
+      const blocks = JSON.parse(raw) as Array<{ type: string; text?: string }>;
+      const hasImage = blocks.some(b => b.type === "image");
+      const text = blocks.filter(b => b.type === "text").map(b => b.text).join(" ");
+      const preview = text || "(image)";
+      return (hasImage ? "📷 " : "") + (preview.length > 60 ? preview.slice(0, 60) + "..." : preview);
+    } catch { /* not JSON */ }
+  }
+  return raw.length > 60 ? raw.slice(0, 60) + "..." : raw;
 }
 
 const router = useRouter();
