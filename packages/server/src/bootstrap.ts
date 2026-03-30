@@ -1,5 +1,6 @@
-import { resolve } from "node:path";
-import type { DatabaseAdapter, LLMProvider, ProviderConfig } from "@agentforge/types";
+import { resolve, join } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import type { DatabaseAdapter, LLMProvider, ProviderConfig, Tool } from "@agentforge/types";
 import { createDatabase } from "@agentforge/database";
 import { createProvider } from "@agentforge/providers";
 import { ToolRegistryImpl, createBuiltinTools, createHttpTools, createKnowledgeSearchTool, VolcanoEmbedding } from "@agentforge/tools";
@@ -184,6 +185,30 @@ export function bootstrap(config: AppConfig): AppContext {
   }
 
   toolRegistry.register(createKnowledgeSearchTool(db, embedder));
+
+  // read_skill_file tool — lets LLM read supporting files from skill directories on demand
+  const readSkillFileTool: Tool = {
+    name: "read_skill_file",
+    description: "Read a supporting file from a skill directory (e.g. template.md, examples/sample.md, references/api-docs.md). Use when skill instructions reference additional files.",
+    parameters: {
+      type: "object",
+      properties: {
+        skill: { type: "string", description: "Skill name (directory name)" },
+        path: { type: "string", description: "Relative file path (e.g. 'template.md', 'references/data.md')" },
+      },
+      required: ["skill", "path"],
+    },
+    async execute(input) {
+      const skillName = input.skill as string;
+      const filePath = input.path as string;
+      if (filePath.includes("..") || skillName.includes("..")) return { content: "Invalid path", isError: true };
+      if (!filePath.endsWith(".md")) return { content: "Only .md files allowed", isError: true };
+      const fullPath = join(skillsDir, skillName, filePath);
+      if (!existsSync(fullPath)) return { content: `File not found: ${filePath}`, isError: true };
+      return { content: readFileSync(fullPath, "utf-8") };
+    },
+  };
+  toolRegistry.register(readSkillFileTool);
 
   return { db, providerRegistry, toolRegistry, skillRegistry, agentLoop, embedder, config };
 }

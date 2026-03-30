@@ -47,6 +47,11 @@ export function loadSkillsFromDirectory(dir: string): Skill[] {
  * Reads SKILL.md body + template.md + examples/*.md + references/*.md
  * Always reads from disk — supports hot editing without restart.
  */
+/**
+ * Load skill content on demand. Only injects SKILL.md body into prompt.
+ * Supporting files (template, examples, references) are listed so the LLM
+ * can read them on-demand via the read_skill_file tool.
+ */
 export function loadSkillContent(skill: Skill): string {
   if (!skill.dirPath) return skill.content;
 
@@ -58,30 +63,27 @@ export function loadSkillContent(skill: Skill): string {
   const parsed = parseSkillMarkdown(raw);
   let content = parsed.body;
 
-  // Also update name/description in case they changed
+  // Update name/description in case they changed
   if (parsed.name) skill.name = parsed.name;
   if (parsed.description) skill.description = parsed.description;
 
-  // template.md
+  // List available supporting files so LLM knows what it can read
+  const files: string[] = [];
   const templatePath = join(skill.dirPath, "template.md");
-  if (existsSync(templatePath)) {
-    content += `\n\n---\n## Template\n\n${readFileSync(templatePath, "utf-8")}`;
-  }
+  if (existsSync(templatePath)) files.push("template.md");
 
-  // examples/*.md
-  const examplesDir = join(skill.dirPath, "examples");
-  if (existsSync(examplesDir) && statSync(examplesDir).isDirectory()) {
-    for (const ef of readdirSync(examplesDir).filter((f: string) => f.endsWith(".md"))) {
-      content += `\n\n---\n## Example: ${ef.replace(/\.md$/, "")}\n\n${readFileSync(join(examplesDir, ef), "utf-8")}`;
+  for (const dir of ["examples", "references"]) {
+    const dirPath = join(skill.dirPath, dir);
+    if (existsSync(dirPath) && statSync(dirPath).isDirectory()) {
+      for (const f of readdirSync(dirPath).filter((f: string) => f.endsWith(".md"))) {
+        files.push(`${dir}/${f}`);
+      }
     }
   }
 
-  // references/*.md
-  const refsDir = join(skill.dirPath, "references");
-  if (existsSync(refsDir) && statSync(refsDir).isDirectory()) {
-    for (const rf of readdirSync(refsDir).filter((f: string) => f.endsWith(".md"))) {
-      content += `\n\n---\n## Reference: ${rf.replace(/\.md$/, "")}\n\n${readFileSync(join(refsDir, rf), "utf-8")}`;
-    }
+  if (files.length > 0) {
+    content += `\n\n---\n**Available supporting files** (use read_skill_file tool with skill="${skill.id}" to read when needed):\n`;
+    for (const f of files) content += `- ${f}\n`;
   }
 
   return content;

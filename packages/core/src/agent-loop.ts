@@ -59,7 +59,7 @@ function extractText(content: ContentBlock[]): string {
 }
 
 /** Internal tools that are always available (not shown in whitelist UI) */
-const AUTO_INJECT_TOOLS = ["search_knowledge"];
+const AUTO_INJECT_TOOLS = ["search_knowledge", "read_skill_file"];
 
 function getToolDefinitions(
   registry: ToolRegistry,

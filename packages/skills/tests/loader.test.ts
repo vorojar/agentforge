@@ -70,65 +70,41 @@ Body`
     expect(skills).toHaveLength(0);
   });
 
-  it("includes template.md content on demand", () => {
+  it("lists template.md in available files", () => {
     const skillDir = join(testDir, "with-template");
     mkdirSync(skillDir);
-    writeFileSync(
-      join(skillDir, "SKILL.md"),
-      `---
-name: templated
-description: Has template
----
-
-# Main instructions`
-    );
+    writeFileSync(join(skillDir, "SKILL.md"), `---\nname: templated\ndescription: Has template\n---\n\n# Main instructions`);
     writeFileSync(join(skillDir, "template.md"), "Fill in: {{ name }}");
 
     const skills = loadSkillsFromDirectory(testDir);
     const content = loadSkillContent(skills[0]);
     expect(content).toContain("# Main instructions");
-    expect(content).toContain("Fill in: {{ name }}");
+    expect(content).toContain("template.md");
+    expect(content).toContain("read_skill_file");
   });
 
-  it("includes examples/ content on demand", () => {
+  it("lists examples/ files in available files", () => {
     const skillDir = join(testDir, "with-examples");
     mkdirSync(skillDir);
     mkdirSync(join(skillDir, "examples"));
-    writeFileSync(
-      join(skillDir, "SKILL.md"),
-      `---
-name: exampled
-description: Has examples
----
-
-# Instructions`
-    );
+    writeFileSync(join(skillDir, "SKILL.md"), `---\nname: exampled\ndescription: Has examples\n---\n\n# Instructions`);
     writeFileSync(join(skillDir, "examples", "sample.md"), "Example output here");
 
     const skills = loadSkillsFromDirectory(testDir);
     const content = loadSkillContent(skills[0]);
-    expect(content).toContain("Example output here");
+    expect(content).toContain("examples/sample.md");
   });
 
-  it("includes references/ content on demand", () => {
+  it("lists references/ files in available files", () => {
     const skillDir = join(testDir, "with-refs");
     mkdirSync(skillDir);
     mkdirSync(join(skillDir, "references"));
-    writeFileSync(
-      join(skillDir, "SKILL.md"),
-      `---
-name: referenced
-description: Has references
----
-
-# Instructions`
-    );
+    writeFileSync(join(skillDir, "SKILL.md"), `---\nname: referenced\ndescription: Has references\n---\n\n# Instructions`);
     writeFileSync(join(skillDir, "references", "api-docs.md"), "API reference content");
 
     const skills = loadSkillsFromDirectory(testDir);
     const content = loadSkillContent(skills[0]);
-    expect(content).toContain("API reference content");
-    expect(content).toContain("## Reference: api-docs");
+    expect(content).toContain("references/api-docs.md");
   });
 
   it("returns empty array for non-existent directory", () => {
