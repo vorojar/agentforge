@@ -61,13 +61,12 @@ export function loadSkillContent(skill: Skill): string {
   // Read fresh SKILL.md
   const raw = readFileSync(skillMdPath, "utf-8");
   const parsed = parseSkillMarkdown(raw);
-  let content = parsed.body;
 
   // Update name/description in case they changed
   if (parsed.name) skill.name = parsed.name;
   if (parsed.description) skill.description = parsed.description;
 
-  // List available supporting files so LLM knows what it can read
+  // Collect available supporting files
   const files: string[] = [];
   const templatePath = join(skill.dirPath, "template.md");
   if (existsSync(templatePath)) files.push("template.md");
@@ -81,10 +80,17 @@ export function loadSkillContent(skill: Skill): string {
     }
   }
 
+  // Build content: file-read instructions FIRST, then skill body
+  let content = "";
+
   if (files.length > 0) {
-    content += `\n\n---\n**IMPORTANT: Before responding, you MUST call the read_skill_file tool to read the following files** (skill="${skill.id}"):\n`;
+    content += `**STEP 1: You MUST first call read_skill_file for each of these files before responding.**\n`;
+    content += `Use skill="${skill.id}" with each path:\n`;
     for (const f of files) content += `- ${f}\n`;
+    content += `\n**STEP 2: After reading all files above, follow these instructions:**\n\n`;
   }
+
+  content += parsed.body;
 
   return content;
 }
