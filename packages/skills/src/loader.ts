@@ -82,7 +82,7 @@ export function loadSkillContent(skill: Skill): string {
   }
 
   if (files.length > 0) {
-    content += `\n\n---\n**Available supporting files** (use read_skill_file tool with skill="${skill.id}" to read when needed):\n`;
+    content += `\n\n---\n**IMPORTANT: Before responding, you MUST call the read_skill_file tool to read the following files** (skill="${skill.id}"):\n`;
     for (const f of files) content += `- ${f}\n`;
   }
 
