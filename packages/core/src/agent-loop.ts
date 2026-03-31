@@ -213,6 +213,12 @@ export class AgentLoop {
         accumulatedText += extractText(response.content);
         continue;
       }
+
+      // Unknown stopReason — persist what we have and break to avoid silent loops
+      history.push({ role: "assistant", content: response.content });
+      this.persistMessage(sid, agentConfig.id, "assistant", response.content);
+      accumulatedText += extractText(response.content);
+      break;
     }
 
     const durationMs = Date.now() - startTime;
@@ -382,6 +388,11 @@ export class AgentLoop {
         this.persistMessage(sid, agentConfig.id, "user", resultBlocks);
         continue;
       }
+
+      // Unknown stopReason — persist and break
+      history.push({ role: "assistant", content: mergedBlocks });
+      this.persistMessage(sid, agentConfig.id, "assistant", mergedBlocks);
+      break;
     }
 
     const durationMs = Date.now() - startTime;

@@ -591,9 +591,11 @@ export class SQLiteAdapter implements DatabaseAdapter {
   }
 
   searchKnowledge(agentId: string, query: string, limit: number = 5, queryEmbedding?: number[]): Array<{ sourceName: string; content: string; score: number }> {
+    // Only load embeddings when we have a query vector — avoids loading MBs of blob data for keyword-only search
+    const selectCols = queryEmbedding ? "source_name, content, embedding" : "source_name, content";
     const rows = this.db.prepare(
-      "SELECT source_name, content, embedding FROM knowledge_chunks WHERE agent_id = ? ORDER BY chunk_index ASC"
-    ).all(agentId) as Array<{ source_name: string; content: string; embedding: Buffer | null }>;
+      `SELECT ${selectCols} FROM knowledge_chunks WHERE agent_id = ? ORDER BY chunk_index ASC`
+    ).all(agentId) as Array<{ source_name: string; content: string; embedding?: Buffer | null }>;
 
     if (rows.length === 0) return [];
 

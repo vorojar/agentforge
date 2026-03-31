@@ -22,7 +22,7 @@ export class ContextBuilder {
       this.config.skills.length > 0
     ) {
       const match = this.skillRegistry.match(userInput);
-      if (match && match.score > 0) {
+      if (match && match.score >= 0.15) {
         // Lazy load full content from filesystem (supports hot editing)
         const content = loadSkillContent(match.skill);
         systemPrompt += `\n\n## Skill: ${match.skill.name}\n${content}`;

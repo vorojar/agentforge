@@ -201,9 +201,10 @@ export function bootstrap(config: AppConfig): AppContext {
     async execute(input) {
       const skillName = input.skill as string;
       const filePath = input.path as string;
-      if (filePath.includes("..") || skillName.includes("..")) return { content: "Invalid path", isError: true };
       if (!filePath.endsWith(".md")) return { content: "Only .md files allowed", isError: true };
-      const fullPath = join(skillsDir, skillName, filePath);
+      const fullPath = resolve(join(skillsDir, skillName, filePath));
+      // Security: verify resolved path stays inside skills directory
+      if (!fullPath.startsWith(resolve(skillsDir))) return { content: "Access denied", isError: true };
       if (!existsSync(fullPath)) return { content: `File not found: ${filePath}`, isError: true };
       return { content: readFileSync(fullPath, "utf-8") };
     },

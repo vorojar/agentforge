@@ -60,7 +60,13 @@ export async function skillRoutes(fastify: FastifyInstance, opts: { ctx: AppCont
       });
     }
 
-    // Extract to skills directory
+    // Validate all entries are inside skills directory (prevent path traversal)
+    for (const entry of entries) {
+      const target = resolve(join(skillsDir, entry.entryName));
+      if (!target.startsWith(resolve(skillsDir))) {
+        return reply.code(400).send({ error: "Zip contains path traversal" });
+      }
+    }
     zip.extractAllTo(skillsDir, true);
 
     // Reload skill registry
@@ -205,8 +211,8 @@ export async function skillRoutes(fastify: FastifyInstance, opts: { ctx: AppCont
 
     // Reload skills if SKILL.md was changed
     if (filePath === "SKILL.md") {
-      const skills = loadSkillsFromDirectory(skillsDir);
-      for (const skill of skills) {
+      skillRegistry.clear();
+      for (const skill of loadSkillsFromDirectory(skillsDir)) {
         skillRegistry.register(skill);
       }
     }
