@@ -201,6 +201,12 @@ export class OpenAIProvider implements LLMProvider {
       const delta = chunk.choices[0]?.delta;
       finishReason = chunk.choices[0]?.finish_reason ?? finishReason;
 
+      // Reasoning/thinking content (DeepSeek R1, etc.)
+      const deltaAny = delta as Record<string, unknown> | undefined;
+      if (deltaAny?.reasoning_content) {
+        yield { type: "thinking", text: deltaAny.reasoning_content as string };
+      }
+
       if (delta?.content) {
         yield { type: "text", text: delta.content };
       }
