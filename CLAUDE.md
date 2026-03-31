@@ -64,6 +64,9 @@ Every change must be self-verified: build, restart, test, confirm working. Never
 
 ## Workflow Rules
 
+### Audit findings: fix all or get explicit approval to skip
+When a code review or audit produces findings, every item must be either fixed or explicitly approved by the user to skip. Do not silently skip findings by saying "投入产出比低" — list skipped items and get confirmation. Partially fixing an audit (e.g. fixing stats N+1 but not agents N+1) is worse than not auditing at all because it creates false confidence.
+
 ### CHANGELOG.md maintenance
 Every feature commit, bug fix, or breaking change MUST update CHANGELOG.md in the same commit. Categorize under Added/Changed/Fixed/Removed/Security. Group related changes under a version heading. Do not batch — update as you go.
 
