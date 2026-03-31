@@ -277,7 +277,7 @@ curl -X POST {{ baseUrl }}/api/chat/stream \
 
       <!-- Tab 4: Test Chat -->
       <el-tab-pane label="Test Chat" name="chat" :disabled="!isEdit">
-        <div style="max-width: 700px">
+        <div>
           <div>
             <div class="chat-box" ref="chatBoxRef">
               <div v-for="(msg, i) in chatMessages" :key="i" :class="['chat-msg', `chat-msg-${msg.role}`]">
@@ -324,6 +324,7 @@ curl -X POST {{ baseUrl }}/api/chat/stream \
               </el-upload>
               <el-input v-model="chatInput" placeholder="Type a message..." @keyup.enter="sendChat" :disabled="chatLoading" style="flex: 1" />
               <el-button type="primary" @click="sendChat" :loading="chatLoading">Send</el-button>
+              <el-button @click="newChat" size="small">New Chat</el-button>
             </div>
           </div>
         </div>
@@ -342,6 +343,7 @@ import {
   createApiKey, deleteApiKey,
   testChat, getAgentStats,
   getKnowledgeSources, uploadKnowledgeApi, deleteKnowledgeApi,
+  getSessionMessages,
 } from "@/api";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { Picture, CaretRight, CaretBottom, CircleClose } from "@element-plus/icons-vue";
@@ -436,6 +438,68 @@ const pendingImages = ref<string[]>([]);
 function toggleThinking(index: number) {
   const msg = chatMessages.value[index];
   if (msg) msg.thinkingExpanded = !msg.thinkingExpanded;
+}
+
+function newChat() {
+  chatMessages.value = [];
+  chatSessionId.value = "";
+  chatInput.value = "";
+  pendingImages.value = [];
+  if (agentId.value) {
+    localStorage.removeItem('test-chat-session-' + agentId.value);
+  }
+}
+
+async function loadChatHistory() {
+  if (!agentId.value) return;
+  const savedSessionId = localStorage.getItem('test-chat-session-' + agentId.value);
+  if (!savedSessionId) return;
+  chatSessionId.value = savedSessionId;
+  try {
+    const { data } = await getSessionMessages(savedSessionId);
+    chatMessages.value = (data as Array<{ role: string; content: string | unknown[] }>).map((m) => {
+      const blocks = typeof m.content === 'string' ? tryParseBlocks(m.content) : m.content as Array<{ type: string; text?: string; name?: string; input?: Record<string, unknown> }>;
+      if (m.role === 'user') {
+        const text = typeof m.content === 'string' && !Array.isArray(blocks)
+          ? m.content
+          : (blocks as Array<{ type: string; text?: string }>).filter((b) => b.type === 'text').map((b) => b.text ?? '').join('');
+        return { role: 'user', text } as ChatMessage;
+      }
+      // assistant
+      const textParts: string[] = [];
+      const thinkingParts: string[] = [];
+      const toolCalls: Array<{ name: string }> = [];
+      if (typeof m.content === 'string' && !Array.isArray(blocks)) {
+        textParts.push(m.content);
+      } else {
+        for (const b of blocks as Array<{ type: string; text?: string; name?: string }>) {
+          if (b.type === 'thinking' && b.text) thinkingParts.push(b.text);
+          else if (b.type === 'text' && b.text) textParts.push(b.text);
+          else if (b.type === 'tool_use' && b.name) toolCalls.push({ name: b.name });
+        }
+      }
+      return {
+        role: 'assistant',
+        text: textParts.join(''),
+        thinking: thinkingParts.join('') || undefined,
+        thinkingExpanded: false,
+        toolCalls: toolCalls.length ? toolCalls : undefined,
+      } as ChatMessage;
+    });
+  } catch {
+    // session may no longer exist, clear stale reference
+    chatSessionId.value = '';
+    localStorage.removeItem('test-chat-session-' + agentId.value);
+  }
+}
+
+function tryParseBlocks(s: string): string | Array<{ type: string; text?: string; name?: string; input?: Record<string, unknown> }> {
+  try {
+    const parsed = JSON.parse(s);
+    return Array.isArray(parsed) ? parsed : s;
+  } catch {
+    return s;
+  }
 }
 
 function removePendingImage(index: number) {
@@ -653,6 +717,9 @@ async function sendChatNonStream(msg: string, images: string[]) {
 
     const { data } = await testChat(agentId.value, msg, chatSessionId.value || undefined, imageBlocks.length ? imageBlocks as Array<{ type: "base64"; data: string; mediaType: string }> : undefined);
     chatSessionId.value = data.sessionId;
+    if (agentId.value && data.sessionId) {
+      localStorage.setItem('test-chat-session-' + agentId.value, data.sessionId);
+    }
     chatMessages.value.push({
       role: "assistant",
       text: data.reply,
@@ -722,6 +789,9 @@ async function sendChatStream(msg: string, images: string[]) {
             chatMessages.value[msgIndex].toolCalls!.push({ name: event.data.name });
           } else if (event.type === "done") {
             chatSessionId.value = event.data.sessionId;
+            if (agentId.value && event.data.sessionId) {
+              localStorage.setItem('test-chat-session-' + agentId.value, event.data.sessionId);
+            }
             // Collapse thinking content by default
             if (chatMessages.value[msgIndex].thinking) {
               chatMessages.value[msgIndex].thinkingExpanded = false;
@@ -740,12 +810,16 @@ async function sendChatStream(msg: string, images: string[]) {
   }
 }
 
-onMounted(loadData);
+onMounted(() => {
+  loadData();
+  loadChatHistory();
+});
 </script>
 
 <style scoped>
 .chat-box {
-  height: 400px;
+  height: calc(100vh - 300px);
+  min-height: 400px;
   overflow-y: auto;
   border: 1px solid #e4e7ed;
   border-radius: 4px;

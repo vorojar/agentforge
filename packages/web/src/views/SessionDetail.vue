@@ -30,6 +30,12 @@
                     :src="block.source.url"
                     style="max-width: 300px; max-height: 300px; border-radius: 8px" />
                 </div>
+                <details v-else-if="block.type === 'thinking'" class="thinking-block">
+                  <summary>
+                    <span style="color: #909399; font-size: 12px">💭 Thinking</span>
+                  </summary>
+                  <div style="color: #909399; font-size: 13px; padding: 8px; background: #f9f9f9; border-radius: 4px; margin-top: 4px; white-space: pre-wrap">{{ block.text }}</div>
+                </details>
                 <div v-else-if="block.type === 'text'">{{ block.text }}</div>
                 <details v-else-if="block.type === 'tool_use'" class="tool-inline">
                   <summary>

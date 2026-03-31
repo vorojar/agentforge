@@ -293,9 +293,11 @@ export class AgentLoop {
       let stopReason: string | undefined;
       const contentBlocks: ContentBlock[] = [];
       let currentToolUse: { id: string; name: string; inputJson: string } | null = null;
+      let thinkingText = "";
 
       for await (const chunk of stream) {
         if (chunk.type === "thinking" && chunk.text) {
+          thinkingText += chunk.text;
           yield { type: "thinking", data: chunk.text };
         } else if (chunk.type === "text" && chunk.text) {
           accumulatedText += chunk.text;
@@ -335,6 +337,9 @@ export class AgentLoop {
 
       // Merge consecutive text chunks into a single text block for storage
       const mergedBlocks: ContentBlock[] = [];
+      if (thinkingText) {
+        mergedBlocks.push({ type: "thinking", text: thinkingText });
+      }
       let pendingText = "";
       for (const block of contentBlocks) {
         if (block.type === "text") {

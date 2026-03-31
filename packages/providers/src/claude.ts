@@ -23,45 +23,47 @@ function toAnthropicMessages(messages: LLMMessage[]): AnthropicMessageParam[] {
       return { role: msg.role, content: msg.content };
     }
 
-    const blocks: AnthropicContentBlock[] = msg.content.map((block) => {
-      switch (block.type) {
-        case "text":
-          return { type: "text" as const, text: block.text };
-        case "image":
-          if (block.source.type === "base64") {
+    const blocks: AnthropicContentBlock[] = msg.content
+      .filter((block) => block.type !== "thinking")
+      .map((block) => {
+        switch (block.type) {
+          case "text":
+            return { type: "text" as const, text: block.text };
+          case "image":
+            if (block.source.type === "base64") {
+              return {
+                type: "image" as const,
+                source: {
+                  type: "base64" as const,
+                  media_type: block.source.mediaType as Anthropic.Base64ImageSource["media_type"],
+                  data: block.source.data,
+                },
+              };
+            } else {
+              return {
+                type: "image" as const,
+                source: {
+                  type: "url" as const,
+                  url: block.source.url,
+                },
+              };
+            }
+          case "tool_use":
             return {
-              type: "image" as const,
-              source: {
-                type: "base64" as const,
-                media_type: block.source.mediaType as Anthropic.Base64ImageSource["media_type"],
-                data: block.source.data,
-              },
+              type: "tool_use" as const,
+              id: block.id,
+              name: block.name,
+              input: block.input,
             };
-          } else {
+          case "tool_result":
             return {
-              type: "image" as const,
-              source: {
-                type: "url" as const,
-                url: block.source.url,
-              },
+              type: "tool_result" as const,
+              tool_use_id: block.toolUseId,
+              content: block.content,
+              is_error: block.isError,
             };
-          }
-        case "tool_use":
-          return {
-            type: "tool_use" as const,
-            id: block.id,
-            name: block.name,
-            input: block.input,
-          };
-        case "tool_result":
-          return {
-            type: "tool_result" as const,
-            tool_use_id: block.toolUseId,
-            content: block.content,
-            is_error: block.isError,
-          };
-      }
-    });
+        }
+      });
 
     return { role: msg.role, content: blocks };
   });

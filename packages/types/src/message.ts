@@ -1,8 +1,14 @@
 export type ContentBlock =
+  | ThinkingBlock
   | TextBlock
   | ImageBlock
   | ToolUseBlock
   | ToolResultBlock;
+
+export interface ThinkingBlock {
+  type: "thinking";
+  text: string;
+}
 
 export interface TextBlock {
   type: "text";
