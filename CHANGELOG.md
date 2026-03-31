@@ -2,6 +2,30 @@
 
 All notable changes to AgentForge are documented in this file.
 
+## [0.6.0] - 2026-03-31
+
+### Added
+- **Skill system perfected** — Lazy loading (name+description at startup), on-demand file reading via `read_skill_file` tool, CJK bigram matcher, structured STEP 1/STEP 2 injection
+- **7 skills** — code-review, customer-service, medical-edu-consultant, meeting-summary, data-analysis, email-writer, troubleshooter (all with template + examples + references)
+- **OpenAI thinking support** — `reasoning_content` field parsed for DeepSeek R1 and similar models
+- **CLAUDE.md** — Project-level architecture guide, design decisions, and engineering lessons
+
+### Changed
+- **Session Detail** — Tool calls displayed as compact inline tags with preview (click to expand), replacing bulky collapse blocks
+- **Chunker** — Chinese sentence breaks (。！？) now respected alongside English ". "
+- **Skill match threshold** — Raised from >0 to >=0.15 to reduce false matches
+- **searchKnowledge** — Skips loading embedding blobs for keyword-only queries (memory optimization)
+
+### Fixed
+- Skill registry clear on SKILL.md edit (prevents duplicate entries on name change)
+- `read_skill_file` path traversal check uses `resolve()` containment (security)
+- ZIP import validates all entries inside skillsDir before extraction (zip slip prevention)
+- Agent loop: unknown stopReason now persists messages and breaks (prevents silent data loss)
+
+### Security
+- Body limit increased to 20MB for image uploads
+- All Chinese UI text translated to English
+
 ## [0.5.0] - 2026-03-28
 
 ### Added
