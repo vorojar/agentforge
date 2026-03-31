@@ -189,6 +189,7 @@ export class OpenAIProvider implements LLMProvider {
       max_tokens: request.maxTokens,
       temperature: request.temperature,
       stream: true,
+      stream_options: { include_usage: true },
     });
 
     const toolCalls = new Map<
@@ -196,6 +197,8 @@ export class OpenAIProvider implements LLMProvider {
       { id: string; name: string; arguments: string }
     >();
     let finishReason: string | null = null;
+    let usageTokensIn = 0;
+    let usageTokensOut = 0;
 
     for await (const chunk of stream) {
       const delta = chunk.choices[0]?.delta;
@@ -209,6 +212,12 @@ export class OpenAIProvider implements LLMProvider {
 
       if (delta?.content) {
         yield { type: "text", text: delta.content };
+      }
+
+      // Capture usage from final chunk
+      if (chunk.usage) {
+        usageTokensIn = chunk.usage.prompt_tokens ?? 0;
+        usageTokensOut = chunk.usage.completion_tokens ?? 0;
       }
 
       if (delta?.tool_calls) {
@@ -240,6 +249,7 @@ export class OpenAIProvider implements LLMProvider {
     yield {
       type: "done",
       stopReason: mapFinishReason(finishReason),
+      usage: { tokensIn: usageTokensIn, tokensOut: usageTokensOut },
     };
   }
 }
