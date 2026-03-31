@@ -324,7 +324,7 @@ curl -X POST {{ baseUrl }}/api/chat/stream \
               </el-upload>
               <el-input v-model="chatInput" placeholder="Type a message..." @keyup.enter="sendChat" :disabled="chatLoading" style="flex: 1" />
               <el-button type="primary" @click="sendChat" :loading="chatLoading">Send</el-button>
-              <el-button @click="newChat" size="small">New Chat</el-button>
+              <el-button @click="newChat">New Chat</el-button>
             </div>
           </div>
         </div>
