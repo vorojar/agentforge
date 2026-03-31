@@ -4,10 +4,10 @@ import type { AppContext } from "../bootstrap.js";
 export async function sessionRoutes(fastify: FastifyInstance, opts: { ctx: AppContext }) {
   const { db } = opts.ctx;
 
-  // List sessions
+  // List sessions (server-side pagination)
   fastify.get("/api/sessions", async (request) => {
-    const { agentId } = request.query as { agentId?: string };
-    return db.listSessions(agentId);
+    const { agentId, limit, offset } = request.query as { agentId?: string; limit?: string; offset?: string };
+    return db.listSessions(agentId, limit ? parseInt(limit) : 50, offset ? parseInt(offset) : 0);
   });
 
   // Get session detail

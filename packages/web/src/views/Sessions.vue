@@ -7,7 +7,7 @@
       </el-select>
     </div>
 
-    <el-table :data="pagedSessions" v-loading="loading" stripe @row-click="openSession" style="cursor: pointer">
+    <el-table :data="sessions" v-loading="loading" stripe @row-click="openSession" style="cursor: pointer">
       <el-table-column label="Conversation" min-width="250">
         <template #default="{ row }">
           <span style="color: #303133">{{ extractPreview(row.firstMessage) }}</span>
@@ -50,19 +50,14 @@
       </el-table-column>
     </el-table>
 
-    <div style="display: flex; justify-content: flex-end; margin-top: 16px" v-if="allSessions.length > pageSize">
-      <el-pagination
-        v-model:current-page="currentPage"
-        :page-size="pageSize"
-        :total="allSessions.length"
-        layout="total, prev, pager, next"
-      />
+    <div style="display: flex; justify-content: flex-end; margin-top: 16px" v-if="sessions.length >= pageSize">
+      <el-button @click="loadMore" :loading="loading">Load More</el-button>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from "vue";
+import { ref, onMounted } from "vue";
 import { useRouter } from "vue-router";
 import { getSessions, getAgents, deleteSession } from "@/api";
 import { ElMessage } from "element-plus";
@@ -84,29 +79,23 @@ function extractPreview(raw: string | undefined): string {
 }
 
 const router = useRouter();
-const allSessions = ref<Array<Record<string, unknown>>>([]);
+const sessions = ref<Array<Record<string, unknown>>>([]);
 const agents = ref<Array<{ id: string; name: string }>>([]);
 const agentMap = ref<Record<string, string>>({});
 const loading = ref(false);
 const filterAgent = ref("");
-const currentPage = ref(1);
 const pageSize = 20;
 
-const pagedSessions = computed(() => {
-  const start = (currentPage.value - 1) * pageSize;
-  return allSessions.value.slice(start, start + pageSize);
-});
-
 function onFilterChange() {
-  currentPage.value = 1;
+  sessions.value = [];
   loadSessions();
 }
 
 async function loadSessions() {
   loading.value = true;
   try {
-    const { data } = await getSessions(filterAgent.value || undefined);
-    allSessions.value = data;
+    const { data } = await getSessions(filterAgent.value || undefined, pageSize, 0);
+    sessions.value = data;
   } catch {
     ElMessage.error("Failed to load sessions");
   } finally {
@@ -121,6 +110,18 @@ async function loadAgents() {
     agentMap.value = Object.fromEntries(data.map((a: { id: string; name: string }) => [a.id, a.name]));
   } catch {
     // ignore
+  }
+}
+
+async function loadMore() {
+  loading.value = true;
+  try {
+    const { data } = await getSessions(filterAgent.value || undefined, pageSize, sessions.value.length);
+    sessions.value.push(...data);
+  } catch {
+    ElMessage.error("Failed to load more");
+  } finally {
+    loading.value = false;
   }
 }
 

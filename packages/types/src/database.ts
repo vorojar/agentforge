@@ -56,7 +56,7 @@ export interface DatabaseAdapter {
   // Sessions
   createSession(agentId: string): Session;
   getSession(id: string): Session | null;
-  listSessions(agentId?: string): Session[];
+  listSessions(agentId?: string, limit?: number, offset?: number): Session[];
   deleteSession(id: string): boolean;
 
   // Messages

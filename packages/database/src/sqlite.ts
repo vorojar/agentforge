@@ -222,7 +222,7 @@ export class SQLiteAdapter implements DatabaseAdapter {
     return this.mapSession(row);
   }
 
-  listSessions(agentId?: string): Session[] {
+  listSessions(agentId?: string, limit: number = 50, offset: number = 0): Session[] {
     const sql = `SELECT s.*, COUNT(m.id) as message_count,
       COALESCE(SUM(m.tokens_in), 0) as total_tokens_in,
       COALESCE(SUM(m.tokens_out), 0) as total_tokens_out,
@@ -230,10 +230,10 @@ export class SQLiteAdapter implements DatabaseAdapter {
       (SELECT content FROM messages WHERE session_id = s.id AND role = 'user' ORDER BY created_at ASC LIMIT 1) as first_message
       FROM sessions s LEFT JOIN messages m ON m.session_id = s.id
       ${agentId ? "WHERE s.agent_id = ?" : ""}
-      GROUP BY s.id ORDER BY s.updated_at DESC`;
-    const rows = (agentId
-      ? this.db.prepare(sql).all(agentId)
-      : this.db.prepare(sql).all()) as Record<string, unknown>[];
+      GROUP BY s.id ORDER BY s.updated_at DESC
+      LIMIT ? OFFSET ?`;
+    const params = agentId ? [agentId, limit, offset] : [limit, offset];
+    const rows = this.db.prepare(sql).all(...params) as Record<string, unknown>[];
     return rows.map((r) => this.mapSession(r));
   }
 

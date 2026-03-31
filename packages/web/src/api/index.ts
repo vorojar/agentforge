@@ -85,8 +85,8 @@ export const deleteKnowledgeApi = (agentId: string, sourceName: string) =>
   api.delete(`/agents/${agentId}/knowledge/${encodeURIComponent(sourceName)}`);
 
 // --- Sessions ---
-export const getSessions = (agentId?: string) =>
-  api.get("/sessions", { params: agentId ? { agentId } : {} });
+export const getSessions = (agentId?: string, limit?: number, offset?: number) =>
+  api.get("/sessions", { params: { ...(agentId ? { agentId } : {}), ...(limit ? { limit } : {}), ...(offset ? { offset } : {}) } });
 export const getSession = (id: string) => api.get(`/sessions/${id}`);
 export const getSessionMessages = (id: string) =>
   api.get(`/sessions/${id}/messages`);
