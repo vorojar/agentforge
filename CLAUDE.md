@@ -62,6 +62,11 @@ Every change must be self-verified: build, restart, test, confirm working. Never
 ### Don't kill all Node.js processes
 `taskkill /IM node.exe` kills Claude Code itself. Always kill by specific PID found via `netstat -ano | grep :PORT`.
 
+## Workflow Rules
+
+### CHANGELOG.md maintenance
+Every feature commit, bug fix, or breaking change MUST update CHANGELOG.md in the same commit. Categorize under Added/Changed/Fixed/Removed/Security. Group related changes under a version heading. Do not batch — update as you go.
+
 ## Commands
 
 ```bash
