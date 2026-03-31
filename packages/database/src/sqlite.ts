@@ -183,6 +183,11 @@ export class SQLiteAdapter implements DatabaseAdapter {
     return rows.map((r) => this.mapApiKey(r));
   }
 
+  listAllApiKeys(): ApiKey[] {
+    const rows = this.db.prepare("SELECT * FROM api_keys ORDER BY created_at DESC").all() as Record<string, unknown>[];
+    return rows.map((r) => this.mapApiKey(r));
+  }
+
   deleteApiKey(id: string): boolean {
     const result = this.db.prepare("DELETE FROM api_keys WHERE id = ?").run(id);
     return result.changes > 0;

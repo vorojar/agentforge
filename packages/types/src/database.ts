@@ -50,6 +50,7 @@ export interface DatabaseAdapter {
   createApiKey(agentId: string, name?: string): { apiKey: ApiKey; rawKey: string };
   getApiKeyByHash(keyHash: string): ApiKey | null;
   listApiKeys(agentId: string): ApiKey[];
+  listAllApiKeys(): ApiKey[];
   deleteApiKey(id: string): boolean;
   touchApiKey(id: string): void;
 

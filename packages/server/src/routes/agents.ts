@@ -37,16 +37,20 @@ export async function agentRoutes(fastify: FastifyInstance, opts: { ctx: AppCont
     });
   });
 
-  // List agents
+  // List agents (single query for all keys, no N+1)
   fastify.get("/api/agents", async () => {
     const agents = db.listAgents();
-    return agents.map((agent) => {
-      const keys = db.listApiKeys(agent.id);
-      return {
-        ...agent,
-        apiKeys: keys.map((k) => ({ id: k.id, keyPrefix: k.keyPrefix, name: k.name, enabled: k.enabled, createdAt: k.createdAt, lastUsedAt: k.lastUsedAt })),
-      };
-    });
+    const allKeys = db.listAllApiKeys();
+    const keysByAgent = new Map<string, typeof allKeys>();
+    for (const k of allKeys) {
+      const list = keysByAgent.get(k.agentId) || [];
+      list.push(k);
+      keysByAgent.set(k.agentId, list);
+    }
+    return agents.map((agent) => ({
+      ...agent,
+      apiKeys: (keysByAgent.get(agent.id) || []).map((k) => ({ id: k.id, keyPrefix: k.keyPrefix, name: k.name, enabled: k.enabled, createdAt: k.createdAt, lastUsedAt: k.lastUsedAt })),
+    }));
   });
 
   // Get single agent
