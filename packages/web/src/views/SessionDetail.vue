@@ -31,20 +31,20 @@
                     style="max-width: 300px; max-height: 300px; border-radius: 8px" />
                 </div>
                 <div v-else-if="block.type === 'text'">{{ block.text }}</div>
-                <div v-else-if="block.type === 'tool_use'" class="tool-block">
-                  <el-tag type="warning" size="small">Tool: {{ block.name }}</el-tag>
-                  <el-collapse>
-                    <el-collapse-item title="Input">
-                      <pre class="json-block">{{ JSON.stringify(block.input, null, 2) }}</pre>
-                    </el-collapse-item>
-                  </el-collapse>
-                </div>
-                <div v-else-if="block.type === 'tool_result'" class="tool-block">
-                  <el-tag :type="block.isError ? 'danger' : 'success'" size="small">
-                    Tool Result
-                  </el-tag>
+                <details v-else-if="block.type === 'tool_use'" class="tool-inline">
+                  <summary>
+                    <el-tag type="warning" size="small">{{ block.name }}</el-tag>
+                    <span class="tool-preview">{{ toolPreview(block.input) }}</span>
+                  </summary>
+                  <pre class="json-block">{{ JSON.stringify(block.input, null, 2) }}</pre>
+                </details>
+                <details v-else-if="block.type === 'tool_result'" class="tool-inline">
+                  <summary>
+                    <el-tag :type="block.isError ? 'danger' : 'success'" size="small">Result</el-tag>
+                    <span class="tool-preview">{{ (block.content || '').slice(0, 80) }}{{ (block.content || '').length > 80 ? '...' : '' }}</span>
+                  </summary>
                   <pre class="json-block">{{ block.content }}</pre>
-                </div>
+                </details>
               </div>
             </template>
           </div>
@@ -93,6 +93,13 @@ const loading = ref(false);
 function roleLabel(role: string) {
   const map: Record<string, string> = { user: "User", assistant: "Assistant", tool: "Tool" };
   return map[role] || role;
+}
+
+function toolPreview(input: Record<string, unknown> | undefined): string {
+  if (!input) return "";
+  const vals = Object.values(input).map(v => typeof v === "string" ? v : JSON.stringify(v));
+  const preview = vals.join(", ");
+  return preview.length > 80 ? preview.slice(0, 80) + "..." : preview;
 }
 
 async function loadMessages() {
@@ -169,11 +176,35 @@ onMounted(loadMessages);
   color: #c0c4cc;
   margin-top: 6px;
 }
-.tool-block {
-  margin: 8px 0;
-  padding: 8px;
-  background: rgba(0, 0, 0, 0.03);
-  border-radius: 4px;
+.tool-inline {
+  margin: 4px 0;
+  font-size: 13px;
+}
+.tool-inline summary {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+  list-style: none;
+}
+.tool-inline summary::-webkit-details-marker { display: none; }
+.tool-inline summary::before {
+  content: "▶";
+  font-size: 10px;
+  color: #c0c4cc;
+  transition: transform 0.15s;
+}
+.tool-inline[open] summary::before {
+  transform: rotate(90deg);
+}
+.tool-preview {
+  color: #909399;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 400px;
 }
 .json-block {
   font-size: 12px;
