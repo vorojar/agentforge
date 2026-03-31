@@ -294,6 +294,8 @@ export class AgentLoop {
       const contentBlocks: ContentBlock[] = [];
       let currentToolUse: { id: string; name: string; inputJson: string } | null = null;
       let thinkingText = "";
+      let iterTokensIn = 0;
+      let iterTokensOut = 0;
 
       for await (const chunk of stream) {
         if (chunk.type === "thinking" && chunk.text) {
@@ -329,8 +331,10 @@ export class AgentLoop {
         } else if (chunk.type === "done") {
           stopReason = chunk.stopReason;
           if (chunk.usage) {
-            totalTokensIn += chunk.usage.tokensIn;
-            totalTokensOut += chunk.usage.tokensOut;
+            iterTokensIn = chunk.usage.tokensIn;
+            iterTokensOut = chunk.usage.tokensOut;
+            totalTokensIn += iterTokensIn;
+            totalTokensOut += iterTokensOut;
           }
         }
       }
@@ -353,13 +357,13 @@ export class AgentLoop {
 
       if (stopReason === "end_turn" || stopReason === "max_tokens") {
         history.push({ role: "assistant", content: mergedBlocks });
-        this.persistMessage(sid, agentConfig.id, "assistant", mergedBlocks);
+        this.persistMessage(sid, agentConfig.id, "assistant", mergedBlocks, iterTokensIn, iterTokensOut);
         break;
       }
 
       if (stopReason === "tool_use") {
         history.push({ role: "assistant", content: mergedBlocks });
-        this.persistMessage(sid, agentConfig.id, "assistant", mergedBlocks);
+        this.persistMessage(sid, agentConfig.id, "assistant", mergedBlocks, iterTokensIn, iterTokensOut);
 
         const resultBlocks: ToolResultBlock[] = [];
         for (const block of contentBlocks) {
@@ -396,7 +400,7 @@ export class AgentLoop {
 
       // Unknown stopReason — persist and break
       history.push({ role: "assistant", content: mergedBlocks });
-      this.persistMessage(sid, agentConfig.id, "assistant", mergedBlocks);
+      this.persistMessage(sid, agentConfig.id, "assistant", mergedBlocks, iterTokensIn, iterTokensOut);
       break;
     }
 
