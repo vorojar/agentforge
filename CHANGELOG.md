@@ -2,6 +2,11 @@
 
 All notable changes to AgentForge are documented in this file.
 
+## [0.7.1] - 2026-04-12
+
+### Added
+- **Claude prompt caching** — System prompt and tools marked with `cache_control: { type: "ephemeral" }`, enabling Anthropic's prompt cache. Same agent's subsequent requests hit cache at 1/10 input token cost. Cache read/creation tokens now tracked and persisted to DB.
+
 ## [0.7.0] - 2026-04-12
 
 ### Added

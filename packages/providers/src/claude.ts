@@ -124,12 +124,25 @@ export class ClaudeProvider implements LLMProvider {
   }
 
   private buildParams(request: LLMRequest): Anthropic.MessageCreateParamsNonStreaming {
+    // System prompt as cached block for prompt caching
+    const systemBlocks: Anthropic.TextBlockParam[] = [
+      { type: "text", text: request.systemPrompt, cache_control: { type: "ephemeral" } },
+    ];
+
+    // Tools with cache_control on last tool for prompt caching
+    let tools: AnthropicTool[] | undefined;
+    if (request.tools && request.tools.length > 0) {
+      tools = toAnthropicTools(request.tools);
+      // Mark last tool with cache_control so entire tool list is cached
+      (tools[tools.length - 1] as AnthropicTool & { cache_control?: unknown }).cache_control = { type: "ephemeral" };
+    }
+
     const base: Anthropic.MessageCreateParamsNonStreaming = {
       model: request.model,
       max_tokens: request.maxTokens ?? 4096,
-      system: request.systemPrompt,
+      system: systemBlocks,
       messages: toAnthropicMessages(request.messages),
-      tools: request.tools ? toAnthropicTools(request.tools) : undefined,
+      tools,
     };
 
     if (request.thinking) {
@@ -155,14 +168,17 @@ export class ClaudeProvider implements LLMProvider {
       }
     }
 
+    const usage = response.usage as unknown as Record<string, number>;
     return {
       content: fromAnthropicContent(response.content),
       thinking,
       stopReason: mapStopReason(response.stop_reason),
       model: response.model,
       usage: {
-        tokensIn: response.usage.input_tokens,
-        tokensOut: response.usage.output_tokens,
+        tokensIn: usage.input_tokens,
+        tokensOut: usage.output_tokens,
+        cacheReadTokens: usage.cache_read_input_tokens || 0,
+        cacheCreationTokens: usage.cache_creation_input_tokens || 0,
       },
     };
   }
@@ -197,11 +213,14 @@ export class ClaudeProvider implements LLMProvider {
       }
     }
 
+    const streamUsage = finalMessage.usage as unknown as Record<string, number>;
     yield {
       type: "done",
       usage: {
-        tokensIn: finalMessage.usage.input_tokens,
-        tokensOut: finalMessage.usage.output_tokens,
+        tokensIn: streamUsage.input_tokens,
+        tokensOut: streamUsage.output_tokens,
+        cacheReadTokens: streamUsage.cache_read_input_tokens || 0,
+        cacheCreationTokens: streamUsage.cache_creation_input_tokens || 0,
       },
       stopReason: mapStopReason(finalMessage.stop_reason),
     };
