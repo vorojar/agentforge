@@ -6,6 +6,7 @@ All notable changes to AgentForge are documented in this file.
 
 ### Added
 - **Claude prompt caching** — System prompt and tools marked with `cache_control: { type: "ephemeral" }`, enabling Anthropic's prompt cache. Same agent's subsequent requests hit cache at 1/10 input token cost. Cache read/creation tokens now tracked and persisted to DB.
+- **UI design refresh** — Indigo (#6366f1) primary color, Inter font, softer card shadows, refined table headers (uppercase + letter-spacing), larger border-radius, input focus glow, sidebar deepened to slate-900. Linear-inspired quality lift on Element Plus base.
 - **Context compression L1/L2** — Free (zero LLM cost) compression in context builder:
   - L1: JSON minification + whitespace collapse on tool_result content (saves 20-40% on verbose API responses)
   - L2: Old tool_use input parameters stripped after 3 rounds (LLM doesn't need params from 5 turns ago)

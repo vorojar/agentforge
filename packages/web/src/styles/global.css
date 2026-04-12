@@ -1,3 +1,39 @@
+/* ================================================
+   AgentForge — Design System (Element Plus override)
+   Primary: Indigo #6366f1  |  Base: Light
+   ================================================ */
+
+/* --- Element Plus Theme Overrides --- */
+:root {
+  --el-color-primary: #6366f1;
+  --el-color-primary-light-3: #818cf8;
+  --el-color-primary-light-5: #a5b4fc;
+  --el-color-primary-light-7: #c7d2fe;
+  --el-color-primary-light-8: #e0e7ff;
+  --el-color-primary-light-9: #eef2ff;
+  --el-color-primary-dark-2: #4f46e5;
+  --el-color-success: #22c55e;
+  --el-color-warning: #f59e0b;
+  --el-color-danger: #ef4444;
+  --el-color-info: #64748b;
+  --el-border-radius-base: 8px;
+  --el-border-radius-small: 6px;
+  --el-border-radius-round: 20px;
+  --el-border-color: #e2e8f0;
+  --el-border-color-light: #f1f5f9;
+  --el-fill-color-light: #f8fafc;
+  --el-text-color-primary: #1e293b;
+  --el-text-color-regular: #475569;
+  --el-text-color-secondary: #94a3b8;
+  --el-text-color-placeholder: #cbd5e1;
+  --el-font-size-base: 14px;
+  --el-font-size-small: 13px;
+  --el-bg-color-page: #f8fafc;
+  --el-box-shadow-light: 0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.06);
+  --el-box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
+}
+
+/* --- Reset & Base --- */
 * {
   margin: 0;
   padding: 0;
@@ -6,67 +42,224 @@
 
 html, body, #app {
   height: 100%;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  color: #1e293b;
 }
 
+/* --- Page Header --- */
 .page-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 20px;
+  margin-bottom: 24px;
 }
 
 .page-header h2 {
-  font-size: 22px;
+  font-size: 20px;
   font-weight: 600;
-  color: #303133;
+  color: #1e293b;
+  letter-spacing: -0.025em;
 }
 
+/* --- Stat Cards --- */
 .stat-card {
   text-align: center;
-  padding: 10px 0;
+  padding: 12px 0;
 }
 
 .stat-card .stat-value {
   font-size: 28px;
   font-weight: 700;
-  color: #409eff;
+  color: #6366f1;
+  letter-spacing: -0.025em;
 }
 
 .stat-card .stat-label {
-  font-size: 13px;
-  color: #909399;
-  margin-top: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #94a3b8;
+  margin-top: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
-/* Code blocks */
+/* --- Code Blocks --- */
 code {
-  font-family: "SF Mono", "Fira Code", "Fira Mono", Menlo, Consolas, monospace;
-  font-size: 13px;
-  background: #f5f7fa;
+  font-family: "SF Mono", "Fira Code", "JetBrains Mono", Menlo, Consolas, monospace;
+  font-size: 12.5px;
+  background: #f1f5f9;
   padding: 2px 6px;
-  border-radius: 3px;
-  color: #476582;
+  border-radius: 4px;
+  color: #6366f1;
 }
 
 pre {
-  font-family: "SF Mono", "Fira Code", "Fira Mono", Menlo, Consolas, monospace;
+  font-family: "SF Mono", "Fira Code", "JetBrains Mono", Menlo, Consolas, monospace;
 }
 
-/* Table hover */
+/* --- Cards: softer shadows, no heavy borders --- */
+.el-card {
+  border: 1px solid #f1f5f9;
+  border-radius: 10px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.02);
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.el-card:hover {
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.08), 0 2px 4px rgba(0, 0, 0, 0.04);
+  border-color: #e0e7ff;
+}
+
+.el-card :deep(.el-card__header) {
+  padding: 16px 20px;
+  border-bottom: 1px solid #f1f5f9;
+  font-weight: 600;
+}
+
+.el-card :deep(.el-card__body) {
+  padding: 20px;
+}
+
+/* --- Tables: refined spacing and hovers --- */
+.el-table {
+  --el-table-border-color: #f1f5f9;
+  --el-table-header-bg-color: #f8fafc;
+  --el-table-row-hover-bg-color: #faf5ff;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
 .el-table .el-table__row {
-  transition: background-color 0.15s;
+  transition: background-color 0.15s ease;
 }
 
-/* Scrollbar */
+.el-table th.el-table__cell {
+  font-weight: 600;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #64748b;
+}
+
+/* --- Buttons: refined feel --- */
+.el-button--primary {
+  background: #6366f1;
+  border-color: #6366f1;
+  font-weight: 500;
+}
+
+.el-button--primary:hover {
+  background: #4f46e5;
+  border-color: #4f46e5;
+}
+
+.el-button {
+  border-radius: 8px;
+  font-weight: 500;
+  transition: all 0.15s ease;
+}
+
+/* --- Tags: softer --- */
+.el-tag--success {
+  --el-tag-bg-color: #ecfdf5;
+  --el-tag-border-color: #d1fae5;
+  --el-tag-text-color: #059669;
+}
+
+.el-tag--info {
+  --el-tag-bg-color: #f1f5f9;
+  --el-tag-border-color: #e2e8f0;
+  --el-tag-text-color: #64748b;
+}
+
+.el-tag--danger {
+  --el-tag-bg-color: #fef2f2;
+  --el-tag-border-color: #fecaca;
+  --el-tag-text-color: #dc2626;
+}
+
+.el-tag--warning {
+  --el-tag-bg-color: #fffbeb;
+  --el-tag-border-color: #fde68a;
+  --el-tag-text-color: #d97706;
+}
+
+/* --- Dialog: cleaner --- */
+.el-dialog {
+  border-radius: 14px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.12), 0 8px 20px rgba(0, 0, 0, 0.06);
+}
+
+.el-dialog__header {
+  padding: 20px 24px 16px;
+}
+
+.el-dialog__body {
+  padding: 8px 24px 20px;
+}
+
+.el-dialog__footer {
+  padding: 12px 24px 20px;
+}
+
+/* --- Input: refined --- */
+.el-input__wrapper {
+  border-radius: 8px;
+  transition: box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+.el-input__wrapper:focus-within {
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.12);
+}
+
+.el-textarea__inner {
+  border-radius: 8px;
+}
+
+.el-textarea__inner:focus {
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.12);
+}
+
+/* --- Select dropdown --- */
+.el-select-dropdown {
+  border-radius: 10px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1), 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+/* --- Menu items: smoother --- */
+.el-menu-item {
+  border-radius: 6px;
+  margin: 2px 8px;
+  transition: all 0.15s ease;
+}
+
+/* --- Popconfirm / Popover --- */
+.el-popover, .el-popconfirm {
+  border-radius: 10px;
+}
+
+/* --- Message / Notification --- */
+.el-message {
+  border-radius: 10px;
+}
+
+/* --- Scrollbar --- */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 ::-webkit-scrollbar-thumb {
-  background: #c0c4cc;
+  background: #cbd5e1;
   border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
+
+/* --- Loading Inter font --- */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');

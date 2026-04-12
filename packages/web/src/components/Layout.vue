@@ -1,15 +1,15 @@
 <template>
   <el-container style="height: 100%">
-    <el-aside width="220px" style="background: #1d1e2c">
+    <el-aside width="230px" style="background: #0f172a">
       <div class="logo">
         <span class="logo-icon">⚡</span>
         <span class="logo-text">AgentForge</span>
       </div>
       <el-menu
         :default-active="activeMenu"
-        background-color="#1d1e2c"
-        text-color="#a3a6ad"
-        active-text-color="#409eff"
+        background-color="#0f172a"
+        text-color="#94a3b8"
+        active-text-color="#a5b4fc"
         router
         style="border-right: none"
       >
@@ -44,13 +44,13 @@
       </el-menu>
     </el-aside>
     <el-container>
-      <el-header style="background: #fff; border-bottom: 1px solid #e4e7ed; display: flex; align-items: center; justify-content: space-between">
-        <h1 style="font-size: 16px; color: #303133">{{ pageTitle }}</h1>
+      <el-header style="background: #fff; border-bottom: 1px solid #f1f5f9; display: flex; align-items: center; justify-content: space-between; padding: 0 24px">
+        <h1 style="font-size: 15px; font-weight: 600; color: #1e293b; letter-spacing: -0.01em">{{ pageTitle }}</h1>
         <el-button size="small" @click="showSettings = true">
           <el-icon><Setting /></el-icon>
         </el-button>
       </el-header>
-      <el-main style="background: #f5f7fa; overflow-y: auto">
+      <el-main style="background: #f8fafc; overflow-y: auto; padding: 24px">
         <router-view />
       </el-main>
     </el-container>
@@ -131,20 +131,23 @@ function clearSecret() {
 
 <style scoped>
 .logo {
-  height: 60px;
+  height: 64px;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  gap: 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 .logo-icon {
-  font-size: 22px;
+  font-size: 20px;
+  background: linear-gradient(135deg, #818cf8, #6366f1);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
 }
 .logo-text {
-  font-size: 18px;
+  font-size: 17px;
   font-weight: 700;
-  color: #fff;
-  letter-spacing: 1px;
+  color: #f1f5f9;
+  letter-spacing: 0.5px;
 }
 </style>
