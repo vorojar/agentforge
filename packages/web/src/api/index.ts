@@ -56,6 +56,10 @@ export const getSkillFiles = (name: string) => api.get(`/skills/${name}/files`);
 export const getSkillFile = (name: string, path: string) => api.get(`/skills/${name}/files/${path}`);
 export const saveSkillFile = (name: string, path: string, content: string) => api.put(`/skills/${name}/files/${path}`, { content });
 export const deleteSkillFile = (name: string, path: string) => api.delete(`/skills/${name}/files/${path}`);
+export const renameSkillFile = (name: string, oldPath: string, newPath: string) =>
+  api.patch(`/skills/${name}/files/rename`, { oldPath, newPath });
+export const renameSkillApi = (name: string, newName: string) =>
+  api.patch(`/skills/${name}/rename`, { newName });
 export const createSkillApi = (data: { name: string; description: string }) => api.post("/skills", data);
 export const deleteSkillApi = (name: string) => api.delete(`/skills/${name}`);
 
@@ -77,28 +81,65 @@ export const testChat = (
 ) =>
   api.post(`/agents/${agentId}/chat`, { message, sessionId, images });
 
-// --- Knowledge ---
-export const getKnowledgeSources = (agentId: string) => api.get(`/agents/${agentId}/knowledge`);
-export const uploadKnowledgeApi = (agentId: string, data: { name: string; content: string }) =>
-  api.post(`/agents/${agentId}/knowledge`, data);
-export const deleteKnowledgeApi = (agentId: string, sourceName: string) =>
-  api.delete(`/agents/${agentId}/knowledge/${encodeURIComponent(sourceName)}`);
+// --- Knowledge Bases ---
+export const getKnowledgeBases = () => api.get("/knowledge-bases");
+export const getKnowledgeBase = (id: string) => api.get(`/knowledge-bases/${id}`);
+export const createKnowledgeBase = (data: { name: string; description?: string }) =>
+  api.post("/knowledge-bases", data);
+export const updateKnowledgeBase = (id: string, data: { name?: string; description?: string }) =>
+  api.put(`/knowledge-bases/${id}`, data);
+export const deleteKnowledgeBase = (id: string) => api.delete(`/knowledge-bases/${id}`);
+
+// --- Knowledge Sources (within a KB) ---
+export const getKnowledgeSources = (kbId: string) => api.get(`/knowledge-bases/${kbId}/sources`);
+export const uploadKnowledgeSource = (kbId: string, data: { name: string; content: string }) =>
+  api.post(`/knowledge-bases/${kbId}/sources`, data);
+export const getKnowledgeContent = (kbId: string, sourceName: string) =>
+  api.get(`/knowledge-bases/${kbId}/sources/${encodeURIComponent(sourceName)}/content`);
+export const updateKnowledgeContent = (kbId: string, sourceName: string, content: string) =>
+  api.put(`/knowledge-bases/${kbId}/sources/${encodeURIComponent(sourceName)}/content`, { content });
+export const renameKnowledgeSource = (kbId: string, sourceName: string, newName: string) =>
+  api.patch(`/knowledge-bases/${kbId}/sources/${encodeURIComponent(sourceName)}`, { newName });
+export const deleteKnowledgeSource = (kbId: string, sourceName: string) =>
+  api.delete(`/knowledge-bases/${kbId}/sources/${encodeURIComponent(sourceName)}`);
+
+// --- Agent-Knowledge Association ---
+export const getAgentKnowledge = (agentId: string) => api.get(`/agents/${agentId}/knowledge`);
+export const setAgentKnowledge = (agentId: string, kbIds: string[]) =>
+  api.put(`/agents/${agentId}/knowledge`, { kbIds });
+
+// --- Provider Channels ---
+export const getChannels = (providerId: string) => api.get(`/providers/${providerId}/channels`);
+export const createChannel = (providerId: string, name: string) =>
+  api.post(`/providers/${providerId}/channels`, { name });
+export const deleteChannel = (providerId: string, channelId: string) =>
+  api.delete(`/providers/${providerId}/channels/${channelId}`);
+export const getChannelStats = (channelId: string, days?: number) =>
+  api.get(`/channels/${channelId}/stats`, { params: days ? { days } : {} });
+export const getProviderChannelStats = (providerId: string, dateRange?: DateRange) =>
+  api.get(`/providers/${providerId}/channels/stats`, { params: dateRange });
 
 // --- Sessions ---
-export const getSessions = (agentId?: string, limit?: number, offset?: number) =>
-  api.get("/sessions", { params: { ...(agentId ? { agentId } : {}), ...(limit ? { limit } : {}), ...(offset ? { offset } : {}) } });
+export const getSessions = (agentId?: string) =>
+  api.get("/sessions", { params: agentId ? { agentId } : {} });
 export const getSession = (id: string) => api.get(`/sessions/${id}`);
 export const getSessionMessages = (id: string) =>
   api.get(`/sessions/${id}/messages`);
 export const deleteSession = (id: string) => api.delete(`/sessions/${id}`);
 
 // --- Stats ---
+export interface DateRange { startDate?: string; endDate?: string }
 export const getStats = () => api.get("/stats");
 export const getAgentStats = (agentId: string) =>
   api.get(`/stats/agents/${agentId}`);
-export const getDailyStats = (agentId?: string, days?: number) =>
-  api.get("/stats/daily", { params: { ...(agentId ? { agentId } : {}), ...(days ? { days } : {}) } });
-export const getModelStats = () => api.get("/stats/models");
-export const getAgentUsageStats = () => api.get("/stats/agents");
+export const getDailyStats = (agentId?: string, days?: number, dateRange?: DateRange, granularity?: string) =>
+  api.get("/stats/daily", { params: { ...(agentId ? { agentId } : {}), ...(days ? { days } : {}), ...dateRange, ...(granularity ? { granularity } : {}) } });
+export const getModelStats = (dateRange?: DateRange) =>
+  api.get("/stats/models", { params: dateRange });
+export const getAgentUsageStats = (dateRange?: DateRange) =>
+  api.get("/stats/agents", { params: dateRange });
+export const getProxyOverview = () => api.get("/stats/proxy");
+export const getProxyDailyStats = (days?: number, dateRange?: DateRange, granularity?: string) =>
+  api.get("/stats/proxy/daily", { params: { ...(days ? { days } : {}), ...dateRange, ...(granularity ? { granularity } : {}) } });
 
 export default api;

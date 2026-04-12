@@ -13,10 +13,34 @@ type ChatCompletionMessageParam =
   OpenAI.Chat.Completions.ChatCompletionMessageParam;
 type ChatCompletionTool = OpenAI.Chat.Completions.ChatCompletionTool;
 
-function toOpenAIMessages(
+const CONTENT_TYPE_MAP: Record<string, string> = {
+  "image/jpeg": "image/jpeg",
+  "image/jpg": "image/jpeg",
+  "image/png": "image/png",
+  "image/gif": "image/gif",
+  "image/webp": "image/webp",
+};
+
+/**
+ * 下载图片 URL 并转换为 base64 data URI。
+ * 部分 OpenAI 兼容 API（如 kie.ai）会根据 URL 后缀推断文件格式，
+ * 对于无标准扩展名的 URL 会直接拒绝。统一转 base64 可避免此类兼容性问题。
+ */
+async function imageUrlToDataUri(url: string): Promise<string> {
+  const response = await fetch(url, { signal: AbortSignal.timeout(15_000) });
+  if (!response.ok) {
+    throw new Error(`Failed to fetch image: ${response.status} ${response.statusText}`);
+  }
+  const contentType = response.headers.get("content-type") ?? "image/jpeg";
+  const mediaType = CONTENT_TYPE_MAP[contentType.split(";")[0].trim().toLowerCase()] ?? "image/jpeg";
+  const buffer = Buffer.from(await response.arrayBuffer());
+  return `data:${mediaType};base64,${buffer.toString("base64")}`;
+}
+
+async function toOpenAIMessages(
   systemPrompt: string,
   messages: LLMMessage[]
-): ChatCompletionMessageParam[] {
+): Promise<ChatCompletionMessageParam[]> {
   const result: ChatCompletionMessageParam[] = [
     { role: "system", content: systemPrompt },
   ];
@@ -33,7 +57,6 @@ function toOpenAIMessages(
 
     // Handle ContentBlock arrays
     if (msg.role === "assistant") {
-      // Collect text and tool_calls from content blocks
       let textContent = "";
       const toolCalls: OpenAI.Chat.Completions.ChatCompletionMessageToolCall[] =
         [];
@@ -73,9 +96,10 @@ function toOpenAIMessages(
               image_url: { url: `data:${block.source.mediaType};base64,${block.source.data}` },
             });
           } else {
+            const dataUri = await imageUrlToDataUri(block.source.url);
             userParts.push({
               type: "image_url",
-              image_url: { url: block.source.url },
+              image_url: { url: dataUri },
             });
           }
         } else if (block.type === "tool_result") {
@@ -127,6 +151,17 @@ function mapFinishReason(
   }
 }
 
+/**
+ * 某些 OpenAI 兼容 API（如 kie.ai）响应不带 Content-Type: application/json，
+ * 导致 OpenAI SDK 返回原始字符串而非解析后的对象。此函数做兜底 JSON 解析。
+ */
+function ensureParsed<T>(value: T | string): T {
+  if (typeof value === "string") {
+    return JSON.parse(value) as T;
+  }
+  return value;
+}
+
 export class OpenAIProvider implements LLMProvider {
   readonly name = "openai";
   private client: OpenAI;
@@ -139,14 +174,31 @@ export class OpenAIProvider implements LLMProvider {
     });
   }
 
+  private buildThinkingParam(thinking?: boolean): Record<string, unknown> {
+    if (thinking === true) return { thinking: { type: "enabled" } };
+    if (thinking === false) return { thinking: { type: "disabled" } };
+    return {};
+  }
+
   async chat(request: LLMRequest): Promise<LLMResponse> {
-    const response = await this.client.chat.completions.create({
+    const params: Record<string, unknown> = {
       model: request.model,
-      messages: toOpenAIMessages(request.systemPrompt, request.messages),
+      messages: await toOpenAIMessages(request.systemPrompt, request.messages),
       tools: request.tools ? toOpenAITools(request.tools) : undefined,
       max_tokens: request.maxTokens,
       temperature: request.temperature,
-    });
+      ...this.buildThinkingParam(request.thinking),
+    };
+    const rawResponse = await this.client.chat.completions.create(
+      params as unknown as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming,
+    );
+    const response = ensureParsed(rawResponse);
+
+    const responseAny = response as unknown as Record<string, unknown>;
+    if (!response.choices?.length) {
+      const msg = (responseAny.msg ?? responseAny.message ?? responseAny.error ?? "Unknown error") as string;
+      throw new Error(`LLM API error: ${msg}`);
+    }
 
     const choice = response.choices[0];
     const content: ContentBlock[] = [];
@@ -166,11 +218,18 @@ export class OpenAIProvider implements LLMProvider {
       }
     }
 
+    let thinking: string | undefined;
+    if (request.thinking) {
+      const msgAny = choice.message as unknown as Record<string, unknown>;
+      thinking = (msgAny.reasoning_content as string) || undefined;
+    }
+
     const usageAny = response.usage as unknown as Record<string, Record<string, number>> | undefined;
     const cacheReadTokens = usageAny?.prompt_tokens_details?.cached_tokens || undefined;
 
     return {
       content,
+      thinking,
       stopReason: mapFinishReason(choice.finish_reason),
       model: response.model,
       usage: {
@@ -182,15 +241,19 @@ export class OpenAIProvider implements LLMProvider {
   }
 
   async *stream(request: LLMRequest): AsyncIterable<LLMStreamChunk> {
-    const stream = await this.client.chat.completions.create({
+    const params: Record<string, unknown> = {
       model: request.model,
-      messages: toOpenAIMessages(request.systemPrompt, request.messages),
+      messages: await toOpenAIMessages(request.systemPrompt, request.messages),
       tools: request.tools ? toOpenAITools(request.tools) : undefined,
       max_tokens: request.maxTokens,
       temperature: request.temperature,
       stream: true,
       stream_options: { include_usage: true },
-    });
+      ...this.buildThinkingParam(request.thinking),
+    };
+    const stream = await this.client.chat.completions.create(
+      params as unknown as OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming,
+    );
 
     const toolCalls = new Map<
       number,
@@ -199,25 +262,21 @@ export class OpenAIProvider implements LLMProvider {
     let finishReason: string | null = null;
     let usageTokensIn = 0;
     let usageTokensOut = 0;
+    let usageCacheRead: number | undefined;
 
     for await (const chunk of stream) {
-      const delta = chunk.choices[0]?.delta;
-      finishReason = chunk.choices[0]?.finish_reason ?? finishReason;
+      const delta = chunk.choices?.[0]?.delta;
+      finishReason = chunk.choices?.[0]?.finish_reason ?? finishReason;
 
-      // Reasoning/thinking content (DeepSeek R1, etc.)
-      const deltaAny = delta as Record<string, unknown> | undefined;
-      if (deltaAny?.reasoning_content) {
-        yield { type: "thinking", text: deltaAny.reasoning_content as string };
+      if (request.thinking && delta) {
+        const deltaAny = delta as Record<string, unknown> | undefined;
+        if (deltaAny?.reasoning_content) {
+          yield { type: "thinking", text: deltaAny.reasoning_content as string };
+        }
       }
 
       if (delta?.content) {
         yield { type: "text", text: delta.content };
-      }
-
-      // Capture usage from final chunk
-      if (chunk.usage) {
-        usageTokensIn = chunk.usage.prompt_tokens ?? 0;
-        usageTokensOut = chunk.usage.completion_tokens ?? 0;
       }
 
       if (delta?.tool_calls) {
@@ -236,6 +295,13 @@ export class OpenAIProvider implements LLMProvider {
           }
         }
       }
+
+      if (chunk.usage) {
+        usageTokensIn = chunk.usage.prompt_tokens ?? 0;
+        usageTokensOut = chunk.usage.completion_tokens ?? 0;
+        const usageAny = chunk.usage as unknown as Record<string, Record<string, number>> | undefined;
+        usageCacheRead = usageAny?.prompt_tokens_details?.cached_tokens || undefined;
+      }
     }
 
     for (const [, tc] of toolCalls) {
@@ -249,7 +315,7 @@ export class OpenAIProvider implements LLMProvider {
     yield {
       type: "done",
       stopReason: mapFinishReason(finishReason),
-      usage: { tokensIn: usageTokensIn, tokensOut: usageTokensOut },
+      usage: { tokensIn: usageTokensIn, tokensOut: usageTokensOut, cacheReadTokens: usageCacheRead },
     };
   }
 }

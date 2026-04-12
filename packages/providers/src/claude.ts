@@ -23,47 +23,45 @@ function toAnthropicMessages(messages: LLMMessage[]): AnthropicMessageParam[] {
       return { role: msg.role, content: msg.content };
     }
 
-    const blocks: AnthropicContentBlock[] = msg.content
-      .filter((block) => block.type !== "thinking")
-      .map((block) => {
-        switch (block.type) {
-          case "text":
-            return { type: "text" as const, text: block.text };
-          case "image":
-            if (block.source.type === "base64") {
-              return {
-                type: "image" as const,
-                source: {
-                  type: "base64" as const,
-                  media_type: block.source.mediaType as Anthropic.Base64ImageSource["media_type"],
-                  data: block.source.data,
-                },
-              };
-            } else {
-              return {
-                type: "image" as const,
-                source: {
-                  type: "url" as const,
-                  url: block.source.url,
-                },
-              };
-            }
-          case "tool_use":
+    const blocks: AnthropicContentBlock[] = msg.content.map((block) => {
+      switch (block.type) {
+        case "text":
+          return { type: "text" as const, text: block.text };
+        case "image":
+          if (block.source.type === "base64") {
             return {
-              type: "tool_use" as const,
-              id: block.id,
-              name: block.name,
-              input: block.input,
+              type: "image" as const,
+              source: {
+                type: "base64" as const,
+                media_type: block.source.mediaType as Anthropic.Base64ImageSource["media_type"],
+                data: block.source.data,
+              },
             };
-          case "tool_result":
+          } else {
             return {
-              type: "tool_result" as const,
-              tool_use_id: block.toolUseId,
-              content: block.content,
-              is_error: block.isError,
+              type: "image" as const,
+              source: {
+                type: "url" as const,
+                url: block.source.url,
+              },
             };
-        }
-      });
+          }
+        case "tool_use":
+          return {
+            type: "tool_use" as const,
+            id: block.id,
+            name: block.name,
+            input: block.input,
+          };
+        case "tool_result":
+          return {
+            type: "tool_result" as const,
+            tool_use_id: block.toolUseId,
+            content: block.content,
+            is_error: block.isError,
+          };
+      }
+    });
 
     return { role: msg.role, content: blocks };
   });
@@ -125,18 +123,41 @@ export class ClaudeProvider implements LLMProvider {
     });
   }
 
-  async chat(request: LLMRequest): Promise<LLMResponse> {
-    const response = await this.client.messages.create({
+  private buildParams(request: LLMRequest): Anthropic.MessageCreateParamsNonStreaming {
+    const base: Anthropic.MessageCreateParamsNonStreaming = {
       model: request.model,
       max_tokens: request.maxTokens ?? 4096,
       system: request.systemPrompt,
       messages: toAnthropicMessages(request.messages),
       tools: request.tools ? toAnthropicTools(request.tools) : undefined,
-      temperature: request.temperature,
-    });
+    };
+
+    if (request.thinking) {
+      const budgetTokens = base.max_tokens;
+      base.max_tokens = Math.max(budgetTokens * 4, 16000);
+      (base as unknown as Record<string, unknown>).thinking = { type: "enabled", budget_tokens: budgetTokens };
+    } else {
+      base.temperature = request.temperature;
+    }
+
+    return base;
+  }
+
+  async chat(request: LLMRequest): Promise<LLMResponse> {
+    const params = this.buildParams(request);
+    const response = await this.client.messages.create(params);
+
+    let thinking: string | undefined;
+    for (const block of response.content) {
+      if ((block as { type: string; thinking?: string }).type === "thinking") {
+        const text = (block as { type: string; thinking?: string }).thinking;
+        if (text) thinking = (thinking ?? "") + text;
+      }
+    }
 
     return {
       content: fromAnthropicContent(response.content),
+      thinking,
       stopReason: mapStopReason(response.stop_reason),
       model: response.model,
       usage: {
@@ -147,14 +168,8 @@ export class ClaudeProvider implements LLMProvider {
   }
 
   async *stream(request: LLMRequest): AsyncIterable<LLMStreamChunk> {
-    const stream = this.client.messages.stream({
-      model: request.model,
-      max_tokens: request.maxTokens ?? 4096,
-      system: request.systemPrompt,
-      messages: toAnthropicMessages(request.messages),
-      tools: request.tools ? toAnthropicTools(request.tools) : undefined,
-      temperature: request.temperature,
-    });
+    const params = this.buildParams(request);
+    const stream = this.client.messages.stream(params);
 
     for await (const event of stream) {
       if (event.type === "content_block_delta") {

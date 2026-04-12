@@ -21,7 +21,8 @@
             </template>
             <p style="font-size: 13px; color: #606266; margin-bottom: 12px; min-height: 36px">{{ skill.description }}</p>
             <el-button size="small" type="primary" @click="openEditor(skill)">Edit</el-button>
-            <el-popconfirm :title="`Delete skill '${skill.name}'?`" @confirm="deleteSkill(skill.id)">
+            <el-button size="small" @click="startRenameSkill(skill)">Rename</el-button>
+            <el-popconfirm :title="`Delete skill '${skill.name}'?`" @confirm="deleteSkill(skill.name)">
               <template #reference>
                 <el-button size="small" type="danger">Delete</el-button>
               </template>
@@ -30,6 +31,7 @@
         </el-col>
       </el-row>
 
+      <!-- Create Skill Dialog -->
       <el-dialog v-model="showCreateDialog" title="Create New Skill" width="450px">
         <el-form label-width="100px">
           <el-form-item label="Name" required>
@@ -45,13 +47,27 @@
             :disabled="!newSkillName.trim() || !newSkillDesc.trim()">Create</el-button>
         </template>
       </el-dialog>
+
+      <!-- Rename Skill Dialog -->
+      <el-dialog v-model="showRenameSkillDialog" title="Rename Skill" width="450px">
+        <el-form label-width="100px">
+          <el-form-item label="New Name" required>
+            <el-input v-model="renameSkillNewName" placeholder="New skill name" @keyup.enter="confirmRenameSkill" />
+          </el-form-item>
+        </el-form>
+        <template #footer>
+          <el-button @click="showRenameSkillDialog = false">Cancel</el-button>
+          <el-button type="primary" @click="confirmRenameSkill"
+            :disabled="!renameSkillNewName.trim() || renameSkillNewName.trim() === renameSkillOldName">Rename</el-button>
+        </template>
+      </el-dialog>
     </div>
 
     <!-- Editor View -->
     <div v-else class="editor-root">
       <div class="page-header">
         <h2>
-          <el-button link @click="closeEditor" style="font-size: 16px; margin-right: 8px">← Back</el-button>
+          <el-button link @click="closeEditor" style="font-size: 16px; margin-right: 8px">&larr; Back</el-button>
           {{ editingSkill.name }}
         </h2>
         <div style="display: flex; gap: 8px">
@@ -67,9 +83,24 @@
             :style="{ paddingLeft: (file.depth * 16 + 8) + 'px' }"
             :class="['file-item', { active: currentFile?.path === file.path, directory: file.type === 'directory' }]"
             @click="handleFileClick(file)">
-            <span>{{ file.type === 'directory' ? '📁' : '📄' }} {{ file.name }}</span>
-            <el-button v-if="file.type === 'file' && file.path !== 'SKILL.md'" link type="danger" size="small"
-              @click.stop="deleteFile(file.path)" class="delete-btn">×</el-button>
+            <!-- Inline rename input -->
+            <template v-if="renamingFile?.path === file.path">
+              <el-input v-model="renamingFile.newName" size="small" style="width: 160px; margin-right: 4px"
+                @keyup.enter="confirmRenameFile" @keyup.escape="renamingFile = null" @click.stop />
+              <el-button link type="primary" size="small" @click.stop="confirmRenameFile">OK</el-button>
+              <el-button link size="small" @click.stop="renamingFile = null">Cancel</el-button>
+            </template>
+            <template v-else>
+              <span style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">
+                {{ file.type === 'directory' ? '&#128193;' : '&#128196;' }} {{ file.name }}
+              </span>
+              <div class="file-actions">
+                <el-button v-if="file.path !== 'SKILL.md'" link size="small"
+                  @click.stop="startRenameFile(file)">Rename</el-button>
+                <el-button v-if="file.type === 'file' && file.path !== 'SKILL.md'" link type="danger" size="small"
+                  @click.stop="deleteFile(file.path)">&times;</el-button>
+              </div>
+            </template>
           </div>
         </div>
 
@@ -112,7 +143,12 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from "vue";
-import { getSkills, reloadSkills, getSkillFiles, getSkillFile, saveSkillFile, deleteSkillFile, createSkillApi, deleteSkillApi } from "@/api";
+import {
+  getSkills, reloadSkills,
+  getSkillFiles, getSkillFile, saveSkillFile, deleteSkillFile,
+  renameSkillFile, renameSkillApi,
+  createSkillApi, deleteSkillApi,
+} from "@/api";
 import { ElMessage, ElMessageBox } from "element-plus";
 
 interface SkillItem { id: string; name: string; description: string }
@@ -130,6 +166,14 @@ const newSkillName = ref("");
 const newSkillDesc = ref("");
 const newFileDir = ref("");
 const newFileName = ref("");
+
+// Skill rename state
+const showRenameSkillDialog = ref(false);
+const renameSkillOldName = ref("");
+const renameSkillNewName = ref("");
+
+// File rename state
+const renamingFile = ref<{ path: string; type: "file" | "directory"; newName: string } | null>(null);
 
 async function loadSkills() {
   try {
@@ -149,6 +193,7 @@ async function reloadAllSkills() {
 async function openEditor(skill: SkillItem) {
   editingSkill.value = skill;
   currentFile.value = null;
+  renamingFile.value = null;
   await loadFileTree();
   if (fileTree.value.some(f => f.path === "SKILL.md")) {
     await openFile("SKILL.md");
@@ -158,18 +203,18 @@ async function openEditor(skill: SkillItem) {
 function closeEditor() {
   editingSkill.value = null;
   currentFile.value = null;
+  renamingFile.value = null;
   loadSkills();
 }
 
 async function loadFileTree() {
   if (!editingSkill.value) return;
   try {
-    const { data } = await getSkillFiles(editingSkill.value.id);
+    const { data } = await getSkillFiles(editingSkill.value.name);
     const nodes: FileNode[] = [];
     const dirs = new Set<string>();
     for (const f of data as Array<{ path: string; type: string }>) {
       const parts = f.path.split("/");
-      // Ensure parent directories are in the tree
       for (let i = 0; i < parts.length - 1; i++) {
         const dirPath = parts.slice(0, i + 1).join("/");
         if (!dirs.has(dirPath)) {
@@ -191,10 +236,10 @@ async function loadFileTree() {
 }
 
 function handleFileClick(file: FileNode) {
+  if (renamingFile.value) return;
   if (file.type === "file") {
     openFile(file.path);
   } else {
-    // Click directory → open new file dialog pre-filled with this dir
     newFileDir.value = file.path;
     newFileName.value = "";
     showNewFileDialog.value = true;
@@ -204,7 +249,7 @@ function handleFileClick(file: FileNode) {
 async function openFile(path: string) {
   if (!editingSkill.value) return;
   try {
-    const { data } = await getSkillFile(editingSkill.value.id, path);
+    const { data } = await getSkillFile(editingSkill.value.name, path);
     currentFile.value = { path: data.path, content: data.content };
   } catch { ElMessage.error("Failed to open file"); }
 }
@@ -213,7 +258,7 @@ async function saveCurrentFile() {
   if (!editingSkill.value || !currentFile.value) return;
   saving.value = true;
   try {
-    await saveSkillFile(editingSkill.value.id, currentFile.value.path, currentFile.value.content);
+    await saveSkillFile(editingSkill.value.name, currentFile.value.path, currentFile.value.content);
     ElMessage.success("Saved");
   } catch { ElMessage.error("Failed to save"); }
   finally { saving.value = false; }
@@ -223,7 +268,7 @@ async function deleteFile(path: string) {
   if (!editingSkill.value) return;
   try {
     await ElMessageBox.confirm(`Delete ${path}?`, "Confirm");
-    await deleteSkillFile(editingSkill.value.id, path);
+    await deleteSkillFile(editingSkill.value.name, path);
     ElMessage.success("Deleted");
     if (currentFile.value?.path === path) currentFile.value = null;
     await loadFileTree();
@@ -235,7 +280,7 @@ async function createFile() {
   const name = newFileName.value.replace(/\.md$/, "") + ".md";
   const path = newFileDir.value ? `${newFileDir.value}/${name}` : name;
   try {
-    await saveSkillFile(editingSkill.value.id, path, "");
+    await saveSkillFile(editingSkill.value.name, path, "");
     showNewFileDialog.value = false;
     newFileName.value = "";
     newFileDir.value = "";
@@ -267,6 +312,54 @@ async function deleteSkill(name: string) {
   } catch { ElMessage.error("Failed to delete skill"); }
 }
 
+// --- Skill Rename ---
+function startRenameSkill(skill: SkillItem) {
+  renameSkillOldName.value = skill.name;
+  renameSkillNewName.value = skill.name;
+  showRenameSkillDialog.value = true;
+}
+
+async function confirmRenameSkill() {
+  const newName = renameSkillNewName.value.trim();
+  if (!newName || newName === renameSkillOldName.value) { showRenameSkillDialog.value = false; return; }
+  try {
+    await renameSkillApi(renameSkillOldName.value, newName);
+    showRenameSkillDialog.value = false;
+    ElMessage.success("Skill renamed");
+    await reloadAllSkills();
+  } catch { ElMessage.error("Failed to rename skill"); }
+}
+
+// --- File/Folder Rename ---
+function startRenameFile(file: FileNode) {
+  renamingFile.value = { path: file.path, type: file.type, newName: file.name };
+}
+
+async function confirmRenameFile() {
+  if (!editingSkill.value || !renamingFile.value) return;
+  const { path: oldPath, type, newName } = renamingFile.value;
+  const trimmed = newName.trim();
+  if (!trimmed) { renamingFile.value = null; return; }
+
+  const parts = oldPath.split("/");
+  parts[parts.length - 1] = type === "file" ? (trimmed.endsWith(".md") ? trimmed : trimmed + ".md") : trimmed;
+  const newPath = parts.join("/");
+
+  if (newPath === oldPath) { renamingFile.value = null; return; }
+
+  try {
+    await renameSkillFile(editingSkill.value.name, oldPath, newPath);
+    renamingFile.value = null;
+    if (currentFile.value?.path === oldPath) {
+      currentFile.value.path = newPath;
+    } else if (currentFile.value && currentFile.value.path.startsWith(oldPath + "/")) {
+      currentFile.value.path = currentFile.value.path.replace(oldPath, newPath);
+    }
+    ElMessage.success("Renamed");
+    await loadFileTree();
+  } catch { ElMessage.error("Failed to rename"); }
+}
+
 onMounted(loadSkills);
 </script>
 
@@ -283,7 +376,7 @@ onMounted(loadSkills);
   min-height: 500px;
 }
 .file-tree {
-  width: 250px;
+  width: 280px;
   flex-shrink: 0;
   overflow-y: auto;
   background: #fff;
@@ -310,11 +403,14 @@ onMounted(loadSkills);
   color: #e6a23c;
   font-weight: 500;
 }
-.delete-btn {
+.file-actions {
   margin-left: auto;
+  display: flex;
+  gap: 2px;
   opacity: 0;
+  flex-shrink: 0;
 }
-.file-item:hover .delete-btn {
+.file-item:hover .file-actions {
   opacity: 1;
 }
 .editor-pane {

@@ -9,6 +9,8 @@ export interface AgentConfig {
   maxTokens: number;
   maxIterations: number;
   streaming: boolean;
+  /** 是否启用 AI 扩展思考（Extended Thinking） */
+  thinking: boolean;
   tools: string[];
   skills: string[];
   enabled: boolean;
@@ -26,6 +28,7 @@ export interface AgentCreateInput {
   maxTokens?: number;
   maxIterations?: number;
   streaming?: boolean;
+  thinking?: boolean;
   tools?: string[];
   skills?: string[];
 }
@@ -40,6 +43,7 @@ export interface AgentUpdateInput {
   maxTokens?: number;
   maxIterations?: number;
   streaming?: boolean;
+  thinking?: boolean;
   tools?: string[];
   skills?: string[];
   enabled?: boolean;

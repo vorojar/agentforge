@@ -17,6 +17,7 @@ import { statsRoutes } from "./routes/stats.js";
 import { httpToolRoutes } from "./routes/http-tools.js";
 import { providerRoutes } from "./routes/providers.js";
 import { knowledgeRoutes } from "./routes/knowledge.js";
+import { proxyRoutes } from "./routes/proxy.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 
@@ -30,13 +31,13 @@ export function createApp(ctx: AppContext) {
       },
     },
     requestTimeout: 120_000,
-    bodyLimit: 20 * 1024 * 1024, // 20MB for image uploads
+    bodyLimit: 30 * 1024 * 1024,
   });
 
   fastify.register(cors, {
     origin: process.env.CORS_ORIGIN || true,
   });
-  fastify.register(multipart, { limits: { fileSize: 10 * 1024 * 1024 } });
+  fastify.register(multipart, { limits: { fileSize: 20 * 1024 * 1024 } });
 
   // Serve Vue3 admin UI static files in production
   const webDistPath = join(__dirname, "../../web/dist");
@@ -59,6 +60,9 @@ export function createApp(ctx: AppContext) {
   // Health check
   fastify.get("/health", async () => ({ status: "ok", timestamp: new Date().toISOString() }));
 
+  // Provider proxy routes (no admin auth, uses channel key auth)
+  fastify.register(proxyRoutes, { ctx });
+
   // Chat routes — API key auth applied directly on scope
   fastify.register(async (scope) => {
     scope.decorateRequest("agentConfig", undefined);
@@ -71,18 +75,18 @@ export function createApp(ctx: AppContext) {
 
       const rawKey = authHeader.slice(7);
       const keyHash = createHash("sha256").update(rawKey).digest("hex");
-      const apiKey = ctx.db.getApiKeyByHash(keyHash);
+      const apiKey = await ctx.db.getApiKeyByHash(keyHash);
 
       if (!apiKey || !apiKey.enabled) {
         return reply.code(401).send({ error: "Unauthorized: invalid or disabled API key" });
       }
 
-      const agent = ctx.db.getAgent(apiKey.agentId);
+      const agent = await ctx.db.getAgent(apiKey.agentId);
       if (!agent || !agent.enabled) {
         return reply.code(401).send({ error: "Unauthorized: agent not found or disabled" });
       }
 
-      ctx.db.touchApiKey(apiKey.id);
+      await ctx.db.touchApiKey(apiKey.id);
       request.agentConfig = agent;
     });
 

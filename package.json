@@ -15,15 +15,20 @@
     "clean": "turbo run clean"
   },
   "devDependencies": {
-    "@agentforge/types": "workspace:*",
+    "@agentforge/core": "workspace:*",
     "@agentforge/database": "workspace:*",
     "@agentforge/providers": "workspace:*",
-    "@agentforge/tools": "workspace:*",
-    "@agentforge/skills": "workspace:*",
-    "@agentforge/core": "workspace:*",
     "@agentforge/server": "workspace:*",
+    "@agentforge/skills": "workspace:*",
+    "@agentforge/tools": "workspace:*",
+    "@agentforge/types": "workspace:*",
+    "dotenv": "^17.3.1",
+    "mysql2": "^3.20.0",
+    "sql.js": "^1.14.1",
+    "tsx": "^4.19.0",
     "turbo": "^2.3.0",
     "typescript": "^5.6.0",
+    "uuid": "^11.0.0",
     "vitest": "^3.0.0"
   }
 }

@@ -1,14 +1,8 @@
 export type ContentBlock =
-  | ThinkingBlock
   | TextBlock
   | ImageBlock
   | ToolUseBlock
   | ToolResultBlock;
-
-export interface ThinkingBlock {
-  type: "thinking";
-  text: string;
-}
 
 export interface TextBlock {
   type: "text";
@@ -43,6 +37,8 @@ export interface Message {
   sessionId: string;
   role: "user" | "assistant" | "tool";
   content: string | ContentBlock[];
+  /** AI 思考过程文本（仅 assistant 消息） */
+  thinking?: string;
   model?: string;
   tokensIn?: number;
   tokensOut?: number;

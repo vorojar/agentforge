@@ -1,6 +1,5 @@
-import type { AgentConfig, LLMMessage, SkillRegistry } from "@agentforge/types";
+import type { AgentConfig, LLMMessage, Skill, SkillRegistry } from "@agentforge/types";
 import { estimateTokens, estimateMessagesTokens } from "./token-utils.js";
-import { loadSkillContent } from "@agentforge/skills";
 
 export class ContextBuilder {
   constructor(
@@ -8,24 +7,50 @@ export class ContextBuilder {
     private skillRegistry?: SkillRegistry
   ) {}
 
+  /** Generate a concise skill catalog summary for System Prompt injection */
+  private buildSkillCatalog(skillNames: string[]): string | null {
+    if (!this.skillRegistry || skillNames.length === 0) return null;
+
+    const entries: string[] = [];
+    for (const name of skillNames) {
+      let skill: Skill | undefined = this.skillRegistry.get(name);
+      if (!skill) {
+        const all = this.skillRegistry.list();
+        skill = all.find((s) => s.id === name);
+      }
+      if (!skill) continue;
+
+      const filesLine = skill.availableFiles?.length
+        ? `Available files: ${skill.availableFiles.join(", ")}`
+        : "";
+      entries.push(
+        `### ${skill.id}\n${skill.description}${filesLine ? "\n" + filesLine : ""}`
+      );
+    }
+
+    if (entries.length === 0) return null;
+
+    return [
+      "## Available Skills",
+      "",
+      "You have access to the following skills. Use the `get_skill_content` tool to load detailed instructions, examples, or references when needed.",
+      "",
+      ...entries,
+    ].join("\n");
+  }
+
   build(
     history: LLMMessage[],
-    userInput?: string,
+    _userInput?: string,
     maxHistoryTokens: number = 80000
   ): { systemPrompt: string; messages: LLMMessage[] } {
     let systemPrompt = this.config.systemPrompt;
 
-    // Append matched skill content if available
-    if (
-      userInput &&
-      this.skillRegistry &&
-      this.config.skills.length > 0
-    ) {
-      const match = this.skillRegistry.match(userInput);
-      if (match && match.score >= 0.15) {
-        // Lazy load full content from filesystem (supports hot editing)
-        const content = loadSkillContent(match.skill);
-        systemPrompt += `\n\n## Skill: ${match.skill.name}\n${content}`;
+    // Inject skill catalog summary (not full content)
+    if (this.skillRegistry && this.config.skills.length > 0) {
+      const catalog = this.buildSkillCatalog(this.config.skills);
+      if (catalog) {
+        systemPrompt += `\n\n${catalog}`;
       }
     }
 

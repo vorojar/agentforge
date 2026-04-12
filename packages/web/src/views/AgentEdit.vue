@@ -22,23 +22,14 @@
               placeholder="Define the agent's role and behavior..." />
           </el-form-item>
 
-          <el-form-item label="Provider" required>
-            <el-select v-model="form.providerId" style="width: 100%" placeholder="Select a provider"
+          <el-form-item label="Model" required>
+            <el-select v-model="form.providerId" style="width: 100%" placeholder="Select a model"
               @change="onProviderChange">
               <el-option v-for="p in availableProviders" :key="p.id" :label="p.name" :value="p.id">
                 <span>{{ p.name }}</span>
                 <el-tag v-if="p.isPrimary" type="success" size="small" style="margin-left: 8px">Primary</el-tag>
               </el-option>
             </el-select>
-          </el-form-item>
-
-          <el-form-item label="Model" required>
-            <el-select v-model="form.model" style="width: 100%" filterable allow-create default-first-option
-              placeholder="Select or type a model name" :disabled="!form.providerId">
-              <el-option v-if="selectedProviderModel" :label="selectedProviderModel + ' (default)'" :value="selectedProviderModel" />
-            </el-select>
-            <el-text v-if="!form.providerId" type="warning" size="small">Please select a provider first</el-text>
-            <el-text v-else type="info" size="small">Can type any model name for this provider</el-text>
           </el-form-item>
 
           <el-form-item label="Temperature">
@@ -57,6 +48,11 @@
             <el-switch v-model="form.streaming" />
           </el-form-item>
 
+          <el-form-item label="Extended Thinking">
+            <el-switch v-model="form.thinking" />
+            <el-text type="info" size="small" style="margin-left: 8px">启用后可查看 AI 的思考过程（Claude 等模型支持）</el-text>
+          </el-form-item>
+
           <el-form-item>
             <el-button type="primary" @click="handleSave" :loading="saving">Save</el-button>
           </el-form-item>
@@ -71,7 +67,7 @@
             Select which tools this agent can use. Leave empty to allow all.
           </p>
           <el-checkbox-group v-model="form.tools">
-            <el-checkbox v-for="tool in availableTools.filter(t => t.name !== 'search_knowledge')" :key="tool.name" :label="tool.name" :value="tool.name"
+            <el-checkbox v-for="tool in availableTools.filter(t => t.name !== 'search_knowledge' && t.name !== 'get_skill_content')" :key="tool.name" :label="tool.name" :value="tool.name"
               style="display: block; margin-bottom: 8px">
               <span>{{ tool.name }}</span>
               <el-tag v-if="httpToolNames.has(tool.name)" size="small" type="warning" style="margin-left: 8px">HTTP</el-tag>
@@ -94,35 +90,50 @@
 
       <!-- Tab 3: Knowledge -->
       <el-tab-pane label="Knowledge" name="knowledge" :disabled="!isEdit">
-        <div style="max-width: 700px">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px">
-            <h3>Knowledge Base</h3>
-            <el-upload
-              :show-file-list="false"
-              :before-upload="handleKnowledgeFile"
-              accept=".txt,.md,.csv,.json,.log,.html,.xml"
-            >
-              <el-button type="primary" size="small" :loading="knowledgeUploading">Upload File</el-button>
-            </el-upload>
-          </div>
+        <div style="max-width: 900px">
+          <h3 style="margin-bottom: 8px">Associated Knowledge Bases</h3>
           <p style="color: #909399; font-size: 13px; margin-bottom: 16px">
-            Upload documents so this agent can answer questions based on their content.
+            Select knowledge bases for this agent. Manage knowledge bases in the
+            <router-link to="/knowledge-bases" style="color: #409eff">Knowledge Base Management</router-link> page.
           </p>
 
-          <el-table :data="knowledgeSources" size="small" v-loading="knowledgeLoading">
-            <el-table-column prop="sourceName" label="Document" min-width="200" />
-            <el-table-column prop="chunkCount" label="Chunks" width="100" align="center" />
-            <el-table-column label="Actions" width="100" align="center">
+          <el-select
+            v-model="selectedKbIds"
+            multiple
+            style="width: 100%; margin-bottom: 16px"
+            placeholder="Select knowledge bases..."
+            @change="handleKbChange"
+            v-loading="knowledgeLoading"
+          >
+            <el-option
+              v-for="kb in allKnowledgeBases"
+              :key="kb.id"
+              :label="kb.name"
+              :value="kb.id"
+            >
+              <span>{{ kb.name }}</span>
+              <span style="color: #909399; font-size: 12px; margin-left: 8px">
+                {{ kb.description || '' }}
+              </span>
+            </el-option>
+          </el-select>
+
+          <el-table v-if="selectedKbDetails.length > 0" :data="selectedKbDetails" size="small">
+            <el-table-column prop="name" label="Knowledge Base" min-width="160" />
+            <el-table-column prop="description" label="Description" min-width="200">
+              <template #default="{ row }">{{ row.description || '-' }}</template>
+            </el-table-column>
+            <el-table-column label="Sources" width="80" align="center">
+              <template #default="{ row }">{{ row.sources?.length ?? 0 }}</template>
+            </el-table-column>
+            <el-table-column label="" width="100" align="center">
               <template #default="{ row }">
-                <el-popconfirm title="Delete this document?" @confirm="deleteKnowledge(row.sourceName)">
-                  <template #reference>
-                    <el-button link type="danger" size="small">Delete</el-button>
-                  </template>
-                </el-popconfirm>
+                <el-button link size="small" @click="$router.push('/knowledge-bases')">Manage</el-button>
               </template>
             </el-table-column>
           </el-table>
 
+          <el-empty v-else-if="!knowledgeLoading" description="No knowledge bases associated" />
         </div>
       </el-tab-pane>
 
@@ -189,26 +200,26 @@
 
             <h4 style="margin-bottom: 8px">Request Body</h4>
             <el-table :data="apiParamDocs" size="small" border style="margin-bottom: 16px; font-size: 12px">
-              <el-table-column prop="field" label="Field" width="120" />
-              <el-table-column prop="type" label="Type" width="120" />
-              <el-table-column prop="required" label="Required" width="60" align="center" />
-              <el-table-column prop="desc" label="Description" />
+              <el-table-column prop="field" label="字段" width="120" />
+              <el-table-column prop="type" label="类型" width="120" />
+              <el-table-column prop="required" label="必填" width="60" align="center" />
+              <el-table-column prop="desc" label="说明" />
             </el-table>
 
-            <h4 style="margin-bottom: 6px; margin-top: 4px">images field structure</h4>
+            <h4 style="margin-bottom: 6px; margin-top: 4px">images 字段结构</h4>
             <el-text type="info" size="small" style="display: block; margin-bottom: 8px">
-              images is an array, each element is one of two formats:
+              images 是数组，每个元素为以下两种格式之一：
             </el-text>
             <el-table :data="imageParamDocs" size="small" border style="margin-bottom: 16px; font-size: 12px">
-              <el-table-column prop="format" label="Format" width="100" />
-              <el-table-column prop="field" label="Field" width="120" />
-              <el-table-column prop="type" label="Type" width="80" />
-              <el-table-column prop="desc" label="Description" />
+              <el-table-column prop="format" label="格式" width="100" />
+              <el-table-column prop="field" label="字段" width="120" />
+              <el-table-column prop="type" label="类型" width="80" />
+              <el-table-column prop="desc" label="说明" />
             </el-table>
 
             <el-divider />
 
-            <h4 style="margin-bottom: 8px">Chat (non-streaming) — Text only</h4>
+            <h4 style="margin-bottom: 8px">Chat (non-streaming) — 纯文本</h4>
             <pre style="font-size: 12px; white-space: pre-wrap; margin: 0">POST {{ baseUrl }}/api/chat
 
 curl -X POST {{ baseUrl }}/api/chat \
@@ -218,14 +229,14 @@ curl -X POST {{ baseUrl }}/api/chat \
 
             <el-divider />
 
-            <h4 style="margin-bottom: 8px">Chat (non-streaming) — With image (base64)</h4>
+            <h4 style="margin-bottom: 8px">Chat (non-streaming) — 携带图片（base64）</h4>
             <pre style="font-size: 12px; white-space: pre-wrap; margin: 0">POST {{ baseUrl }}/api/chat
 
 curl -X POST {{ baseUrl }}/api/chat \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_API_KEY" \
   -d '{
-  "message": "Describe this image",
+  "message": "请描述这张图片",
   "images": [
     {
       "type": "base64",
@@ -237,14 +248,14 @@ curl -X POST {{ baseUrl }}/api/chat \
 
             <el-divider />
 
-            <h4 style="margin-bottom: 8px">Chat (non-streaming) — With image (URL)</h4>
+            <h4 style="margin-bottom: 8px">Chat (non-streaming) — 携带图片（URL）</h4>
             <pre style="font-size: 12px; white-space: pre-wrap; margin: 0">POST {{ baseUrl }}/api/chat
 
 curl -X POST {{ baseUrl }}/api/chat \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_API_KEY" \
   -d '{
-  "message": "Describe this image",
+  "message": "请描述这张图片",
   "images": [
     {
       "type": "url",
@@ -265,11 +276,11 @@ curl -X POST {{ baseUrl }}/api/chat/stream \
 
             <el-divider />
 
-            <h4 style="margin-bottom: 8px">Streaming response events (SSE)</h4>
+            <h4 style="margin-bottom: 8px">Streaming 响应事件格式（SSE）</h4>
             <el-table :data="sseEventDocs" size="small" border style="font-size: 12px">
               <el-table-column prop="event" label="event.type" width="140" />
-              <el-table-column prop="data" label="event.data structure" width="220" />
-              <el-table-column prop="desc" label="Description" />
+              <el-table-column prop="data" label="event.data 结构" width="220" />
+              <el-table-column prop="desc" label="说明" />
             </el-table>
           </div>
         </div>
@@ -277,20 +288,29 @@ curl -X POST {{ baseUrl }}/api/chat/stream \
 
       <!-- Tab 4: Test Chat -->
       <el-tab-pane label="Test Chat" name="chat" :disabled="!isEdit">
-        <div>
-          <div>
-            <div class="chat-box" ref="chatBoxRef">
-              <div v-for="(msg, i) in chatMessages" :key="i" :class="['chat-msg', `chat-msg-${msg.role}`]">
+        <div class="chat-container">
+          <div class="chat-box" ref="chatBoxRef">
+            <div v-for="(msg, i) in chatMessages" :key="i" :class="['chat-msg', msg.isSystemPrompt ? 'chat-msg-system' : `chat-msg-${msg.role}`]">
+              <!-- System Prompt 折叠展示 -->
+              <template v-if="msg.isSystemPrompt">
+                <div class="chat-msg-system-header" @click="toggleSystemPrompt(i)">
+                  <el-icon style="margin-right: 4px"><CaretRight v-if="!msg.systemPromptExpanded" /><CaretBottom v-else /></el-icon>
+                  <el-tag size="small" type="info">System Prompt</el-tag>
+                  <span style="margin-left: 6px; color: #909399; font-size: 12px">{{ msg.text.length.toLocaleString() }} chars</span>
+                </div>
+                <div v-if="msg.systemPromptExpanded" class="chat-msg-system-body">{{ msg.text }}</div>
+              </template>
+              <template v-else>
                 <div class="chat-msg-role">{{ msg.role === 'user' ? 'You' : 'Agent' }}</div>
-                <!-- Thinking collapse -->
+                <!-- 思考过程折叠展示 -->
                 <div v-if="msg.thinking" class="chat-msg-thinking">
                   <div class="chat-msg-thinking-header" @click="toggleThinking(i)">
                     <el-icon style="margin-right: 4px"><CaretRight v-if="!msg.thinkingExpanded" /><CaretBottom v-else /></el-icon>
-                    <span>Thinking</span>
+                    <span>思考过程</span>
                   </div>
                   <div v-if="msg.thinkingExpanded" class="chat-msg-thinking-body">{{ msg.thinking }}</div>
                 </div>
-                <!-- User message images -->
+                <!-- 用户消息展示图片 -->
                 <div v-if="msg.images?.length" style="margin-bottom: 6px; display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end">
                   <img v-for="(img, ii) in msg.images" :key="ii" :src="img" style="max-width: 180px; max-height: 180px; border-radius: 6px; object-fit: cover; border: 1px solid #e4e7ed" />
                 </div>
@@ -303,28 +323,30 @@ curl -X POST {{ baseUrl }}/api/chat/stream \
                 <div v-if="msg.usage" style="font-size: 11px; color: #c0c4cc; margin-top: 4px">
                   {{ (msg.usage.tokensIn + msg.usage.tokensOut).toLocaleString() }} tokens
                   ({{ msg.usage.tokensIn.toLocaleString() }}↑ {{ msg.usage.tokensOut.toLocaleString() }}↓)
+                  <span v-if="msg.usage.cacheReadTokens" style="color: #67c23a"> · {{ msg.usage.cacheReadTokens.toLocaleString() }} cache</span>
                   · {{ (msg.usage.durationMs / 1000).toFixed(1) }}s
                 </div>
-              </div>
-              <div v-if="chatLoading" class="chat-msg chat-msg-assistant">
-                <div class="chat-msg-role">Agent</div>
-                <div class="chat-msg-text" style="color: #909399">Thinking...</div>
-              </div>
+              </template>
             </div>
-            <!-- Image preview area -->
-            <div v-if="pendingImages.length" style="display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 0; border-top: 1px solid #e4e7ed; margin-top: 4px">
+            <div v-if="chatLoading" class="chat-msg chat-msg-assistant">
+              <div class="chat-msg-role">Agent</div>
+              <div class="chat-msg-text" style="color: #909399">Thinking...</div>
+            </div>
+          </div>
+          <div class="chat-toolbar">
+            <!-- 图片预览区 -->
+            <div v-if="pendingImages.length" class="chat-pending-images">
               <div v-for="(img, i) in pendingImages" :key="i" style="position: relative">
                 <img :src="img" style="width: 60px; height: 60px; object-fit: cover; border-radius: 4px; border: 1px solid #e4e7ed" />
                 <el-icon @click="removePendingImage(i)" style="position: absolute; top: -6px; right: -6px; cursor: pointer; background: #fff; border-radius: 50%; color: #f56c6c; font-size: 16px"><CircleClose /></el-icon>
               </div>
             </div>
-            <div style="display: flex; gap: 8px; margin-top: 8px; align-items: flex-end">
+            <div class="chat-input-row">
               <el-upload :show-file-list="false" :before-upload="handleChatImage" accept="image/*" style="flex-shrink: 0">
                 <el-button :icon="Picture" circle />
               </el-upload>
               <el-input v-model="chatInput" placeholder="Type a message..." @keyup.enter="sendChat" :disabled="chatLoading" style="flex: 1" />
               <el-button type="primary" @click="sendChat" :loading="chatLoading">Send</el-button>
-              <el-button @click="newChat">New Chat</el-button>
             </div>
           </div>
         </div>
@@ -342,8 +364,7 @@ import {
   getHttpTools, getProviders,
   createApiKey, deleteApiKey,
   testChat, getAgentStats,
-  getKnowledgeSources, uploadKnowledgeApi, deleteKnowledgeApi,
-  getSessionMessages,
+  getKnowledgeBases, getAgentKnowledge, setAgentKnowledge,
 } from "@/api";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { Picture, CaretRight, CaretBottom, CircleClose } from "@element-plus/icons-vue";
@@ -366,6 +387,7 @@ const form = ref({
   maxTokens: 4096,
   maxIterations: 15,
   streaming: false,
+  thinking: false,
   tools: [] as string[],
   skills: [] as string[],
 });
@@ -375,16 +397,7 @@ const httpToolNames = ref<Set<string>>(new Set());
 const availableSkills = ref<Array<{ name: string }>>([]);
 const availableProviders = ref<Array<{ id: string; name: string; defaultModel: string; isPrimary: boolean }>>([]);
 
-const selectedProviderModel = computed(() => {
-  if (!form.value.providerId) {
-    const primary = availableProviders.value.find(p => p.isPrimary);
-    return primary?.defaultModel ?? "";
-  }
-  return availableProviders.value.find(p => p.id === form.value.providerId)?.defaultModel ?? "";
-});
-
 function onProviderChange() {
-  // When provider changes, set model to provider's default
   const provider = availableProviders.value.find(p => p.id === form.value.providerId);
   if (provider) form.value.model = provider.defaultModel;
 }
@@ -395,27 +408,27 @@ const newlyCreatedKey = ref("");
 const agentUsage = ref({ totalRequests: 0, totalTokensIn: 0, totalTokensOut: 0 });
 const baseUrl = ref(window.location.origin);
 
-// API doc data
+// API 文档数据
 const apiParamDocs = [
-  { field: "message", type: "string", required: "No*", desc: "User message text. At least one of message or images is required" },
-  { field: "sessionId", type: "string", required: "No", desc: "Session ID for multi-turn context. Creates new session if omitted" },
-  { field: "images", type: "array", required: "No*", desc: "Image array, supports base64 inline or URL formats. At least one of message or images is required" },
+  { field: "message", type: "string", required: "否*", desc: "用户消息文本。message 和 images 至少提供一个" },
+  { field: "sessionId", type: "string", required: "否", desc: "会话 ID，用于保持多轮对话上下文。不传则创建新会话" },
+  { field: "images", type: "array", required: "否*", desc: "图片数组，支持 base64 内联或 URL 两种格式。message 和 images 至少提供一个" },
 ];
 
 const imageParamDocs = [
-  { format: "base64", field: "type", type: "string", desc: 'Fixed value "base64"' },
-  { format: "base64", field: "mediaType", type: "string", desc: 'Image MIME type, e.g. "image/jpeg", "image/png", "image/webp", "image/gif"' },
-  { format: "base64", field: "data", type: "string", desc: "Base64 encoded image string (without data:xxx;base64, prefix)" },
-  { format: "url", field: "type", type: "string", desc: 'Fixed value "url"' },
-  { format: "url", field: "url", type: "string", desc: "Full HTTP/HTTPS URL of the image, must be accessible by the model" },
+  { format: "base64", field: "type", type: "string", desc: '固定值 "base64"' },
+  { format: "base64", field: "mediaType", type: "string", desc: '图片 MIME 类型，如 "image/jpeg"、"image/png"、"image/webp"、"image/gif"' },
+  { format: "base64", field: "data", type: "string", desc: "图片的 base64 编码字符串（不含 data:xxx;base64, 前缀）" },
+  { format: "url", field: "type", type: "string", desc: '固定值 "url"' },
+  { format: "url", field: "url", type: "string", desc: "图片的完整 HTTP/HTTPS URL，需确保模型可访问" },
 ];
 
 const sseEventDocs = [
-  { event: "thinking", data: "string", desc: "AI thinking process text fragment (streaming, only for thinking-enabled models)" },
-  { event: "text", data: "string", desc: "AI reply text fragment (streaming)" },
-  { event: "tool_call", data: '{ name: string, input: object }', desc: "Triggered when agent calls a tool" },
-  { event: "tool_result", data: '{ name: string, result: string }', desc: "Triggered after tool execution completes" },
-  { event: "done", data: '{ reply, sessionId, usage }', desc: "Stream ended, contains full reply, session ID and token usage" },
+  { event: "thinking", data: "string", desc: "AI 思考过程文本片段（流式累积，仅支持思考模式的模型）" },
+  { event: "text", data: "string", desc: "AI 回复正文文本片段（流式累积）" },
+  { event: "tool_call", data: '{ name: string, input: object }', desc: "Agent 调用工具时触发" },
+  { event: "tool_result", data: '{ name: string, result: string }', desc: "工具执行完成后触发" },
+  { event: "done", data: '{ reply, sessionId, usage }', desc: "流式输出结束，包含完整回复、会话 ID 和 token 用量" },
 ];
 
 // Test chat state
@@ -426,7 +439,9 @@ interface ChatMessage {
   thinkingExpanded?: boolean;
   images?: string[];
   toolCalls?: Array<{ name: string }>;
-  usage?: { tokensIn: number; tokensOut: number; durationMs: number };
+  usage?: { tokensIn: number; tokensOut: number; cacheReadTokens?: number; durationMs: number };
+  isSystemPrompt?: boolean;
+  systemPromptExpanded?: boolean;
 }
 const chatMessages = ref<ChatMessage[]>([]);
 const chatInput = ref("");
@@ -440,66 +455,9 @@ function toggleThinking(index: number) {
   if (msg) msg.thinkingExpanded = !msg.thinkingExpanded;
 }
 
-function newChat() {
-  chatMessages.value = [];
-  chatSessionId.value = "";
-  chatInput.value = "";
-  pendingImages.value = [];
-  if (agentId.value) {
-    localStorage.removeItem('test-chat-session-' + agentId.value);
-  }
-}
-
-async function loadChatHistory() {
-  if (!agentId.value) return;
-  const savedSessionId = localStorage.getItem('test-chat-session-' + agentId.value);
-  if (!savedSessionId) return;
-  chatSessionId.value = savedSessionId;
-  try {
-    const { data } = await getSessionMessages(savedSessionId);
-    chatMessages.value = (data as Array<{ role: string; content: string | unknown[] }>).map((m) => {
-      const blocks = typeof m.content === 'string' ? tryParseBlocks(m.content) : m.content as Array<{ type: string; text?: string; name?: string; input?: Record<string, unknown> }>;
-      if (m.role === 'user') {
-        const text = typeof m.content === 'string' && !Array.isArray(blocks)
-          ? m.content
-          : (blocks as Array<{ type: string; text?: string }>).filter((b) => b.type === 'text').map((b) => b.text ?? '').join('');
-        return { role: 'user', text } as ChatMessage;
-      }
-      // assistant
-      const textParts: string[] = [];
-      const thinkingParts: string[] = [];
-      const toolCalls: Array<{ name: string }> = [];
-      if (typeof m.content === 'string' && !Array.isArray(blocks)) {
-        textParts.push(m.content);
-      } else {
-        for (const b of blocks as Array<{ type: string; text?: string; name?: string }>) {
-          if (b.type === 'thinking' && b.text) thinkingParts.push(b.text);
-          else if (b.type === 'text' && b.text) textParts.push(b.text);
-          else if (b.type === 'tool_use' && b.name) toolCalls.push({ name: b.name });
-        }
-      }
-      return {
-        role: 'assistant',
-        text: textParts.join(''),
-        thinking: thinkingParts.join('') || undefined,
-        thinkingExpanded: false,
-        toolCalls: toolCalls.length ? toolCalls : undefined,
-      } as ChatMessage;
-    });
-  } catch {
-    // session may no longer exist, clear stale reference
-    chatSessionId.value = '';
-    localStorage.removeItem('test-chat-session-' + agentId.value);
-  }
-}
-
-function tryParseBlocks(s: string): string | Array<{ type: string; text?: string; name?: string; input?: Record<string, unknown> }> {
-  try {
-    const parsed = JSON.parse(s);
-    return Array.isArray(parsed) ? parsed : s;
-  } catch {
-    return s;
-  }
+function toggleSystemPrompt(index: number) {
+  const msg = chatMessages.value[index];
+  if (msg) msg.systemPromptExpanded = !msg.systemPromptExpanded;
 }
 
 function removePendingImage(index: number) {
@@ -515,47 +473,41 @@ function handleChatImage(file: File) {
   return false;
 }
 
-// Knowledge state
-const knowledgeSources = ref<Array<{ sourceName: string; chunkCount: number }>>([]);
+// Knowledge association state
+interface KnowledgeBaseItem {
+  id: string;
+  name: string;
+  description: string;
+  sources?: Array<{ sourceName: string; chunkCount: number }>;
+}
+const allKnowledgeBases = ref<KnowledgeBaseItem[]>([]);
+const selectedKbIds = ref<string[]>([]);
 const knowledgeLoading = ref(false);
-const knowledgeUploading = ref(false);
+
+const selectedKbDetails = computed(() => {
+  return allKnowledgeBases.value.filter(kb => selectedKbIds.value.includes(kb.id));
+});
 
 async function loadKnowledge() {
   if (!isEdit.value) return;
   knowledgeLoading.value = true;
   try {
-    const { data } = await getKnowledgeSources(agentId.value);
-    knowledgeSources.value = data;
+    const [kbsRes, agentKbRes] = await Promise.all([
+      getKnowledgeBases(),
+      getAgentKnowledge(agentId.value),
+    ]);
+    allKnowledgeBases.value = kbsRes.data;
+    selectedKbIds.value = agentKbRes.data.kbIds || [];
   } catch { /* ignore */ }
   finally { knowledgeLoading.value = false; }
 }
 
-function handleKnowledgeFile(file: File) {
-  const reader = new FileReader();
-  reader.onload = async () => {
-    const content = reader.result as string;
-    if (!content.trim()) { ElMessage.warning("File is empty"); return; }
-    const name = file.name.replace(/\.[^.]+$/, "");
-    knowledgeUploading.value = true;
-    try {
-      const { data } = await uploadKnowledgeApi(agentId.value, { name, content });
-      ElMessage.success(`${file.name} uploaded: ${data.chunks} chunks`);
-      loadKnowledge();
-    } catch {
-      ElMessage.error("Failed to upload");
-    } finally { knowledgeUploading.value = false; }
-  };
-  reader.readAsText(file);
-  return false; // prevent default upload
-}
-
-async function deleteKnowledge(sourceName: string) {
+async function handleKbChange(newIds: string[]) {
   try {
-    await deleteKnowledgeApi(agentId.value, sourceName);
-    ElMessage.success("Deleted");
-    loadKnowledge();
+    await setAgentKnowledge(agentId.value, newIds);
+    ElMessage.success("Knowledge bases updated");
   } catch {
-    ElMessage.error("Failed to delete");
+    ElMessage.error("Failed to update");
   }
 }
 
@@ -597,6 +549,7 @@ async function loadData() {
         maxTokens: data.maxTokens,
         maxIterations: data.maxIterations,
         streaming: data.streaming,
+        thinking: data.thinking ?? false,
         tools: data.tools,
         skills: data.skills,
       });
@@ -677,7 +630,7 @@ function copyKey(key: string) {
   ElMessage.success("Copied to clipboard");
 }
 
-/** Convert base64 dataURL to {type, data, mediaType} for backend */
+/** 将 base64 dataURL 转换为 {type, data, mediaType} 格式供后端使用 */
 function parseImageDataUrl(dataUrl: string): { data: string; mediaType: string } | null {
   const match = dataUrl.match(/^data:(image\/[^;]+);base64,(.+)$/);
   if (!match) return null;
@@ -717,12 +670,16 @@ async function sendChatNonStream(msg: string, images: string[]) {
 
     const { data } = await testChat(agentId.value, msg, chatSessionId.value || undefined, imageBlocks.length ? imageBlocks as Array<{ type: "base64"; data: string; mediaType: string }> : undefined);
     chatSessionId.value = data.sessionId;
-    if (agentId.value && data.sessionId) {
-      localStorage.setItem('test-chat-session-' + agentId.value, data.sessionId);
+    if (data.systemPrompt && chatMessages.value.filter(m => !m.isSystemPrompt).length <= 2) {
+      chatMessages.value.splice(chatMessages.value.length - 1, 0, {
+        role: "system", text: data.systemPrompt, isSystemPrompt: true, systemPromptExpanded: false,
+      });
     }
     chatMessages.value.push({
       role: "assistant",
       text: data.reply,
+      thinking: data.thinking || "",
+      thinkingExpanded: false,
       toolCalls: data.toolCalls,
       usage: data.usage,
     });
@@ -757,10 +714,10 @@ async function sendChatStream(msg: string, images: string[]) {
       return;
     }
 
-    // Add empty assistant message for streaming
+    // 添加一条空的 assistant 消息，流式填充
     const assistantMsg: ChatMessage = { role: "assistant", text: "", thinking: "", thinkingExpanded: false, toolCalls: [] };
     chatMessages.value.push(assistantMsg);
-    const msgIndex = chatMessages.value.length - 1;
+    let msgIndex = chatMessages.value.length - 1;
 
     const reader = response.body!.getReader();
     const decoder = new TextDecoder();
@@ -781,7 +738,15 @@ async function sendChatStream(msg: string, images: string[]) {
 
         try {
           const event = JSON.parse(payload);
-          if (event.type === "thinking") {
+          if (event.type === "system_prompt") {
+            const nonSystemCount = chatMessages.value.filter(m => !m.isSystemPrompt).length;
+            if (nonSystemCount <= 2) {
+              chatMessages.value.splice(msgIndex, 0, {
+                role: "system", text: event.data, isSystemPrompt: true, systemPromptExpanded: false,
+              });
+              msgIndex++;
+            }
+          } else if (event.type === "thinking") {
             chatMessages.value[msgIndex].thinking = (chatMessages.value[msgIndex].thinking ?? "") + event.data;
           } else if (event.type === "text") {
             chatMessages.value[msgIndex].text += event.data;
@@ -789,10 +754,9 @@ async function sendChatStream(msg: string, images: string[]) {
             chatMessages.value[msgIndex].toolCalls!.push({ name: event.data.name });
           } else if (event.type === "done") {
             chatSessionId.value = event.data.sessionId;
-            if (agentId.value && event.data.sessionId) {
-              localStorage.setItem('test-chat-session-' + agentId.value, event.data.sessionId);
+            if (event.data.usage) {
+              chatMessages.value[msgIndex].usage = event.data.usage;
             }
-            // Collapse thinking content by default
             if (chatMessages.value[msgIndex].thinking) {
               chatMessages.value[msgIndex].thinkingExpanded = false;
             }
@@ -810,21 +774,44 @@ async function sendChatStream(msg: string, images: string[]) {
   }
 }
 
-onMounted(() => {
-  loadData();
-  loadChatHistory();
-});
+onMounted(loadData);
 </script>
 
 <style scoped>
-.chat-box {
-  height: calc(100vh - 300px);
+.chat-container {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 200px);
   min-height: 400px;
+}
+.chat-box {
+  flex: 1;
   overflow-y: auto;
   border: 1px solid #e4e7ed;
-  border-radius: 4px;
+  border-radius: 4px 4px 0 0;
   padding: 12px;
   background: #fafafa;
+}
+.chat-toolbar {
+  flex-shrink: 0;
+  border: 1px solid #e4e7ed;
+  border-top: none;
+  border-radius: 0 0 4px 4px;
+  padding: 8px 12px;
+  background: #fff;
+}
+.chat-pending-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #e4e7ed;
+  margin-bottom: 8px;
+}
+.chat-input-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
 }
 .chat-msg {
   margin-bottom: 12px;
@@ -882,5 +869,51 @@ onMounted(() => {
   max-height: 300px;
   overflow-y: auto;
   line-height: 1.6;
+}
+.chat-msg-system {
+  background: #f4f4f5;
+  border: 1px dashed #c0c4cc;
+  max-width: 100%;
+}
+.chat-msg-system-header {
+  display: flex;
+  align-items: center;
+  padding: 2px 0;
+  cursor: pointer;
+  user-select: none;
+}
+.chat-msg-system-header:hover {
+  opacity: 0.8;
+}
+.chat-msg-system-body {
+  margin-top: 6px;
+  padding: 8px;
+  background: #fff;
+  border-radius: 4px;
+  font-size: 12px;
+  color: #606266;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 400px;
+  overflow-y: auto;
+  line-height: 1.6;
+  font-family: "SF Mono", "Fira Code", Consolas, monospace;
+}
+.knowledge-editor {
+  width: 100%;
+  border: 1px solid #dcdfe6;
+  border-radius: 4px;
+  padding: 12px;
+  font-family: "SF Mono", "Fira Code", Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  resize: vertical;
+  outline: none;
+  color: #303133;
+  background: #fafafa;
+}
+.knowledge-editor:focus {
+  border-color: #409eff;
+  background: #fff;
 }
 </style>

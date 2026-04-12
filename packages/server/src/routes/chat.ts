@@ -32,7 +32,7 @@ export async function chatRoutes(fastify: FastifyInstance, opts: { ctx: AppConte
 
     try {
       const result = await agentLoop.run(agentConfig, body.message ?? "", body.sessionId, parseImageBlocks(body.images));
-      return { reply: result.reply, sessionId: result.sessionId, toolCalls: result.toolCalls, usage: result.usage };
+      return { reply: result.reply, thinking: result.thinking, sessionId: result.sessionId, toolCalls: result.toolCalls, usage: result.usage };
     } catch (error) {
       request.log.error(error, "Chat request failed");
       return reply.code(502).send({ error: "LLM provider error", message: (error as Error).message });

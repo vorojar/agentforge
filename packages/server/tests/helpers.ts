@@ -28,8 +28,7 @@ class MockProvider implements LLMProvider {
 export function createTestConfig(): AppConfig {
   return {
     port: 0,
-    databaseType: "sqlite",
-    databaseUrl: ":memory:",
+    dbPath: ":memory:",
     llmProvider: "mock",
     llmApiKey: "test-key",
     defaultModel: "mock-model",
@@ -37,9 +36,10 @@ export function createTestConfig(): AppConfig {
   };
 }
 
-export function createTestContext(): AppContext {
+export async function createTestContext(): Promise<AppContext> {
   const config = createTestConfig();
   const db = new SQLiteAdapter(":memory:");
+  await db.initialize();
   const provider = new MockProvider();
   const toolRegistry = new ToolRegistryImpl();
   for (const tool of createBuiltinTools()) {
@@ -51,8 +51,8 @@ export function createTestContext(): AppContext {
   return { db, provider, toolRegistry, skillRegistry, agentLoop, config };
 }
 
-export function createTestApp() {
-  const ctx = createTestContext();
+export async function createTestApp() {
+  const ctx = await createTestContext();
   const app = createApp(ctx);
   return { app, ctx };
 }

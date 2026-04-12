@@ -1,7 +1,17 @@
+/**
+ * 数据库适配器接口定义
+ * 功能：所有数据库操作的抽象接口（异步化，支持 MySQL）
+ * 创建时间：2026-03-31
+ * 负责人：王觉贤
+ * 最后更新时间：2026-03-31
+ */
+
 import type { AgentConfig, AgentCreateInput, AgentUpdateInput } from "./agent.js";
 import type { Message, Session } from "./message.js";
 import type { HttpTool, HttpToolCreateInput, HttpToolUpdateInput } from "./http-tool.js";
 import type { ProviderConfig, ProviderCreateInput, ProviderUpdateInput } from "./provider-config.js";
+import type { KnowledgeBase, KnowledgeBaseCreateInput, KnowledgeBaseUpdateInput, KnowledgeSource, KnowledgeSearchResult } from "./knowledge-base.js";
+import type { ProviderChannel, ProxyUsageLog, ChannelStats } from "./provider-channel.js";
 
 export interface ApiKey {
   id: string;
@@ -40,59 +50,84 @@ export interface DailyStats {
 
 export interface DatabaseAdapter {
   // Agents
-  createAgent(input: AgentCreateInput): AgentConfig;
-  getAgent(id: string): AgentConfig | null;
-  listAgents(): AgentConfig[];
-  updateAgent(id: string, input: AgentUpdateInput): AgentConfig | null;
-  deleteAgent(id: string): boolean;
+  createAgent(input: AgentCreateInput): Promise<AgentConfig>;
+  getAgent(id: string): Promise<AgentConfig | null>;
+  listAgents(): Promise<AgentConfig[]>;
+  updateAgent(id: string, input: AgentUpdateInput): Promise<AgentConfig | null>;
+  deleteAgent(id: string): Promise<boolean>;
 
   // API Keys
-  createApiKey(agentId: string, name?: string): { apiKey: ApiKey; rawKey: string };
-  getApiKeyByHash(keyHash: string): ApiKey | null;
-  listApiKeys(agentId: string): ApiKey[];
-  listAllApiKeys(): ApiKey[];
-  deleteApiKey(id: string): boolean;
-  touchApiKey(id: string): void;
+  createApiKey(agentId: string, name?: string): Promise<{ apiKey: ApiKey; rawKey: string }>;
+  getApiKeyByHash(keyHash: string): Promise<ApiKey | null>;
+  listApiKeys(agentId: string): Promise<ApiKey[]>;
+  deleteApiKey(id: string): Promise<boolean>;
+  touchApiKey(id: string): Promise<void>;
 
   // Sessions
-  createSession(agentId: string): Session;
-  getSession(id: string): Session | null;
-  listSessions(agentId?: string, limit?: number, offset?: number): Session[];
-  deleteSession(id: string): boolean;
+  createSession(agentId: string): Promise<Session>;
+  getSession(id: string): Promise<Session | null>;
+  listSessions(agentId?: string): Promise<Session[]>;
+  deleteSession(id: string): Promise<boolean>;
 
   // Messages
-  addMessage(message: Omit<Message, "id" | "createdAt">): Message;
-  getMessages(sessionId: string): Message[];
+  addMessage(message: Omit<Message, "id" | "createdAt">): Promise<Message>;
+  getMessages(sessionId: string): Promise<Message[]>;
 
   // Usage
-  logUsage(log: Omit<UsageLog, "id" | "createdAt">): void;
-  getUsageStats(agentId?: string): UsageStats;
-  getDailyStats(agentId?: string, days?: number): DailyStats[];
-  getSessionCounts(): { total: number; today: number };
-  getModelStats(): Array<{ model: string; requests: number; tokensIn: number; tokensOut: number }>;
-  getAgentUsageStats(): Array<{ agentId: string; totalRequests: number; totalTokensIn: number; totalTokensOut: number }>;
+  logUsage(log: Omit<UsageLog, "id" | "createdAt">): Promise<void>;
+  getUsageStats(agentId?: string): Promise<UsageStats>;
+  getDailyStats(agentId?: string, days?: number, startDate?: string, endDate?: string, granularity?: string): Promise<DailyStats[]>;
+  getSessionCounts(): Promise<{ total: number; today: number }>;
+  getModelStats(startDate?: string, endDate?: string): Promise<Array<{ model: string; requests: number; tokensIn: number; tokensOut: number }>>;
+  getAgentUsageStats(startDate?: string, endDate?: string): Promise<Array<{ agentId: string; totalRequests: number; totalTokensIn: number; totalTokensOut: number }>>;
 
   // HTTP Tools
-  createHttpTool(input: HttpToolCreateInput): HttpTool;
-  getHttpTool(id: string): HttpTool | null;
-  listHttpTools(): HttpTool[];
-  updateHttpTool(id: string, input: HttpToolUpdateInput): HttpTool | null;
-  deleteHttpTool(id: string): boolean;
+  createHttpTool(input: HttpToolCreateInput): Promise<HttpTool>;
+  getHttpTool(id: string): Promise<HttpTool | null>;
+  listHttpTools(): Promise<HttpTool[]>;
+  updateHttpTool(id: string, input: HttpToolUpdateInput): Promise<HttpTool | null>;
+  deleteHttpTool(id: string): Promise<boolean>;
 
   // Providers
-  createProvider(input: ProviderCreateInput): ProviderConfig;
-  getProvider(id: string): ProviderConfig | null;
-  listProviders(): ProviderConfig[];
-  updateProvider(id: string, input: ProviderUpdateInput): ProviderConfig | null;
-  deleteProvider(id: string): boolean;
-  getPrimaryProvider(): ProviderConfig | null;
+  createProvider(input: ProviderCreateInput): Promise<ProviderConfig>;
+  getProvider(id: string): Promise<ProviderConfig | null>;
+  listProviders(): Promise<ProviderConfig[]>;
+  updateProvider(id: string, input: ProviderUpdateInput): Promise<ProviderConfig | null>;
+  deleteProvider(id: string): Promise<boolean>;
+  getPrimaryProvider(): Promise<ProviderConfig | null>;
 
-  // Knowledge
-  ingestKnowledge(agentId: string, sourceName: string, chunks: string[], embeddings?: number[][]): number;
-  searchKnowledge(agentId: string, query: string, limit?: number, queryEmbedding?: number[]): Array<{ sourceName: string; content: string; score: number }>;
-  listKnowledgeSources(agentId: string): Array<{ sourceName: string; chunkCount: number }>;
-  deleteKnowledgeSource(agentId: string, sourceName: string): boolean;
+  // Knowledge Bases
+  createKnowledgeBase(input: KnowledgeBaseCreateInput): Promise<KnowledgeBase>;
+  getKnowledgeBase(id: string): Promise<KnowledgeBase | null>;
+  listKnowledgeBases(): Promise<KnowledgeBase[]>;
+  updateKnowledgeBase(id: string, input: KnowledgeBaseUpdateInput): Promise<KnowledgeBase | null>;
+  deleteKnowledgeBase(id: string): Promise<boolean>;
+
+  // Agent-Knowledge association
+  setAgentKnowledge(agentId: string, kbIds: string[]): Promise<void>;
+  getAgentKnowledge(agentId: string): Promise<string[]>;
+
+  // Knowledge Sources & Chunks (now keyed by kbId)
+  ingestKnowledge(kbId: string, sourceName: string, rawContent: string, chunks: string[], embeddings?: number[][]): Promise<number>;
+  searchKnowledge(kbIds: string[], query: string, limit?: number, queryEmbedding?: number[]): Promise<KnowledgeSearchResult[]>;
+  listKnowledgeSources(kbId: string): Promise<KnowledgeSource[]>;
+  getKnowledgeSourceContent(kbId: string, sourceName: string): Promise<string | null>;
+  renameKnowledgeSource(kbId: string, oldName: string, newName: string): Promise<boolean>;
+  deleteKnowledgeSource(kbId: string, sourceName: string): Promise<boolean>;
+
+  // Provider Channels
+  createChannel(providerId: string, name: string): Promise<{ channel: ProviderChannel; rawKey: string }>;
+  getChannelByHash(keyHash: string): Promise<(ProviderChannel & { providerConfig: ProviderConfig }) | null>;
+  listChannels(providerId: string): Promise<ProviderChannel[]>;
+  deleteChannel(id: string): Promise<boolean>;
+
+  // Proxy Usage
+  logProxyUsage(log: ProxyUsageLog): Promise<void>;
+  getChannelStats(channelId: string, days?: number): Promise<ChannelStats>;
+  getProviderChannelStats(providerId: string, startDate?: string, endDate?: string): Promise<Array<{ channelId: string; channelName: string; totalRequests: number; totalTokensIn: number; totalTokensOut: number }>>;
+  getProxyDailyStats(days?: number, startDate?: string, endDate?: string, granularity?: string): Promise<DailyStats[]>;
+  getProxyOverview(): Promise<{ totalRequests: number; totalTokensIn: number; totalTokensOut: number; totalChannels: number }>;
 
   // Lifecycle
-  close(): void;
+  close(): Promise<void>;
 }

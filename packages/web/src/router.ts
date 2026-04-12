@@ -26,6 +26,11 @@ const routes = [
     component: () => import("./views/AgentEdit.vue"),
   },
   {
+    path: "/knowledge-bases",
+    name: "KnowledgeBases",
+    component: () => import("./views/KnowledgeBases.vue"),
+  },
+  {
     path: "/providers",
     name: "Providers",
     component: () => import("./views/Providers.vue"),

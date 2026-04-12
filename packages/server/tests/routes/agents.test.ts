@@ -8,7 +8,7 @@ describe("Agent routes", () => {
   let ctx: AppContext;
 
   beforeEach(async () => {
-    const t = createTestApp();
+    const t = await createTestApp();
     app = t.app;
     ctx = t.ctx;
     await app.ready();
@@ -37,8 +37,8 @@ describe("Agent routes", () => {
   });
 
   it("should list agents", async () => {
-    ctx.db.createAgent({ name: "Agent 1", systemPrompt: "prompt 1" });
-    ctx.db.createAgent({ name: "Agent 2", systemPrompt: "prompt 2" });
+    await ctx.db.createAgent({ name: "Agent 1", systemPrompt: "prompt 1" });
+    await ctx.db.createAgent({ name: "Agent 2", systemPrompt: "prompt 2" });
 
     const res = await app.inject({
       method: "GET",
@@ -52,7 +52,7 @@ describe("Agent routes", () => {
   });
 
   it("should get a single agent", async () => {
-    const agent = ctx.db.createAgent({ name: "Agent X", systemPrompt: "test" });
+    const agent = await ctx.db.createAgent({ name: "Agent X", systemPrompt: "test" });
 
     const res = await app.inject({
       method: "GET",
@@ -75,7 +75,7 @@ describe("Agent routes", () => {
   });
 
   it("should update an agent", async () => {
-    const agent = ctx.db.createAgent({ name: "Old Name", systemPrompt: "test" });
+    const agent = await ctx.db.createAgent({ name: "Old Name", systemPrompt: "test" });
 
     const res = await app.inject({
       method: "PUT",
@@ -89,7 +89,7 @@ describe("Agent routes", () => {
   });
 
   it("should delete an agent", async () => {
-    const agent = ctx.db.createAgent({ name: "To Delete", systemPrompt: "test" });
+    const agent = await ctx.db.createAgent({ name: "To Delete", systemPrompt: "test" });
 
     const res = await app.inject({
       method: "DELETE",
@@ -100,7 +100,7 @@ describe("Agent routes", () => {
     expect(res.statusCode).toBe(200);
     expect(res.json().success).toBe(true);
 
-    const check = ctx.db.getAgent(agent.id);
+    const check = await ctx.db.getAgent(agent.id);
     expect(check).toBeNull();
   });
 });

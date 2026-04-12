@@ -1,7 +1,6 @@
 export interface AppConfig {
   port: number;
-  databaseType: string;
-  databaseUrl: string;
+  dbPath: string;
   llmProvider: string;
   llmApiKey: string;
   llmBaseUrl?: string;
@@ -17,8 +16,7 @@ export function loadConfig(): AppConfig {
 
   return {
     port: parseInt(process.env.PORT ?? "3000", 10),
-    databaseType: process.env.DATABASE_TYPE ?? "sqlite",
-    databaseUrl: process.env.DATABASE_URL ?? "./data/agentforge.db",
+    dbPath: process.env.DB_PATH ?? "data/agentforge.db",
     llmProvider: process.env.LLM_PROVIDER ?? "claude",
     llmApiKey,
     llmBaseUrl: process.env.LLM_BASE_URL || undefined,

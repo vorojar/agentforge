@@ -1,9 +1,15 @@
-import { resolve, join } from "node:path";
-import { existsSync, readFileSync } from "node:fs";
-import type { DatabaseAdapter, LLMProvider, ProviderConfig, Tool } from "@agentforge/types";
+/**
+ * 应用启动引导
+ * 功能：初始化数据库、Provider、工具注册表等核心组件
+ * 创建时间：2026-03-31
+ * 负责人：王觉贤
+ */
+
+import { resolve } from "node:path";
+import type { DatabaseAdapter, LLMProvider, ProviderConfig } from "@agentforge/types";
 import { createDatabase } from "@agentforge/database";
 import { createProvider } from "@agentforge/providers";
-import { ToolRegistryImpl, createBuiltinTools, createHttpTools, createKnowledgeSearchTool, VolcanoEmbedding } from "@agentforge/tools";
+import { ToolRegistryImpl, createBuiltinTools, createHttpTools, createKnowledgeSearchTool, createSkillContentTool, VolcanoEmbedding } from "@agentforge/tools";
 import type { EmbeddingClient } from "@agentforge/tools";
 import { SkillRegistryImpl, loadSkillsFromDirectory } from "@agentforge/skills";
 import { AgentLoop } from "@agentforge/core";
@@ -19,7 +25,6 @@ export interface AppContext {
   config: AppConfig;
 }
 
-/** Maps provider DB id → LLMProvider instance */
 export class ProviderRegistry {
   private providers = new Map<string, LLMProvider>();
   private primaryId: string | null = null;
@@ -37,24 +42,19 @@ export class ProviderRegistry {
 
   getPrimary(): LLMProvider | undefined {
     if (this.primaryId) return this.providers.get(this.primaryId);
-    // Fallback: first registered
     const first = this.providers.values().next();
     return first.done ? undefined : first.value;
   }
 
-  /** Resolve provider for an agent: by providerId or fallback to primary, with failover */
   resolve(providerId?: string): LLMProvider {
-    // If specific provider requested, try it first
     if (providerId) {
       const p = this.providers.get(providerId);
       if (p && this.isAvailable(providerId)) return this.wrapWithFailover(providerId, p);
     }
-    // Try primary
     if (this.primaryId && this.isAvailable(this.primaryId)) {
       const p = this.providers.get(this.primaryId);
       if (p) return this.wrapWithFailover(this.primaryId, p);
     }
-    // Fallback: first available
     for (const [id, p] of this.providers) {
       if (this.isAvailable(id)) return this.wrapWithFailover(id, p);
     }
@@ -117,10 +117,10 @@ export class ProviderRegistry {
     } as LLMProvider;
   }
 
-  reload(db: DatabaseAdapter) {
+  async reload(db: DatabaseAdapter) {
     this.providers.clear();
     this.primaryId = null;
-    for (const pc of db.listProviders()) {
+    for (const pc of await db.listProviders()) {
       if (!pc.enabled) continue;
       try {
         const provider = createProvider(pc.type, { apiKey: pc.apiKey, baseUrl: pc.baseUrl });
@@ -132,13 +132,12 @@ export class ProviderRegistry {
   }
 }
 
-export function bootstrap(config: AppConfig): AppContext {
-  const db = createDatabase(config.databaseType, config.databaseUrl);
+export async function bootstrap(config: AppConfig): Promise<AppContext> {
+  const db = await createDatabase(resolve(config.dbPath));
 
-  // Auto-create default provider from env if no providers exist
-  if (db.listProviders().length === 0) {
+  if ((await db.listProviders()).length === 0) {
     const typeMap: Record<string, string> = { claude: "Anthropic Claude", openai: "OpenAI Compatible" };
-    db.createProvider({
+    await db.createProvider({
       name: typeMap[config.llmProvider] ?? config.llmProvider,
       type: config.llmProvider,
       apiKey: config.llmApiKey,
@@ -149,17 +148,15 @@ export function bootstrap(config: AppConfig): AppContext {
   }
 
   const providerRegistry = new ProviderRegistry();
-  providerRegistry.reload(db);
+  await providerRegistry.reload(db);
 
   const toolRegistry = new ToolRegistryImpl();
   for (const tool of createBuiltinTools()) {
     toolRegistry.register(tool);
   }
-  for (const tool of createHttpTools(db.listHttpTools())) {
+  for (const tool of createHttpTools(await db.listHttpTools())) {
     toolRegistry.register(tool);
   }
-  // Embedder created later — register knowledge tool after embedder init
-  // (moved below)
 
   const skillRegistry = new SkillRegistryImpl();
   const skillsDir = resolve(process.cwd(), "skills");
@@ -174,7 +171,6 @@ export function bootstrap(config: AppConfig): AppContext {
     db,
   });
 
-  // Create embedding client if configured
   let embedder: EmbeddingClient | undefined;
   const embKey = process.env.VOLCANO_EMBEDDING_KEY;
   if (embKey) {
@@ -185,31 +181,7 @@ export function bootstrap(config: AppConfig): AppContext {
   }
 
   toolRegistry.register(createKnowledgeSearchTool(db, embedder));
-
-  // read_skill_file tool — lets LLM read supporting files from skill directories on demand
-  const readSkillFileTool: Tool = {
-    name: "read_skill_file",
-    description: "Read a supporting file from a skill directory (e.g. template.md, examples/sample.md, references/api-docs.md). Use when skill instructions reference additional files.",
-    parameters: {
-      type: "object",
-      properties: {
-        skill: { type: "string", description: "Skill name (directory name)" },
-        path: { type: "string", description: "Relative file path (e.g. 'template.md', 'references/data.md')" },
-      },
-      required: ["skill", "path"],
-    },
-    async execute(input) {
-      const skillName = input.skill as string;
-      const filePath = input.path as string;
-      if (!filePath.endsWith(".md")) return { content: "Only .md files allowed", isError: true };
-      const fullPath = resolve(join(skillsDir, skillName, filePath));
-      // Security: verify resolved path stays inside skills directory
-      if (!fullPath.startsWith(resolve(skillsDir))) return { content: "Access denied", isError: true };
-      if (!existsSync(fullPath)) return { content: `File not found: ${filePath}`, isError: true };
-      return { content: readFileSync(fullPath, "utf-8") };
-    },
-  };
-  toolRegistry.register(readSkillFileTool);
+  toolRegistry.register(createSkillContentTool(skillRegistry));
 
   return { db, providerRegistry, toolRegistry, skillRegistry, agentLoop, embedder, config };
 }

@@ -9,7 +9,7 @@
 
     <el-table :data="agents" v-loading="loading" stripe>
       <el-table-column prop="name" label="Name" min-width="150" />
-      <el-table-column prop="model" label="Model" width="240" />
+      <el-table-column prop="providerName" label="Model" width="200" show-overflow-tooltip />
       <el-table-column label="Streaming" width="100" align="center">
         <template #default="{ row }">
           <el-tag :type="row.streaming ? 'success' : 'info'" size="small">

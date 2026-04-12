@@ -5,6 +5,8 @@ export interface Skill {
   content: string;
   /** Filesystem path to skill directory (for lazy loading supporting files) */
   dirPath?: string;
+  /** Available files in skill directory (e.g. "SKILL.md", "template.md", "examples/foo.md") */
+  availableFiles?: string[];
   enabled: boolean;
   createdAt: string;
   updatedAt: string;

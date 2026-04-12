@@ -9,14 +9,14 @@ describe("Chat routes", () => {
   let rawKey: string;
 
   beforeEach(async () => {
-    const t = createTestApp();
+    const t = await createTestApp();
     app = t.app;
     ctx = t.ctx;
     await app.ready();
 
     // Create an agent and an API key
-    const agent = ctx.db.createAgent({ name: "Chat Agent", systemPrompt: "You help." });
-    const keyResult = ctx.db.createApiKey(agent.id, "default");
+    const agent = await ctx.db.createAgent({ name: "Chat Agent", systemPrompt: "You help." });
+    const keyResult = await ctx.db.createApiKey(agent.id, "default");
     rawKey = keyResult.rawKey;
   });
 

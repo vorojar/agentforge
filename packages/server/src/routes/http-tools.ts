@@ -1,13 +1,12 @@
 import type { FastifyInstance } from "fastify";
 import type { AppContext } from "../bootstrap.js";
-import { createHttpTools } from "@agentforge/tools";
+import { createHttpTools, escapeJsonStringValue, isPlaceholderInJsonString } from "@agentforge/tools";
 
 export async function httpToolRoutes(fastify: FastifyInstance, opts: { ctx: AppContext }) {
   const { db, toolRegistry } = opts.ctx;
 
-  /** Sync a single HTTP tool into the runtime registry (register or replace). */
-  function syncToRegistry(httpToolId: string) {
-    const ht = db.getHttpTool(httpToolId);
+  async function syncToRegistry(httpToolId: string) {
+    const ht = await db.getHttpTool(httpToolId);
     if (!ht) return;
     toolRegistry.unregister(ht.name);
     if (ht.enabled) {
@@ -16,7 +15,6 @@ export async function httpToolRoutes(fastify: FastifyInstance, opts: { ctx: AppC
     }
   }
 
-  // Create HTTP tool
   fastify.post("/api/http-tools", async (request, reply) => {
     const body = request.body as {
       name: string;
@@ -32,41 +30,36 @@ export async function httpToolRoutes(fastify: FastifyInstance, opts: { ctx: AppC
       return reply.code(400).send({ error: "name and url are required" });
     }
 
-    const httpTool = db.createHttpTool(body);
-    syncToRegistry(httpTool.id);
+    const httpTool = await db.createHttpTool(body);
+    await syncToRegistry(httpTool.id);
     return reply.code(201).send(httpTool);
   });
 
-  // List HTTP tools
   fastify.get("/api/http-tools", async () => {
-    return db.listHttpTools();
+    return await db.listHttpTools();
   });
 
-  // Get single HTTP tool
   fastify.get("/api/http-tools/:id", async (request, reply) => {
     const { id } = request.params as { id: string };
-    const httpTool = db.getHttpTool(id);
+    const httpTool = await db.getHttpTool(id);
     if (!httpTool) {
       return reply.code(404).send({ error: "HTTP tool not found" });
     }
     return httpTool;
   });
 
-  // Update HTTP tool
   fastify.put("/api/http-tools/:id", async (request, reply) => {
     const { id } = request.params as { id: string };
     const body = request.body as Record<string, unknown>;
 
-    // Unregister old name before update (name may have changed)
-    const oldTool = db.getHttpTool(id);
+    const oldTool = await db.getHttpTool(id);
     if (oldTool) toolRegistry.unregister(oldTool.name);
 
-    const updated = db.updateHttpTool(id, body);
+    const updated = await db.updateHttpTool(id, body);
     if (!updated) {
       return reply.code(404).send({ error: "HTTP tool not found" });
     }
 
-    // Register with new name/config
     if (updated.enabled) {
       const [runtimeTool] = createHttpTools([updated]);
       if (runtimeTool) toolRegistry.register(runtimeTool);
@@ -75,25 +68,22 @@ export async function httpToolRoutes(fastify: FastifyInstance, opts: { ctx: AppC
     return updated;
   });
 
-  // Delete HTTP tool
   fastify.delete("/api/http-tools/:id", async (request, reply) => {
     const { id } = request.params as { id: string };
 
-    // Unregister from runtime before deleting from DB
-    const httpTool = db.getHttpTool(id);
+    const httpTool = await db.getHttpTool(id);
     if (httpTool) toolRegistry.unregister(httpTool.name);
 
-    const deleted = db.deleteHttpTool(id);
+    const deleted = await db.deleteHttpTool(id);
     if (!deleted) {
       return reply.code(404).send({ error: "HTTP tool not found" });
     }
     return { success: true };
   });
 
-  // Test HTTP tool (server-side proxy to avoid CORS/header restrictions in browser)
   fastify.post("/api/http-tools/:id/test", async (request, reply) => {
     const { id } = request.params as { id: string };
-    const ht = db.getHttpTool(id);
+    const ht = await db.getHttpTool(id);
     if (!ht) return reply.code(404).send({ error: "HTTP tool not found" });
 
     const params = (request.body as Record<string, string>) ?? {};
@@ -103,7 +93,13 @@ export async function httpToolRoutes(fastify: FastifyInstance, opts: { ctx: AppC
     for (const [key, value] of Object.entries(params)) {
       const placeholder = `{${key}}`;
       url = url.replaceAll(placeholder, encodeURIComponent(String(value)));
-      if (body) body = body.replaceAll(placeholder, String(value));
+      if (body) {
+        const strVal = String(value);
+        const escaped = isPlaceholderInJsonString(body, placeholder)
+          ? escapeJsonStringValue(strVal)
+          : strVal;
+        body = body.replaceAll(placeholder, escaped);
+      }
     }
 
     const options: RequestInit = {

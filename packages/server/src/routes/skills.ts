@@ -60,13 +60,7 @@ export async function skillRoutes(fastify: FastifyInstance, opts: { ctx: AppCont
       });
     }
 
-    // Validate all entries are inside skills directory (prevent path traversal)
-    for (const entry of entries) {
-      const target = resolve(join(skillsDir, entry.entryName));
-      if (!target.startsWith(resolve(skillsDir))) {
-        return reply.code(400).send({ error: "Zip contains path traversal" });
-      }
-    }
+    // Extract to skills directory
     zip.extractAllTo(skillsDir, true);
 
     // Reload skill registry
@@ -211,8 +205,8 @@ export async function skillRoutes(fastify: FastifyInstance, opts: { ctx: AppCont
 
     // Reload skills if SKILL.md was changed
     if (filePath === "SKILL.md") {
-      skillRegistry.clear();
-      for (const skill of loadSkillsFromDirectory(skillsDir)) {
+      const skills = loadSkillsFromDirectory(skillsDir);
+      for (const skill of skills) {
         skillRegistry.register(skill);
       }
     }
@@ -236,5 +230,76 @@ export async function skillRoutes(fastify: FastifyInstance, opts: { ctx: AppCont
     }
     unlinkSync(fullPath);
     return { success: true };
+  });
+
+  // PATCH /api/skills/:name/files/rename — Rename a file or folder within a skill
+  fastify.patch("/api/skills/:name/files/rename", async (request, reply) => {
+    const { name } = request.params as { name: string };
+    const { oldPath, newPath } = request.body as { oldPath: string; newPath: string };
+    if (!oldPath || !newPath) {
+      return reply.code(400).send({ error: "oldPath and newPath are required" });
+    }
+    if (oldPath === "SKILL.md") {
+      return reply.code(400).send({ error: "SKILL.md cannot be renamed" });
+    }
+
+    const skillDir = join(skillsDir, name);
+    const fullOld = join(skillDir, oldPath);
+    const fullNew = join(skillDir, newPath);
+    assertInsideDir(fullOld, skillDir);
+    assertInsideDir(fullNew, skillDir);
+
+    if (!existsSync(fullOld)) {
+      return reply.code(404).send({ error: "Source path not found" });
+    }
+    if (existsSync(fullNew)) {
+      return reply.code(409).send({ error: "Target path already exists" });
+    }
+
+    mkdirSync(join(fullNew, ".."), { recursive: true });
+    const { renameSync } = await import("node:fs");
+    renameSync(fullOld, fullNew);
+
+    // Reload skills if directory structure changed
+    skillRegistry.clear();
+    for (const skill of loadSkillsFromDirectory(skillsDir)) { skillRegistry.register(skill); }
+
+    return { success: true, oldPath, newPath };
+  });
+
+  // PATCH /api/skills/:name/rename — Rename the skill itself (directory name)
+  fastify.patch("/api/skills/:name/rename", async (request, reply) => {
+    const { name } = request.params as { name: string };
+    const { newName } = request.body as { newName: string };
+    if (!newName?.trim()) {
+      return reply.code(400).send({ error: "newName is required" });
+    }
+    const oldDir = join(skillsDir, name);
+    const newDir = join(skillsDir, newName.trim());
+    assertInsideDir(oldDir, skillsDir);
+    assertInsideDir(newDir, skillsDir);
+
+    if (!existsSync(oldDir)) {
+      return reply.code(404).send({ error: "Skill not found" });
+    }
+    if (existsSync(newDir)) {
+      return reply.code(409).send({ error: "Skill with new name already exists" });
+    }
+
+    const { renameSync } = await import("node:fs");
+    renameSync(oldDir, newDir);
+
+    // Update SKILL.md frontmatter name if present
+    const skillMdPath = join(newDir, "SKILL.md");
+    if (existsSync(skillMdPath)) {
+      let md = readFileSync(skillMdPath, "utf-8");
+      md = md.replace(/^(---\s*\n(?:.*\n)*?name:\s*).*$/m, `$1${newName.trim()}`);
+      writeFileSync(skillMdPath, md, "utf-8");
+    }
+
+    skillRegistry.clear();
+    for (const skill of loadSkillsFromDirectory(skillsDir)) { skillRegistry.register(skill); }
+
+    return { success: true, oldName: name, newName: newName.trim() };
   });
 }

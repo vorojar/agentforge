@@ -6,7 +6,6 @@ import type { ImageBlock } from "@agentforge/types";
 export async function agentRoutes(fastify: FastifyInstance, opts: { ctx: AppContext }) {
   const { db, agentLoop } = opts.ctx;
 
-  // Create agent
   fastify.post("/api/agents", async (request, reply) => {
     const body = request.body as {
       name: string;
@@ -28,8 +27,8 @@ export async function agentRoutes(fastify: FastifyInstance, opts: { ctx: AppCont
     if (!body.model) {
       body.model = opts.ctx.config.defaultModel;
     }
-    const agent = db.createAgent(body);
-    const { apiKey, rawKey } = db.createApiKey(agent.id, "default");
+    const agent = await db.createAgent(body);
+    const { apiKey, rawKey } = await db.createApiKey(agent.id, "default");
 
     return reply.code(201).send({
       ...agent,
@@ -37,80 +36,71 @@ export async function agentRoutes(fastify: FastifyInstance, opts: { ctx: AppCont
     });
   });
 
-  // List agents (single query for all keys, no N+1)
   fastify.get("/api/agents", async () => {
-    const agents = db.listAgents();
-    const allKeys = db.listAllApiKeys();
-    const keysByAgent = new Map<string, typeof allKeys>();
-    for (const k of allKeys) {
-      const list = keysByAgent.get(k.agentId) || [];
-      list.push(k);
-      keysByAgent.set(k.agentId, list);
+    const agents = await db.listAgents();
+    const result = [];
+    for (const agent of agents) {
+      const keys = await db.listApiKeys(agent.id);
+      result.push({
+        ...agent,
+        apiKeys: keys.map((k) => ({ id: k.id, keyPrefix: k.keyPrefix, name: k.name, enabled: k.enabled, createdAt: k.createdAt, lastUsedAt: k.lastUsedAt })),
+      });
     }
-    return agents.map((agent) => ({
-      ...agent,
-      apiKeys: (keysByAgent.get(agent.id) || []).map((k) => ({ id: k.id, keyPrefix: k.keyPrefix, name: k.name, enabled: k.enabled, createdAt: k.createdAt, lastUsedAt: k.lastUsedAt })),
-    }));
+    return result;
   });
 
-  // Get single agent
   fastify.get("/api/agents/:id", async (request, reply) => {
     const { id } = request.params as { id: string };
-    const agent = db.getAgent(id);
+    const agent = await db.getAgent(id);
     if (!agent) {
       return reply.code(404).send({ error: "Agent not found" });
     }
-    const keys = db.listApiKeys(id);
+    const keys = await db.listApiKeys(id);
     return { ...agent, apiKeys: keys };
   });
 
-  // Update agent
   fastify.put("/api/agents/:id", async (request, reply) => {
     const { id } = request.params as { id: string };
     const body = request.body as Record<string, unknown>;
-    const updated = db.updateAgent(id, body);
+    const updated = await db.updateAgent(id, body);
     if (!updated) {
       return reply.code(404).send({ error: "Agent not found" });
     }
     return updated;
   });
 
-  // Delete agent
   fastify.delete("/api/agents/:id", async (request, reply) => {
     const { id } = request.params as { id: string };
-    const deleted = db.deleteAgent(id);
+    const deleted = await db.deleteAgent(id);
     if (!deleted) {
       return reply.code(404).send({ error: "Agent not found" });
     }
     return { success: true };
   });
 
-  // Generate new API key
   fastify.post("/api/agents/:id/keys", async (request, reply) => {
     const { id } = request.params as { id: string };
     const body = (request.body as { name?: string }) ?? {};
-    const agent = db.getAgent(id);
+    const agent = await db.getAgent(id);
     if (!agent) {
       return reply.code(404).send({ error: "Agent not found" });
     }
-    const { apiKey, rawKey } = db.createApiKey(id, body.name);
+    const { apiKey, rawKey } = await db.createApiKey(id, body.name);
     return reply.code(201).send({ ...apiKey, rawKey });
   });
 
-  // Revoke API key
   fastify.delete("/api/agents/:id/keys/:keyId", async (request, reply) => {
     const { keyId } = request.params as { id: string; keyId: string };
-    const deleted = db.deleteApiKey(keyId);
+    const deleted = await db.deleteApiKey(keyId);
     if (!deleted) {
       return reply.code(404).send({ error: "API key not found" });
     }
     return { success: true };
   });
 
-  // Test chat (admin auth, no API key needed)
   fastify.post("/api/agents/:id/chat", async (request, reply) => {
     const { id } = request.params as { id: string };
-    const agent = db.getAgent(id);
+    const agent = await db.getAgent(id);
     if (!agent) return reply.code(404).send({ error: "Agent not found" });
 
     const body = request.body as { message: string; sessionId?: string; images?: Array<{ type: "base64"; data: string; mediaType: string } | { type: "url"; url: string }> };
@@ -120,17 +110,16 @@ export async function agentRoutes(fastify: FastifyInstance, opts: { ctx: AppCont
 
     try {
       const result = await agentLoop.run(agent, body.message ?? "", body.sessionId, imageBlocks);
-      return { reply: result.reply, sessionId: result.sessionId, toolCalls: result.toolCalls, usage: result.usage };
+      return { reply: result.reply, thinking: result.thinking, systemPrompt: result.systemPrompt, sessionId: result.sessionId, toolCalls: result.toolCalls, usage: result.usage };
     } catch (error) {
       request.log.error(error, "Test chat request failed");
       return reply.code(502).send({ error: "LLM provider error", message: (error as Error).message });
     }
   });
 
-  // Test chat streaming (admin auth, no API key needed)
   fastify.post("/api/agents/:id/chat/stream", async (request, reply) => {
     const { id } = request.params as { id: string };
-    const agent = db.getAgent(id);
+    const agent = await db.getAgent(id);
     if (!agent) return reply.code(404).send({ error: "Agent not found" });
 
     const body = request.body as { message: string; sessionId?: string; images?: Array<{ type: "base64"; data: string; mediaType: string } | { type: "url"; url: string }> };

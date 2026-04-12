@@ -7,10 +7,10 @@
       </el-select>
     </div>
 
-    <el-table :data="sessions" v-loading="loading" stripe @row-click="openSession" style="cursor: pointer">
+    <el-table :data="pagedSessions" v-loading="loading" stripe @row-click="openSession" style="cursor: pointer">
       <el-table-column label="Conversation" min-width="250">
         <template #default="{ row }">
-          <span style="color: #303133">{{ extractPreview(row.firstMessage) }}</span>
+          <span style="color: #303133">{{ truncate(formatFirstMessage(row.firstMessage), 60) || '(empty)' }}</span>
         </template>
       </el-table-column>
       <el-table-column prop="agentId" label="Agent" min-width="120">
@@ -50,52 +50,69 @@
       </el-table-column>
     </el-table>
 
-    <div style="display: flex; justify-content: flex-end; margin-top: 16px" v-if="sessions.length >= pageSize">
-      <el-button @click="loadMore" :loading="loading">Load More</el-button>
+    <div style="display: flex; justify-content: flex-end; margin-top: 16px" v-if="allSessions.length > pageSize">
+      <el-pagination
+        v-model:current-page="currentPage"
+        :page-size="pageSize"
+        :total="allSessions.length"
+        layout="total, prev, pager, next"
+      />
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from "vue";
+import { ref, computed, onMounted } from "vue";
 import { useRouter } from "vue-router";
 import { getSessions, getAgents, deleteSession } from "@/api";
 import { ElMessage } from "element-plus";
 import { formatDateTime } from "@/utils/format";
 
-function extractPreview(raw: string | undefined): string {
-  if (!raw) return "(empty)";
-  // Try parsing as JSON array (image + text blocks)
-  if (raw.startsWith("[")) {
-    try {
-      const blocks = JSON.parse(raw) as Array<{ type: string; text?: string }>;
-      const hasImage = blocks.some(b => b.type === "image");
-      const text = blocks.filter(b => b.type === "text").map(b => b.text).join(" ");
-      const preview = text || "(image)";
-      return (hasImage ? "📷 " : "") + (preview.length > 60 ? preview.slice(0, 60) + "..." : preview);
-    } catch { /* not JSON */ }
+function formatFirstMessage(raw: string | undefined): string {
+  if (!raw) return "";
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return raw;
+    const parts: string[] = [];
+    for (const block of parsed) {
+      if (block.type === "text" && block.text) parts.push(block.text);
+      else if (block.type === "image") parts.push("[图片]");
+    }
+    return parts.join(" ") || "[图片]";
+  } catch {
+    return raw;
   }
-  return raw.length > 60 ? raw.slice(0, 60) + "..." : raw;
+}
+
+function truncate(text: string | undefined, max: number): string {
+  if (!text) return "";
+  return text.length > max ? text.slice(0, max) + "..." : text;
 }
 
 const router = useRouter();
-const sessions = ref<Array<Record<string, unknown>>>([]);
+const allSessions = ref<Array<Record<string, unknown>>>([]);
 const agents = ref<Array<{ id: string; name: string }>>([]);
 const agentMap = ref<Record<string, string>>({});
 const loading = ref(false);
 const filterAgent = ref("");
+const currentPage = ref(1);
 const pageSize = 20;
 
+const pagedSessions = computed(() => {
+  const start = (currentPage.value - 1) * pageSize;
+  return allSessions.value.slice(start, start + pageSize);
+});
+
 function onFilterChange() {
-  sessions.value = [];
+  currentPage.value = 1;
   loadSessions();
 }
 
 async function loadSessions() {
   loading.value = true;
   try {
-    const { data } = await getSessions(filterAgent.value || undefined, pageSize, 0);
-    sessions.value = data;
+    const { data } = await getSessions(filterAgent.value || undefined);
+    allSessions.value = data;
   } catch {
     ElMessage.error("Failed to load sessions");
   } finally {
@@ -110,18 +127,6 @@ async function loadAgents() {
     agentMap.value = Object.fromEntries(data.map((a: { id: string; name: string }) => [a.id, a.name]));
   } catch {
     // ignore
-  }
-}
-
-async function loadMore() {
-  loading.value = true;
-  try {
-    const { data } = await getSessions(filterAgent.value || undefined, pageSize, sessions.value.length);
-    sessions.value.push(...data);
-  } catch {
-    ElMessage.error("Failed to load more");
-  } finally {
-    loading.value = false;
   }
 }
 

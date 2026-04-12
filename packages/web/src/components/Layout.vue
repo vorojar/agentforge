@@ -21,9 +21,13 @@
           <el-icon><User /></el-icon>
           <span>Agents</span>
         </el-menu-item>
+        <el-menu-item index="/knowledge-bases">
+          <el-icon><Collection /></el-icon>
+          <span>Knowledge</span>
+        </el-menu-item>
         <el-menu-item index="/providers">
           <el-icon><Connection /></el-icon>
-          <span>Providers</span>
+          <span>Models</span>
         </el-menu-item>
         <el-menu-item index="/tools">
           <el-icon><SetUp /></el-icon>
@@ -78,6 +82,7 @@ import {
   DataAnalysis,
   User,
   Connection,
+  Collection,
   SetUp,
   MagicStick,
   ChatDotSquare,
@@ -91,6 +96,7 @@ const adminSecret = ref(localStorage.getItem("adminSecret") || "");
 const activeMenu = computed(() => {
   const path = route.path;
   if (path.startsWith("/agents")) return "/agents";
+  if (path.startsWith("/knowledge-bases")) return "/knowledge-bases";
   if (path.startsWith("/sessions")) return "/sessions";
   return path;
 });
@@ -98,7 +104,8 @@ const activeMenu = computed(() => {
 const pageTitles: Record<string, string> = {
   "/dashboard": "Dashboard",
   "/agents": "Agent Management",
-  "/providers": "Provider Management",
+  "/knowledge-bases": "Knowledge Base Management",
+  "/providers": "Model Management",
   "/tools": "Tool Registry",
   "/skills": "Skill Management",
   "/sessions": "Conversation History",

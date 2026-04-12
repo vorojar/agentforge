@@ -13,6 +13,7 @@ function makeAgentConfig(overrides?: Partial<AgentConfig>): AgentConfig {
     maxTokens: 1024,
     maxIterations: 5,
     streaming: false,
+    thinking: false,
     tools: [],
     skills: [],
     enabled: true,
@@ -75,8 +76,9 @@ describe("ContextBuilder", () => {
     const { systemPrompt } = builder.build([], "What is the weather today?");
 
     expect(systemPrompt).toContain("You are a helpful assistant.");
-    expect(systemPrompt).toContain("weather-skill");
-    expect(systemPrompt).toContain("Use the weather API to get forecasts.");
+    expect(systemPrompt).toContain("skill-1");
+    expect(systemPrompt).toContain("Provides weather info");
+    expect(systemPrompt).toContain("get_skill_content");
   });
 
   it("truncates old messages when over token budget", () => {

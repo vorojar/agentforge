@@ -16,7 +16,6 @@ import type {
 import { ToolExecutor } from "@agentforge/tools";
 import { ContextBuilder } from "./context.js";
 
-/** Resolves an LLMProvider by provider ID (or returns default) */
 export interface ProviderResolver {
   resolve(providerId?: string): LLMProvider;
 }
@@ -31,21 +30,24 @@ export interface AgentLoopConfig {
 
 export interface AgentRunResult {
   reply: string;
+  thinking?: string;
+  systemPrompt: string;
   sessionId: string;
   toolCalls: Array<{
     name: string;
     input: Record<string, unknown>;
     result: string;
   }>;
-  usage: { tokensIn: number; tokensOut: number; durationMs: number };
+  usage: { tokensIn: number; tokensOut: number; cacheReadTokens?: number; durationMs: number };
 }
 
 export type StreamEvent =
+  | { type: "system_prompt"; data: string }
   | { type: "text"; data: string }
   | { type: "thinking"; data: string }
   | { type: "tool_call"; data: { name: string; input: Record<string, unknown> } }
   | { type: "tool_result"; data: { name: string; result: string } }
-  | { type: "done"; data: { reply: string; sessionId: string; usage: { tokensIn: number; tokensOut: number; durationMs: number } } };
+  | { type: "done"; data: { reply: string; sessionId: string; usage: { tokensIn: number; tokensOut: number; cacheReadTokens?: number; durationMs: number } } };
 
 function generateId(): string {
   return `sess_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
@@ -58,19 +60,21 @@ function extractText(content: ContentBlock[]): string {
     .join("");
 }
 
-/** Internal tools that are always available (not shown in whitelist UI) */
-const AUTO_INJECT_TOOLS = ["search_knowledge", "read_skill_file"];
-
 function getToolDefinitions(
   registry: ToolRegistry,
-  toolNames: string[]
+  toolNames: string[],
+  hasKnowledge?: boolean,
+  hasSkills?: boolean
 ): ToolDefinition[] {
-  if (toolNames.length === 0) return [];
-  // Include explicitly whitelisted tools + auto-injected tools
+  if (toolNames.length === 0 && !hasKnowledge && !hasSkills) return [];
   const names = [...toolNames];
-  for (const name of AUTO_INJECT_TOOLS) {
-    if (!names.includes(name) && registry.get(name)) names.push(name);
+  if (hasKnowledge && !names.includes("search_knowledge") && registry.get("search_knowledge")) {
+    names.push("search_knowledge");
   }
+  if (hasSkills && !names.includes("get_skill_content") && registry.get("get_skill_content")) {
+    names.push("get_skill_content");
+  }
+  if (names.length === 0) return [];
   const tools = registry.getByNames(names);
   return tools.map(({ name, description, parameters }) => ({
     name,
@@ -94,7 +98,6 @@ export class AgentLoop {
     throw new Error("No LLM provider configured");
   }
 
-  /** 将文本和可选的图片块组合成 user 消息内容 */
   private buildUserContent(message: string, images?: ImageBlock[]): string | ContentBlock[] {
     if (!images || images.length === 0) return message;
     const blocks: ContentBlock[] = [];
@@ -110,32 +113,38 @@ export class AgentLoop {
     images?: ImageBlock[]
   ): Promise<AgentRunResult> {
     const startTime = Date.now();
-    const sid = sessionId ?? this.createSession(agentConfig);
-    const history = this.loadHistory(sid);
+    const sid = sessionId ?? await this.createSession(agentConfig);
+    const history = await this.loadHistory(sid);
     const contextBuilder = new ContextBuilder(
       agentConfig,
       this.config.skillRegistry
     );
+    const hasKnowledge = await this.agentHasKnowledge(agentConfig.id);
+    const hasSkills = agentConfig.skills.length > 0;
     const toolDefs = getToolDefinitions(
       this.config.toolRegistry,
-      agentConfig.tools
+      agentConfig.tools,
+      hasKnowledge,
+      hasSkills
     );
 
-    // Add user message (with optional images)
     const userContent = this.buildUserContent(message, images);
     history.push({ role: "user", content: userContent });
-    this.persistMessage(sid, agentConfig.id, "user", userContent);
+    await this.persistMessage(sid, agentConfig.id, "user", userContent);
 
     let totalTokensIn = 0;
     let totalTokensOut = 0;
+    let totalCacheRead = 0;
     const toolCalls: AgentRunResult["toolCalls"] = [];
     let accumulatedText = "";
+    let accumulatedThinking = "";
+    let finalSystemPrompt = "";
 
     for (let i = 0; i < agentConfig.maxIterations; i++) {
       const { systemPrompt, messages } = contextBuilder.build(
-        history,
-        i === 0 ? message : undefined
+        history
       );
+      if (i === 0) finalSystemPrompt = systemPrompt;
 
       const provider = this.resolveProvider(agentConfig);
       const response: LLMResponse = await provider.chat({
@@ -145,42 +154,36 @@ export class AgentLoop {
         tools: toolDefs.length > 0 ? toolDefs : undefined,
         maxTokens: agentConfig.maxTokens,
         temperature: agentConfig.temperature,
+        thinking: agentConfig.thinking,
       });
 
       totalTokensIn += response.usage.tokensIn;
       totalTokensOut += response.usage.tokensOut;
+      totalCacheRead += response.usage.cacheReadTokens ?? 0;
+      if (response.thinking) accumulatedThinking += response.thinking;
 
       if (response.stopReason === "end_turn" || response.stopReason === "max_tokens") {
         const text = extractText(response.content);
         accumulatedText += text;
 
-        // Persist assistant message
         history.push({ role: "assistant", content: response.content });
-        this.persistMessage(
-          sid,
-          agentConfig.id,
-          "assistant",
-          response.content,
-          response.usage.tokensIn,
-          response.usage.tokensOut
+        await this.persistMessage(
+          sid, agentConfig.id, "assistant", response.content,
+          response.usage.tokensIn, response.usage.tokensOut, response.thinking,
+          response.usage.cacheReadTokens
         );
 
         break;
       }
 
       if (response.stopReason === "tool_use") {
-        // Add assistant message with tool_use blocks
         history.push({ role: "assistant", content: response.content });
-        this.persistMessage(
-          sid,
-          agentConfig.id,
-          "assistant",
-          response.content,
-          response.usage.tokensIn,
-          response.usage.tokensOut
+        await this.persistMessage(
+          sid, agentConfig.id, "assistant", response.content,
+          response.usage.tokensIn, response.usage.tokensOut, response.thinking,
+          response.usage.cacheReadTokens
         );
 
-        // Execute each tool and collect results
         const resultBlocks: ToolResultBlock[] = [];
         for (const block of response.content) {
           if (block.type === "tool_use") {
@@ -205,27 +208,18 @@ export class AgentLoop {
           }
         }
 
-        // Add tool results as user message
         history.push({ role: "user", content: resultBlocks });
-        this.persistMessage(sid, agentConfig.id, "user", resultBlocks);
+        await this.persistMessage(sid, agentConfig.id, "user", resultBlocks);
 
-        // Also capture any text from the assistant message with tool calls
         accumulatedText += extractText(response.content);
         continue;
       }
-
-      // Unknown stopReason — persist what we have and break to avoid silent loops
-      history.push({ role: "assistant", content: response.content });
-      this.persistMessage(sid, agentConfig.id, "assistant", response.content);
-      accumulatedText += extractText(response.content);
-      break;
     }
 
     const durationMs = Date.now() - startTime;
 
-    // Log usage
     if (this.config.db) {
-      this.config.db.logUsage({
+      await this.config.db.logUsage({
         agentId: agentConfig.id,
         sessionId: sid,
         tokensIn: totalTokensIn,
@@ -237,11 +231,14 @@ export class AgentLoop {
 
     return {
       reply: accumulatedText,
+      thinking: accumulatedThinking || undefined,
+      systemPrompt: finalSystemPrompt,
       sessionId: sid,
       toolCalls,
       usage: {
         tokensIn: totalTokensIn,
         tokensOut: totalTokensOut,
+        cacheReadTokens: totalCacheRead || undefined,
         durationMs,
       },
     };
@@ -254,31 +251,41 @@ export class AgentLoop {
     images?: ImageBlock[]
   ): AsyncGenerator<StreamEvent> {
     const startTime = Date.now();
-    const sid = sessionId ?? this.createSession(agentConfig);
-    const history = this.loadHistory(sid);
+    const sid = sessionId ?? await this.createSession(agentConfig);
+    const history = await this.loadHistory(sid);
     const contextBuilder = new ContextBuilder(
       agentConfig,
       this.config.skillRegistry
     );
+    const hasKnowledge = await this.agentHasKnowledge(agentConfig.id);
+    const hasSkills = agentConfig.skills.length > 0;
     const toolDefs = getToolDefinitions(
       this.config.toolRegistry,
-      agentConfig.tools
+      agentConfig.tools,
+      hasKnowledge,
+      hasSkills
     );
 
     const userContent = this.buildUserContent(message, images);
     history.push({ role: "user", content: userContent });
-    this.persistMessage(sid, agentConfig.id, "user", userContent);
+    await this.persistMessage(sid, agentConfig.id, "user", userContent);
 
     let totalTokensIn = 0;
     let totalTokensOut = 0;
+    let totalCacheRead = 0;
     let accumulatedText = "";
     const toolCalls: AgentRunResult["toolCalls"] = [];
+    let systemPromptEmitted = false;
 
     for (let i = 0; i < agentConfig.maxIterations; i++) {
       const { systemPrompt, messages } = contextBuilder.build(
-        history,
-        i === 0 ? message : undefined
+        history
       );
+
+      if (!systemPromptEmitted) {
+        yield { type: "system_prompt", data: systemPrompt };
+        systemPromptEmitted = true;
+      }
 
       const provider = this.resolveProvider(agentConfig);
       const stream = provider.stream({
@@ -288,18 +295,20 @@ export class AgentLoop {
         tools: toolDefs.length > 0 ? toolDefs : undefined,
         maxTokens: agentConfig.maxTokens,
         temperature: agentConfig.temperature,
+        thinking: agentConfig.thinking,
       });
 
       let stopReason: string | undefined;
       const contentBlocks: ContentBlock[] = [];
       let currentToolUse: { id: string; name: string; inputJson: string } | null = null;
-      let thinkingText = "";
-      let iterTokensIn = 0;
-      let iterTokensOut = 0;
+      let iterationThinking = "";
+      let iterationTokensIn = 0;
+      let iterationTokensOut = 0;
+      let iterationCacheRead = 0;
 
       for await (const chunk of stream) {
         if (chunk.type === "thinking" && chunk.text) {
-          thinkingText += chunk.text;
+          iterationThinking += chunk.text;
           yield { type: "thinking", data: chunk.text };
         } else if (chunk.type === "text" && chunk.text) {
           accumulatedText += chunk.text;
@@ -309,7 +318,7 @@ export class AgentLoop {
           currentToolUse = {
             id: chunk.toolUse.id,
             name: chunk.toolUse.name,
-            inputJson: "",
+            inputJson: chunk.toolUse.input ?? "",
           };
         } else if (chunk.type === "tool_use_delta" && chunk.toolUse) {
           if (currentToolUse) {
@@ -331,19 +340,17 @@ export class AgentLoop {
         } else if (chunk.type === "done") {
           stopReason = chunk.stopReason;
           if (chunk.usage) {
-            iterTokensIn = chunk.usage.tokensIn;
-            iterTokensOut = chunk.usage.tokensOut;
-            totalTokensIn += iterTokensIn;
-            totalTokensOut += iterTokensOut;
+            iterationTokensIn = chunk.usage.tokensIn;
+            iterationTokensOut = chunk.usage.tokensOut;
+            iterationCacheRead = chunk.usage.cacheReadTokens ?? 0;
+            totalTokensIn += iterationTokensIn;
+            totalTokensOut += iterationTokensOut;
+            totalCacheRead += iterationCacheRead;
           }
         }
       }
 
-      // Merge consecutive text chunks into a single text block for storage
       const mergedBlocks: ContentBlock[] = [];
-      if (thinkingText) {
-        mergedBlocks.push({ type: "thinking", text: thinkingText });
-      }
       let pendingText = "";
       for (const block of contentBlocks) {
         if (block.type === "text") {
@@ -357,13 +364,13 @@ export class AgentLoop {
 
       if (stopReason === "end_turn" || stopReason === "max_tokens") {
         history.push({ role: "assistant", content: mergedBlocks });
-        this.persistMessage(sid, agentConfig.id, "assistant", mergedBlocks, iterTokensIn, iterTokensOut);
+        await this.persistMessage(sid, agentConfig.id, "assistant", mergedBlocks, iterationTokensIn || undefined, iterationTokensOut || undefined, iterationThinking || undefined, iterationCacheRead || undefined);
         break;
       }
 
       if (stopReason === "tool_use") {
         history.push({ role: "assistant", content: mergedBlocks });
-        this.persistMessage(sid, agentConfig.id, "assistant", mergedBlocks, iterTokensIn, iterTokensOut);
+        await this.persistMessage(sid, agentConfig.id, "assistant", mergedBlocks, iterationTokensIn || undefined, iterationTokensOut || undefined, iterationThinking || undefined, iterationCacheRead || undefined);
 
         const resultBlocks: ToolResultBlock[] = [];
         for (const block of contentBlocks) {
@@ -394,20 +401,15 @@ export class AgentLoop {
         }
 
         history.push({ role: "user", content: resultBlocks });
-        this.persistMessage(sid, agentConfig.id, "user", resultBlocks);
+        await this.persistMessage(sid, agentConfig.id, "user", resultBlocks);
         continue;
       }
-
-      // Unknown stopReason — persist and break
-      history.push({ role: "assistant", content: mergedBlocks });
-      this.persistMessage(sid, agentConfig.id, "assistant", mergedBlocks, iterTokensIn, iterTokensOut);
-      break;
     }
 
     const durationMs = Date.now() - startTime;
 
     if (this.config.db) {
-      this.config.db.logUsage({
+      await this.config.db.logUsage({
         agentId: agentConfig.id,
         sessionId: sid,
         tokensIn: totalTokensIn,
@@ -422,43 +424,53 @@ export class AgentLoop {
       data: {
         reply: accumulatedText,
         sessionId: sid,
-        usage: { tokensIn: totalTokensIn, tokensOut: totalTokensOut, durationMs },
+        usage: { tokensIn: totalTokensIn, tokensOut: totalTokensOut, cacheReadTokens: totalCacheRead || undefined, durationMs },
       },
     };
   }
 
-  private createSession(agentConfig: AgentConfig): string {
+  private async createSession(agentConfig: AgentConfig): Promise<string> {
     if (this.config.db) {
-      const session = this.config.db.createSession(agentConfig.id);
+      const session = await this.config.db.createSession(agentConfig.id);
       return session.id;
     }
     return generateId();
   }
 
-  private loadHistory(sessionId: string): LLMMessage[] {
+  private async loadHistory(sessionId: string): Promise<LLMMessage[]> {
     if (!this.config.db) return [];
-    const messages = this.config.db.getMessages(sessionId);
+    const messages = await this.config.db.getMessages(sessionId);
     return messages.map((m) => ({
       role: m.role === "tool" ? ("user" as const) : (m.role as "user" | "assistant"),
       content: m.content,
     }));
   }
 
-  private persistMessage(
+  private async agentHasKnowledge(agentId: string): Promise<boolean> {
+    if (!this.config.db) return false;
+    const kbIds = await this.config.db.getAgentKnowledge(agentId);
+    return kbIds.length > 0;
+  }
+
+  private async persistMessage(
     sessionId: string,
     _agentId: string,
     role: "user" | "assistant",
     content: string | ContentBlock[],
     tokensIn?: number,
-    tokensOut?: number
-  ): void {
+    tokensOut?: number,
+    thinking?: string,
+    cacheReadTokens?: number
+  ): Promise<void> {
     if (!this.config.db) return;
-    this.config.db.addMessage({
+    await this.config.db.addMessage({
       sessionId,
       role,
       content,
+      thinking,
       tokensIn,
       tokensOut,
+      cacheReadTokens,
     });
   }
 }

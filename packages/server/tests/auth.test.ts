@@ -8,7 +8,7 @@ describe("Auth", () => {
   let ctx: AppContext;
 
   beforeEach(async () => {
-    const t = createTestApp();
+    const t = await createTestApp();
     app = t.app;
     ctx = t.ctx;
     await app.ready();
@@ -48,8 +48,8 @@ describe("Auth", () => {
 
   describe("API key auth", () => {
     it("should resolve agent with valid API key", async () => {
-      const agent = ctx.db.createAgent({ name: "Auth Test Agent", systemPrompt: "test" });
-      const { rawKey } = ctx.db.createApiKey(agent.id, "test");
+      const agent = await ctx.db.createAgent({ name: "Auth Test Agent", systemPrompt: "test" });
+      const { rawKey } = await ctx.db.createApiKey(agent.id, "test");
 
       const res = await app.inject({
         method: "POST",

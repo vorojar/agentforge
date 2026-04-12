@@ -2,6 +2,28 @@
 
 All notable changes to AgentForge are documented in this file.
 
+## [0.7.0] - 2026-04-12
+
+### Added
+- **Independent Knowledge Bases** — KB entities decoupled from agents, many-to-many via agent_knowledge association, with dedicated KB management page
+- **Provider Channels (Proxy)** — OpenAI-compatible proxy forwarding with per-channel API keys, usage tracking, and proxy stats dashboard
+- **MySQL adapter** — Full MySQL support alongside SQLite, both implementing async DatabaseAdapter interface
+- **`get_skill_content` tool** — Replaces `read_skill_file`, loads SKILL.md body + supporting files on demand
+- **Skill rename support** — Rename skills from the editor UI
+- **Copy chat messages** — Copy individual chat messages to clipboard
+- **JSON tool call format** — Compatible with models that return tool calls in JSON format
+
+### Changed
+- **Database interface async** — All DatabaseAdapter methods now return Promises, supporting both sync (SQLite) and async (MySQL) backends
+- **Skill injection** — System prompt now shows skill catalog summary instead of full content; LLM uses `get_skill_content` to load details on demand
+- **Dashboard** — Unified time filter (today/yesterday/7d/30d/90d/custom), proxy stats section, hourly granularity for single-day views
+- **Knowledge search** — Now keyed by kbId arrays instead of agentId, supports cross-KB search with kbName in results
+
+### Fixed
+- OpenAI streaming now returns token usage (stream_options include_usage)
+- Streaming chat records token usage per message (was always 0)
+- Various bug fixes from ehafo/master (19 commits merged)
+
 ## [0.6.0] - 2026-03-31
 
 ### Added
