@@ -1,6 +1,19 @@
 import type { AgentConfig, LLMMessage, Skill, SkillRegistry } from "@agentforge/types";
 import { estimateTokens, estimateMessagesTokens } from "./token-utils.js";
 
+/** L1 compression: minify JSON, collapse whitespace */
+function compactText(text: string): string {
+  // Try JSON minification first (many tool results are pretty-printed JSON)
+  const trimmed = text.trim();
+  if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+    try {
+      return JSON.stringify(JSON.parse(trimmed));
+    } catch { /* not valid JSON, fall through */ }
+  }
+  // Collapse runs of whitespace/newlines to single space
+  return text.replace(/\s{2,}/g, " ").trim();
+}
+
 export class ContextBuilder {
   constructor(
     private config: AgentConfig,
@@ -80,28 +93,62 @@ export class ContextBuilder {
       });
     }
 
-    // Tool result truncation (micro-compact): keep last 3 tool_result
-    // content blocks intact, truncate older ones to 200 chars.
+    // --- Context compression (free, no LLM cost) ---
+    // L1: Minify JSON + collapse whitespace in tool_result content
+    // L2: Truncate old tool_use input params + old tool_result content
+
+    const recentKeep = 3; // keep last N tool interactions intact
     let toolResultCount = 0;
+    let toolUseCount = 0;
+
+    // Backward pass: compress tool blocks, keeping recent ones intact
     for (let i = messages.length - 1; i >= 0; i--) {
       const msg = messages[i];
-      if (msg.role !== "user" || typeof msg.content === "string") continue;
+      if (typeof msg.content === "string") continue;
       const blocks = msg.content;
       let mutated = false;
+
+      const ensureMutable = () => {
+        if (!mutated) {
+          messages[i] = { ...msg, content: [...blocks] };
+          mutated = true;
+        }
+      };
+
       for (let j = blocks.length - 1; j >= 0; j--) {
         const block = blocks[j];
-        if (block.type !== "tool_result") continue;
-        toolResultCount++;
-        if (toolResultCount > 3 && block.content.length > 200) {
-          if (!mutated) {
-            // Shallow-copy the blocks array on first mutation
-            messages[i] = { ...msg, content: [...blocks] };
-            mutated = true;
+
+        if (block.type === "tool_result") {
+          toolResultCount++;
+          const isOld = toolResultCount > recentKeep;
+
+          if (isOld && block.content.length > 200) {
+            // L2: Hard truncate old tool results
+            ensureMutable();
+            (messages[i].content as typeof blocks)[j] = {
+              ...block,
+              content: block.content.slice(0, 200) + "... [truncated]",
+            };
+          } else if (block.content.length > 500) {
+            // L1: Minify JSON / collapse whitespace for medium-size results
+            const compacted = compactText(block.content);
+            if (compacted.length < block.content.length * 0.85) {
+              ensureMutable();
+              (messages[i].content as typeof blocks)[j] = { ...block, content: compacted };
+            }
           }
-          (messages[i].content as typeof blocks)[j] = {
-            ...block,
-            content: block.content.slice(0, 200) + "... [truncated]",
-          };
+        }
+
+        if (block.type === "tool_use") {
+          toolUseCount++;
+          if (toolUseCount > recentKeep) {
+            // L2: Strip old tool_use input params (keep tool name for context)
+            const inputStr = JSON.stringify(block.input);
+            if (inputStr.length > 100) {
+              ensureMutable();
+              (messages[i].content as typeof blocks)[j] = { ...block, input: { _compressed: true } };
+            }
+          }
         }
       }
     }
