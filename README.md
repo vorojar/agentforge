@@ -101,6 +101,12 @@ pnpm restore:mysql backups/agentforge-prod.sql.gz
 
 完整备份、恢复、升级和回滚步骤见 [docs/OPERATIONS.md](docs/OPERATIONS.md)。
 
+## 上线与销售 Demo
+
+私有云企业版发布前必须通过发布闸门：根目录 `./scripts/verify.sh`、目标环境 `NODE_ENV=production pnpm preflight:prod`、MySQL migration smoke、备份/恢复演练、浏览器登录和租户管理 smoke。销售演示建议按同一条产品路径走：登录账号、左下角用户菜单、Tenants 租户治理、企业身份源、Audit Log、Models fallback、Agents/Test Chat、最后解释私有云运维闭环。
+
+完整上线验收和销售 demo 脚本见 [docs/RELEASE_CHECKLIST.md](docs/RELEASE_CHECKLIST.md)。
+
 ## 管理后台
 
 后台使用本地账号登录，首次启动会自动创建 `ADMIN_EMAIL` 指定的管理员并加入默认 Organization / Workspace。开发环境常见演示账号是 `demo@example.com` / `password`，这也是国外 SaaS demo、starter kit、admin template 里最常见的写法之一；生产环境必须在 `.env` 中替换。登录后浏览器使用 HttpOnly session cookie 访问管理 API；`X-Admin-Secret` 只保留给自动化、迁移和紧急维护。

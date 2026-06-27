@@ -30,7 +30,7 @@ Ship AgentForge as a private-cloud enterprise edition that a company can deploy,
 5. Done: RBAC middleware and route tests for owner/admin/builder/viewer.
 6. Done: audit coverage for auth, membership, provider, API key, model, tool, and knowledge-base changes.
 7. Done: MySQL production factory, migration verification, backup/restore, and upgrade runbook.
-8. Pending: final release smoke, screenshots, README launch guide, and sales demo checklist.
+8. Done: final release smoke, screenshots, README launch guide, and sales demo checklist.
 
 ## Current Evidence
 
@@ -42,5 +42,6 @@ Ship AgentForge as a private-cloud enterprise edition that a company can deploy,
 - Done in this target: admin API RBAC for logged-in users, with Admin Secret emergency bypass preserved; route tests cover viewer read-only access, builder workspace writes, cross-workspace denial, and admin-only user mutations.
 - Done in this target: audit helper and route coverage for local auth, tenant/user/membership/IdP, agent/API key, provider/channel, HTTP tool, and knowledge-base/source changes; tests assert raw secrets and document content stay out of audit metadata.
 - Done in this target: MySQL runtime database factory, config/preflight checks, Docker MySQL profile, migration smoke script, backup/restore scripts, and private-cloud operations runbook.
-- Latest verification: `./scripts/verify.sh` passed without Vite chunk size warnings or punycode deprecation warnings.
-- Latest browser smoke: `http://localhost:5173/tenants` -> login -> tenant page -> create workspace -> create user -> assign member -> create IdP -> audit logs; login page also shows Google Workspace + Feishu SSO, Feishu button redirects to `/api/auth/oauth/:providerId/start` and then the Feishu authorization URL, with no console error/warn entries.
+- Done in this target: release checklist and sales demo path documented in `docs/RELEASE_CHECKLIST.md`, with README and maintenance links.
+- Latest verification: `./scripts/verify.sh` passed without Vite chunk size warnings or punycode deprecation warnings; synthetic production `pnpm preflight:prod` with MySQL env passed.
+- Latest browser smoke: `http://localhost:5173/tenants` -> login -> lower-left user menu -> create workspace -> create user -> assign member -> create IdP -> audit logs -> logout -> login page; desktop and mobile login screenshots plus desktop audit screenshot saved under `/tmp/agentforge-release-smoke-*.png`, with no console error/warn entries.

@@ -70,6 +70,7 @@ When adding persisted fields:
 4. Run `pnpm backup:mysql` before upgrade and store the `.sql.gz` outside the app container.
 5. Test restore with `pnpm restore:mysql <backup.sql.gz>` on a non-production database before relying on a backup policy.
 6. Keep [docs/OPERATIONS.md](OPERATIONS.md) updated whenever deployment, migration, backup, restore, or rollback behavior changes.
+7. Keep [docs/RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md) updated whenever the launch gate, browser smoke path, or sales demo path changes.
 
 ## Enterprise Tenant Checklist
 
