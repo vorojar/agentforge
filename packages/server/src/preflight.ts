@@ -12,7 +12,7 @@ export interface PreflightReport {
   checks: PreflightCheck[];
 }
 
-const UNSAFE_VALUES = new Set(["admin", "password", "change-me", "change-me-in-production"]);
+const UNSAFE_VALUES = new Set(["admin", "password", "change-me", "change-me-in-production", "change-me-mysql", "change-me-root"]);
 
 export function runProductionPreflight(env: NodeJS.ProcessEnv = process.env): PreflightReport {
   const checks: PreflightCheck[] = [
@@ -24,7 +24,7 @@ export function runProductionPreflight(env: NodeJS.ProcessEnv = process.env): Pr
     checkExact("auth_cookie_secure", env.AUTH_COOKIE_SECURE, "true", "AUTH_COOKIE_SECURE=true for HTTPS deployments.", "Set AUTH_COOKIE_SECURE=true behind HTTPS."),
     checkPublicUrl(env.PUBLIC_URL),
     checkCors(env.CORS_ORIGIN),
-    checkDatabasePath(env.DB_PATH ?? env.DATABASE_URL),
+    ...checkDatabase(env),
   ];
 
   return {
@@ -102,6 +102,77 @@ function checkPublicUrl(value: string | undefined): PreflightCheck {
     };
   }
   return { id: "public_url", status: "pass", message: "PUBLIC_URL is configured." };
+}
+
+function checkDatabase(env: NodeJS.ProcessEnv): PreflightCheck[] {
+  const dbType = env.DB_TYPE?.trim().toLowerCase();
+  const databaseUrl = env.DATABASE_URL?.trim();
+  const mysqlUrl = env.MYSQL_URL?.trim() || (databaseUrl?.startsWith("mysql://") || databaseUrl?.startsWith("mysql2://") ? databaseUrl : undefined);
+
+  if (dbType && !["sqlite", "mysql"].includes(dbType)) {
+    return [{
+      id: "database_type",
+      status: "fail",
+      message: `DB_TYPE must be sqlite or mysql. Current value: ${dbType}.`,
+      remediation: "Set DB_TYPE=mysql for production private-cloud deployments, or DB_TYPE=sqlite for a persistent single-node install.",
+    }];
+  }
+
+  if (dbType === "mysql" || mysqlUrl) {
+    return [
+      { id: "database_type", status: "pass", message: "DB_TYPE is mysql." },
+      checkMySQLConfig(env, mysqlUrl),
+    ];
+  }
+
+  return [
+    {
+      id: "database_type",
+      status: "warn",
+      message: "DB_TYPE is sqlite. Use MySQL for multi-user private-cloud production deployments.",
+      remediation: "Set DB_TYPE=mysql plus MYSQL_HOST/MYSQL_USER/MYSQL_PASSWORD/MYSQL_DATABASE, or MYSQL_URL.",
+    },
+    checkDatabasePath(env.DB_PATH ?? env.DATABASE_URL),
+  ];
+}
+
+function checkMySQLConfig(env: NodeJS.ProcessEnv, mysqlUrl: string | undefined): PreflightCheck {
+  if (mysqlUrl) {
+    try {
+      const url = new URL(mysqlUrl);
+      const hasDatabase = url.pathname.replace(/^\//, "").trim().length > 0;
+      if ((url.protocol === "mysql:" || url.protocol === "mysql2:") && url.hostname && url.username && hasDatabase) {
+        return { id: "mysql_config", status: "pass", message: "MySQL connection URL is configured." };
+      }
+    } catch {
+      // fall through
+    }
+    return {
+      id: "mysql_config",
+      status: "fail",
+      message: "MYSQL_URL must be a valid mysql:// URL with host, user, and database.",
+      remediation: "Use mysql://user:password@host:3306/database or discrete MYSQL_* variables.",
+    };
+  }
+
+  const missing = ["MYSQL_HOST", "MYSQL_USER", "MYSQL_PASSWORD", "MYSQL_DATABASE"].filter((key) => !env[key]?.trim());
+  if (missing.length > 0) {
+    return {
+      id: "mysql_config",
+      status: "fail",
+      message: `Missing MySQL settings: ${missing.join(", ")}.`,
+      remediation: "Set MYSQL_HOST, MYSQL_PORT, MYSQL_USER, MYSQL_PASSWORD, and MYSQL_DATABASE.",
+    };
+  }
+  if (UNSAFE_VALUES.has(env.MYSQL_PASSWORD!.trim().toLowerCase())) {
+    return {
+      id: "mysql_config",
+      status: "fail",
+      message: "MYSQL_PASSWORD uses a demo value.",
+      remediation: "Set a strong customer-specific database password.",
+    };
+  }
+  return { id: "mysql_config", status: "pass", message: "MySQL discrete settings are configured." };
 }
 
 function checkDatabasePath(value: string | undefined): PreflightCheck {

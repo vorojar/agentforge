@@ -12,6 +12,9 @@
     "dev:server": "pnpm --filter @agentforge/server dev",
     "dev:web": "pnpm --filter @agentforge/web dev",
     "preflight:prod": "tsx scripts/preflight-prod.ts",
+    "verify:mysql": "tsx scripts/verify-mysql-migrations.ts",
+    "backup:mysql": "bash scripts/backup-mysql.sh",
+    "restore:mysql": "bash scripts/restore-mysql.sh",
     "start": "node packages/server/dist/index.js",
     "clean": "turbo run clean"
   },

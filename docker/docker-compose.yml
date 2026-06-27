@@ -8,7 +8,14 @@ services:
     volumes:
       - agentforge-data:/app/data
     environment:
+      - DB_TYPE=${DB_TYPE:-sqlite}
       - DB_PATH=${DB_PATH:-/app/data/agentforge.db}
+      - MYSQL_HOST=${MYSQL_HOST:-mysql}
+      - MYSQL_PORT=${MYSQL_PORT:-3306}
+      - MYSQL_USER=${MYSQL_USER:-agentforge}
+      - MYSQL_PASSWORD
+      - MYSQL_DATABASE=${MYSQL_DATABASE:-agentforge}
+      - MYSQL_URL=${MYSQL_URL:-}
       - LLM_PROVIDER=${LLM_PROVIDER:-claude}
       - LLM_API_KEY=${LLM_API_KEY}
       - LLM_BASE_URL=${LLM_BASE_URL:-}
@@ -28,5 +35,26 @@ services:
       timeout: 10s
       retries: 3
 
+  mysql:
+    image: mysql:8.4
+    profiles: ["mysql"]
+    environment:
+      - MYSQL_ROOT_PASSWORD
+      - MYSQL_DATABASE=${MYSQL_DATABASE:-agentforge}
+      - MYSQL_USER=${MYSQL_USER:-agentforge}
+      - MYSQL_PASSWORD
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - agentforge-mysql:/var/lib/mysql
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u$${MYSQL_USER} -p$${MYSQL_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
 volumes:
   agentforge-data:
+  agentforge-mysql:

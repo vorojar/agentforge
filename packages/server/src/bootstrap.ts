@@ -264,7 +264,9 @@ function requestHasImages(messages: LLMMessage[]): boolean {
 }
 
 export async function bootstrap(config: AppConfig): Promise<AppContext> {
-  const db = await createDatabase(resolve(config.dbPath));
+  const db = await createDatabase(config.database.type === "sqlite"
+    ? { ...config.database, path: resolve(config.database.path) }
+    : config.database);
 
   if ((await db.listProviders()).length === 0) {
     const typeMap: Record<string, string> = { claude: "Anthropic Claude", openai: "OpenAI Compatible" };

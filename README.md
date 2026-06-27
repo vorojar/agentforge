@@ -35,6 +35,14 @@ docker compose up --build -d
 open http://localhost:3000
 ```
 
+生产私有云建议使用 MySQL：
+
+```bash
+# .env 中设置 DB_TYPE=mysql 和 MYSQL_* 后
+cd docker
+docker compose --profile mysql up --build -d
+```
+
 ### 本地开发
 
 ```bash
@@ -63,7 +71,11 @@ NODE_ENV=production pnpm preflight:prod
 | `LLM_API_KEY` | — | LLM API Key（必填） |
 | `LLM_BASE_URL` | — | OpenAI 兼容 API 地址（豆包、DeepSeek 等） |
 | `DEFAULT_MODEL` | `claude-sonnet-4-20250514` | 默认模型 |
+| `DB_TYPE` | `sqlite` | 数据库类型：`sqlite` / `mysql`；私有云生产建议 `mysql` |
 | `DB_PATH` | `data/agentforge.db` | SQLite 数据库文件路径；兼容读取旧变量 `DATABASE_URL` |
+| `MYSQL_URL` | — | MySQL 连接 URL；也可用下面的离散 `MYSQL_*` 变量 |
+| `MYSQL_HOST` / `MYSQL_PORT` | — / `3306` | MySQL 主机和端口 |
+| `MYSQL_USER` / `MYSQL_PASSWORD` / `MYSQL_DATABASE` | — | MySQL 用户、密码和数据库名 |
 | `ADMIN_EMAIL` | `demo@example.com` | 首个本地管理员账号；本地开发默认演示账号 |
 | `ADMIN_PASSWORD` | `password` | 本地开发默认演示密码；生产环境必须替换，且会拒绝 `password` / `admin` / `change-me-in-production` |
 | `AUTH_SESSION_DAYS` | `7` | 登录会话有效天数 |
@@ -75,6 +87,19 @@ NODE_ENV=production pnpm preflight:prod
 | `LOG_LEVEL` | `info` | 日志级别 |
 | `VOLCANO_EMBEDDING_KEY` | — | 火山引擎 Embedding API Key（知识库向量化） |
 | `VOLCANO_EMBEDDING_MODEL` | `doubao-embedding-vision-250615` | Embedding 模型 |
+
+## 运维
+
+生产升级前后使用同一组命令：
+
+```bash
+NODE_ENV=production pnpm preflight:prod
+DB_TYPE=mysql pnpm verify:mysql
+pnpm backup:mysql
+pnpm restore:mysql backups/agentforge-prod.sql.gz
+```
+
+完整备份、恢复、升级和回滚步骤见 [docs/OPERATIONS.md](docs/OPERATIONS.md)。
 
 ## 管理后台
 

@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { createHash } from "node:crypto";
 import { SQLiteAdapter } from "../src/sqlite.js";
+import { MySQLAdapter } from "../src/mysql.js";
 
 function hashKey(raw: string): string {
   return createHash("sha256").update(raw).digest("hex");
@@ -852,6 +853,20 @@ describe("SQLiteAdapter", () => {
       const { createDatabase } = await import("../src/index.js");
       const adapter = await createDatabase(":memory:");
       expect(adapter).toBeInstanceOf(SQLiteAdapter);
+      await adapter.close();
+    });
+
+    it("should create MySQLAdapter via factory config", async () => {
+      const { createDatabaseAdapter } = await import("../src/index.js");
+      const adapter = createDatabaseAdapter({
+        type: "mysql",
+        host: "localhost",
+        port: 3306,
+        user: "agentforge",
+        password: "secret",
+        database: "agentforge",
+      });
+      expect(adapter).toBeInstanceOf(MySQLAdapter);
       await adapter.close();
     });
   });

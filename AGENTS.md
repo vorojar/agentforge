@@ -73,6 +73,7 @@ Review matches manually. Some English text is intentional, such as `AgentForge`,
 
 - Schema changes must update migrations and adapters together.
 - SQLite and MySQL must both be considered for new fields.
+- Private-cloud production uses the database factory and should prefer `DB_TYPE=mysql`; keep `pnpm verify:mysql`, backup/restore scripts, and `docs/OPERATIONS.md` aligned with schema or deployment changes.
 - Add or update database tests for persistence changes.
 - Enterprise/private-cloud work must build on the tenant foundation: organizations, workspaces, users, memberships, identity provider configs, and audit logs.
 - Core runtime data must stay workspace-scoped: agents, providers/channels, HTTP tools, skill categories, knowledge bases, sessions, usage, and proxy usage.
@@ -107,6 +108,7 @@ For UI changes, verify:
 - `README.md` is for users and new contributors: capabilities, setup, configuration, API overview, and high-level maintenance commands.
 - `AGENTS.md` is for coding agents: repo rules, validation, architecture boundaries, and non-negotiable checks.
 - `docs/MAINTENANCE.md` is the detailed checklist for recurring maintenance.
+- `docs/OPERATIONS.md` is the production operator runbook for MySQL, backup, restore, upgrade, and rollback.
 - Keep docs short enough to stay useful. If behavior changes, update the closest durable doc in the same change.
 
 ## Commit Hygiene

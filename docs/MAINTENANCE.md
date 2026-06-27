@@ -62,6 +62,15 @@ When adding persisted fields:
 6. Add or update database tests.
 7. Verify existing rows receive sane migration defaults without hiding invalid business data.
 
+## Private-Cloud Operations Checklist
+
+1. Production multi-user deployments should use `DB_TYPE=mysql`; SQLite is only for development or explicitly accepted single-node trials.
+2. Run `NODE_ENV=production pnpm preflight:prod` before rollout.
+3. Run `DB_TYPE=mysql pnpm verify:mysql` against staging or the target database before switching traffic.
+4. Run `pnpm backup:mysql` before upgrade and store the `.sql.gz` outside the app container.
+5. Test restore with `pnpm restore:mysql <backup.sql.gz>` on a non-production database before relying on a backup policy.
+6. Keep [docs/OPERATIONS.md](OPERATIONS.md) updated whenever deployment, migration, backup, restore, or rollback behavior changes.
+
 ## Enterprise Tenant Checklist
 
 When adding SaaS/private-cloud capabilities:

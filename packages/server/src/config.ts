@@ -1,6 +1,8 @@
 export interface AppConfig {
   port: number;
+  dbType: DatabaseConfig["type"];
   dbPath: string;
+  database: DatabaseConfig;
   llmProvider: string;
   llmApiKey: string;
   llmBaseUrl?: string;
@@ -10,6 +12,18 @@ export interface AppConfig {
   adminPassword: string;
   sessionTtlDays: number;
   publicUrl?: string;
+}
+
+export type DatabaseConfig =
+  | { type: "sqlite"; path: string }
+  | ({ type: "mysql" } & MySQLConfig);
+
+export interface MySQLConfig {
+  host: string;
+  port: number;
+  user: string;
+  password: string;
+  database: string;
 }
 
 export function loadConfig(): AppConfig {
@@ -26,9 +40,13 @@ export function loadConfig(): AppConfig {
     throw new Error("ADMIN_PASSWORD must not use a demo or placeholder value in production");
   }
 
+  const database = loadDatabaseConfig(process.env);
+
   return {
     port: parseInt(process.env.PORT ?? "3000", 10),
-    dbPath: process.env.DB_PATH ?? process.env.DATABASE_URL ?? "data/agentforge.db",
+    dbType: database.type,
+    dbPath: database.type === "sqlite" ? database.path : "",
+    database,
     llmProvider: process.env.LLM_PROVIDER ?? "claude",
     llmApiKey,
     llmBaseUrl: process.env.LLM_BASE_URL || undefined,
@@ -46,4 +64,64 @@ export function loadConfig(): AppConfig {
 
 function isDemoPassword(password: string): boolean {
   return ["admin", "password", "change-me", "change-me-in-production"].includes(password.trim().toLowerCase());
+}
+
+export function loadDatabaseConfig(env: NodeJS.ProcessEnv = process.env): DatabaseConfig {
+  const databaseUrl = env.DATABASE_URL?.trim();
+  const mysqlUrl = env.MYSQL_URL?.trim() || (databaseUrl?.startsWith("mysql://") || databaseUrl?.startsWith("mysql2://") ? databaseUrl : undefined);
+  const dbType = normalizeDatabaseType(env.DB_TYPE, mysqlUrl);
+
+  if (dbType === "mysql") {
+    return { type: "mysql", ...loadMySQLConfig(env, mysqlUrl) };
+  }
+
+  return {
+    type: "sqlite",
+    path: env.DB_PATH ?? databaseUrl ?? "data/agentforge.db",
+  };
+}
+
+function normalizeDatabaseType(value: string | undefined, mysqlUrl: string | undefined): DatabaseConfig["type"] {
+  const normalized = value?.trim().toLowerCase();
+  if (!normalized) return mysqlUrl ? "mysql" : "sqlite";
+  if (normalized === "sqlite" || normalized === "mysql") return normalized;
+  throw new Error(`Unsupported DB_TYPE: ${value}`);
+}
+
+function loadMySQLConfig(env: NodeJS.ProcessEnv, mysqlUrl: string | undefined): MySQLConfig {
+  if (mysqlUrl) return parseMySQLUrl(mysqlUrl);
+
+  const host = env.MYSQL_HOST?.trim();
+  const user = env.MYSQL_USER?.trim();
+  const password = env.MYSQL_PASSWORD;
+  const database = env.MYSQL_DATABASE?.trim();
+  if (!host || !user || password === undefined || !database) {
+    throw new Error("MYSQL_HOST, MYSQL_USER, MYSQL_PASSWORD, and MYSQL_DATABASE are required when DB_TYPE=mysql");
+  }
+
+  return {
+    host,
+    port: parseInt(env.MYSQL_PORT ?? "3306", 10),
+    user,
+    password,
+    database,
+  };
+}
+
+function parseMySQLUrl(value: string): MySQLConfig {
+  const url = new URL(value);
+  if (url.protocol !== "mysql:" && url.protocol !== "mysql2:") {
+    throw new Error("MYSQL_URL must use mysql:// or mysql2://");
+  }
+  const database = url.pathname.replace(/^\//, "");
+  if (!url.hostname || !url.username || !database) {
+    throw new Error("MYSQL_URL must include host, user, and database");
+  }
+  return {
+    host: url.hostname,
+    port: url.port ? parseInt(url.port, 10) : 3306,
+    user: decodeURIComponent(url.username),
+    password: decodeURIComponent(url.password),
+    database: decodeURIComponent(database),
+  };
 }

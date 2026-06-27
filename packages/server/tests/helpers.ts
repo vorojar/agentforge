@@ -28,7 +28,9 @@ class MockProvider implements LLMProvider {
 export function createTestConfig(): AppConfig {
   return {
     port: 0,
+    dbType: "sqlite",
     dbPath: ":memory:",
+    database: { type: "sqlite", path: ":memory:" },
     llmProvider: "mock",
     llmApiKey: "test-key",
     defaultModel: "mock-model",
