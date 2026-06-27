@@ -49,11 +49,11 @@ describe("Auth", () => {
       const login = await app.inject({
         method: "POST",
         url: "/api/auth/login",
-        payload: { email: "admin@example.com", password: "admin-pass" },
+        payload: { email: "demo@example.com", password: "password" },
       });
 
       expect(login.statusCode).toBe(200);
-      expect(login.json().user.email).toBe("admin@example.com");
+      expect(login.json().user.email).toBe("demo@example.com");
       const cookie = login.headers["set-cookie"];
       expect(cookie).toContain("agentforge_session=");
 
@@ -70,7 +70,7 @@ describe("Auth", () => {
       const res = await app.inject({
         method: "POST",
         url: "/api/auth/login",
-        payload: { email: "admin@example.com", password: "bad-pass" },
+        payload: { email: "demo@example.com", password: "bad-pass" },
       });
 
       expect(res.statusCode).toBe(401);
@@ -80,18 +80,18 @@ describe("Auth", () => {
       const res = await app.inject({
         method: "POST",
         url: "/api/auth/login",
-        payload: { email: " Admin@Example.COM ", password: "admin-pass" },
+        payload: { email: " Demo@Example.COM ", password: "password" },
       });
 
       expect(res.statusCode).toBe(200);
-      expect(res.json().user.email).toBe("admin@example.com");
+      expect(res.json().user.email).toBe("demo@example.com");
     });
 
     it("should clear a session on logout", async () => {
       const login = await app.inject({
         method: "POST",
         url: "/api/auth/login",
-        payload: { email: "admin@example.com", password: "admin-pass" },
+        payload: { email: "demo@example.com", password: "password" },
       });
       const cookie = String(login.headers["set-cookie"]);
 

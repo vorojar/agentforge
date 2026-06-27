@@ -26,7 +26,7 @@
 
 ```bash
 cp .env.example .env
-# 编辑 .env，填入 LLM API Key，并在生产环境设置 ADMIN_EMAIL / ADMIN_PASSWORD
+# 编辑 .env，填入 LLM API Key；生产环境必须替换 ADMIN_EMAIL / ADMIN_PASSWORD
 
 cd docker
 docker compose up --build -d
@@ -54,8 +54,8 @@ pnpm dev
 | `LLM_BASE_URL` | — | OpenAI 兼容 API 地址（豆包、DeepSeek 等） |
 | `DEFAULT_MODEL` | `claude-sonnet-4-20250514` | 默认模型 |
 | `DB_PATH` | `data/agentforge.db` | SQLite 数据库文件路径；兼容读取旧变量 `DATABASE_URL` |
-| `ADMIN_EMAIL` | `admin@example.com` | 首个本地管理员账号 |
-| `ADMIN_PASSWORD` | `admin` | 首个本地管理员密码；生产环境必须设置 |
+| `ADMIN_EMAIL` | `demo@example.com` | 首个本地管理员账号；本地开发默认演示账号 |
+| `ADMIN_PASSWORD` | `password` | 本地开发默认演示密码；生产环境必须替换，且会拒绝 `password` / `admin` / `change-me-in-production` |
 | `AUTH_SESSION_DAYS` | `7` | 登录会话有效天数 |
 | `ADMIN_SECRET` | `admin` | 管理 API 兼容兜底密钥；生产环境必须设置或迁移到正式 IdP |
 | `PORT` | `3000` | 服务端口 |
@@ -66,7 +66,7 @@ pnpm dev
 
 ## 管理后台
 
-后台使用本地账号登录，首次启动会自动创建 `ADMIN_EMAIL` 指定的管理员并加入默认 Organization / Workspace。登录后浏览器使用 HttpOnly session cookie 访问管理 API；`X-Admin-Secret` 只保留给自动化、迁移和紧急维护。
+后台使用本地账号登录，首次启动会自动创建 `ADMIN_EMAIL` 指定的管理员并加入默认 Organization / Workspace。开发环境常见演示账号是 `demo@example.com` / `password`，这也是国外 SaaS demo、starter kit、admin template 里最常见的写法之一；生产环境必须在 `.env` 中替换。登录后浏览器使用 HttpOnly session cookie 访问管理 API；`X-Admin-Secret` 只保留给自动化、迁移和紧急维护。
 
 | 页面 | 功能 |
 |------|------|

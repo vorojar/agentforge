@@ -19,8 +19,11 @@ export function loadConfig(): AppConfig {
 
   const adminPassword = process.env.ADMIN_PASSWORD || (() => {
     if (process.env.NODE_ENV === "production") throw new Error("ADMIN_PASSWORD is required in production");
-    return "admin";
+    return "password";
   })();
+  if (process.env.NODE_ENV === "production" && isDemoPassword(adminPassword)) {
+    throw new Error("ADMIN_PASSWORD must not use a demo or placeholder value in production");
+  }
 
   return {
     port: parseInt(process.env.PORT ?? "3000", 10),
@@ -33,8 +36,12 @@ export function loadConfig(): AppConfig {
       if (process.env.NODE_ENV === 'production') throw new Error('ADMIN_SECRET is required in production');
       return 'admin';
     })(),
-    adminEmail: process.env.ADMIN_EMAIL ?? "admin@example.com",
+    adminEmail: process.env.ADMIN_EMAIL ?? "demo@example.com",
     adminPassword,
     sessionTtlDays: parseInt(process.env.AUTH_SESSION_DAYS ?? "7", 10),
   };
+}
+
+function isDemoPassword(password: string): boolean {
+  return ["admin", "password", "change-me", "change-me-in-production"].includes(password.trim().toLowerCase());
 }
