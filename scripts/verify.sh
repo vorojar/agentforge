@@ -3,3 +3,4 @@ set -euo pipefail
 
 pnpm build
 pnpm test
+pnpm verify:commercial

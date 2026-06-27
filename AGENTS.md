@@ -29,6 +29,7 @@ At minimum, run these before handing off a code change:
 ```bash
 pnpm build
 pnpm test
+pnpm verify:commercial
 ```
 
 Expected clean state:
@@ -109,6 +110,7 @@ For UI changes, verify:
 - `AGENTS.md` is for coding agents: repo rules, validation, architecture boundaries, and non-negotiable checks.
 - `docs/MAINTENANCE.md` is the detailed checklist for recurring maintenance.
 - `docs/OPERATIONS.md` is the production operator runbook for MySQL, backup, restore, upgrade, and rollback.
+- `docs/COMMERCIAL_READINESS.md`, `docs/CUSTOMER_DELIVERY.md`, and `docs/PRICING.md` are the durable sales/delivery/customer-IT acceptance materials. Update them when packaging, demo flow, deployment, support, or buyer-facing assumptions change.
 - Keep docs short enough to stay useful. If behavior changes, update the closest durable doc in the same change.
 
 ## Commit Hygiene

@@ -15,6 +15,7 @@ The script runs:
 ```bash
 pnpm build
 pnpm test
+pnpm verify:commercial
 ```
 
 The expected result is a clean pass with no Vite chunk size warning and no Node `punycode` deprecation warning.
@@ -71,6 +72,17 @@ When adding persisted fields:
 5. Test restore with `pnpm restore:mysql <backup.sql.gz>` on a non-production database before relying on a backup policy.
 6. Keep [docs/OPERATIONS.md](OPERATIONS.md) updated whenever deployment, migration, backup, restore, or rollback behavior changes.
 7. Keep [docs/RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md) updated whenever the launch gate, browser smoke path, or sales demo path changes.
+8. Keep [docs/CUSTOMER_DELIVERY.md](CUSTOMER_DELIVERY.md) updated whenever customer IT inputs, ports, URLs, secrets, or go-live smoke change.
+
+## Commercial Readiness Checklist
+
+When changing anything that affects sales, delivery, customer IT, or executive acceptance:
+
+1. Update [docs/COMMERCIAL_READINESS.md](COMMERCIAL_READINESS.md).
+2. Update [docs/PRICING.md](PRICING.md) if packaging, support tiers, buyer narrative, or pricing units change.
+3. Run `pnpm demo:reset`, `pnpm demo:seed`, and `pnpm demo:status` on a disposable demo database.
+4. Confirm demo data uses recognizable `Demo` names and can be reset without touching non-demo data.
+5. Do not seed demo data into a production customer database unless explicitly approved by the customer.
 
 ## Enterprise Tenant Checklist
 

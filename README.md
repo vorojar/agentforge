@@ -107,6 +107,20 @@ pnpm restore:mysql backups/agentforge-prod.sql.gz
 
 完整上线验收和销售 demo 脚本见 [docs/RELEASE_CHECKLIST.md](docs/RELEASE_CHECKLIST.md)。
 
+商业交付材料：
+
+- [docs/COMMERCIAL_READINESS.md](docs/COMMERCIAL_READINESS.md)：商业可交付目标和验收矩阵。
+- [docs/CUSTOMER_DELIVERY.md](docs/CUSTOMER_DELIVERY.md)：客户 IT 部署、预检、备份、恢复、升级、回滚清单。
+- [docs/PRICING.md](docs/PRICING.md)：销售打包、报价单位和买方叙事建议。
+
+演示环境可重复重置：
+
+```bash
+pnpm demo:reset
+pnpm demo:seed
+pnpm demo:status
+```
+
 ## 管理后台
 
 后台使用本地账号登录，首次启动会自动创建 `ADMIN_EMAIL` 指定的管理员并加入默认 Organization / Workspace。开发环境常见演示账号是 `demo@example.com` / `password`，这也是国外 SaaS demo、starter kit、admin template 里最常见的写法之一；生产环境必须在 `.env` 中替换。登录后浏览器使用 HttpOnly session cookie 访问管理 API；`X-Admin-Secret` 只保留给自动化、迁移和紧急维护。

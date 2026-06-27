@@ -15,6 +15,7 @@ Release is ready only when every item is true:
 7. Browser console has no new `error` or `warning` entries during the smoke path.
 8. At least one enterprise identity provider path is configured or scheduled with the customer.
 9. Rollback plan points to a previous image/commit and a pre-upgrade database backup.
+10. Commercial readiness docs are current: [COMMERCIAL_READINESS.md](COMMERCIAL_READINESS.md), [CUSTOMER_DELIVERY.md](CUSTOMER_DELIVERY.md), and [PRICING.md](PRICING.md).
 
 ## Sales Demo Path
 
@@ -47,5 +48,5 @@ Before sales runs market outreach, confirm:
 
 - Do not demo with production secrets, real API keys, raw customer data, or personal accounts.
 - Keep demo credentials in `.env` only.
-- Reset or snapshot the demo database before customer-facing demos.
+- Reset or snapshot the demo database before customer-facing demos. Prefer `pnpm demo:reset`, `pnpm demo:seed`, and `pnpm demo:status` on a disposable staging database.
 - If an external SSO callback is shown, use a staging app registration and staging callback URL.

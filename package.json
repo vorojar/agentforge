@@ -15,6 +15,10 @@
     "verify:mysql": "tsx scripts/verify-mysql-migrations.ts",
     "backup:mysql": "bash scripts/backup-mysql.sh",
     "restore:mysql": "bash scripts/restore-mysql.sh",
+    "demo:seed": "tsx scripts/demo-data.ts seed",
+    "demo:reset": "tsx scripts/demo-data.ts reset",
+    "demo:status": "tsx scripts/demo-data.ts status",
+    "verify:commercial": "tsx scripts/verify-commercial-readiness.ts",
     "start": "node packages/server/dist/index.js",
     "clean": "turbo run clean"
   },
