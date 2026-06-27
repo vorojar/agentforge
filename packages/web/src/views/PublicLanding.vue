@@ -6,10 +6,11 @@
         <span>AgentForge</span>
       </a>
       <nav class="nav-links" :aria-label="t('public.navLabel')">
-        <a href="#product">{{ t("public.nav.product") }}</a>
+        <a href="#use-cases">{{ t("public.nav.product") }}</a>
+        <a href="#platform">{{ t("public.nav.platform") }}</a>
         <a href="#delivery">{{ t("public.nav.deployment") }}</a>
         <a href="#pricing">{{ t("public.nav.pricing") }}</a>
-        <a href="#security">{{ t("public.nav.security") }}</a>
+        <a href="#faq">{{ t("public.nav.faq") }}</a>
       </nav>
       <div class="nav-actions">
         <el-select
@@ -63,7 +64,22 @@
       </div>
     </section>
 
-    <section id="security" class="proof-section">
+    <section id="use-cases" class="use-case-section">
+      <div class="section-copy">
+        <h2>{{ t("public.useCases.title") }}</h2>
+        <p>{{ t("public.useCases.lead") }}</p>
+      </div>
+      <div class="use-case-grid">
+        <article v-for="item in useCaseCards" :key="item.title" class="use-case-card">
+          <el-icon><component :is="item.icon" /></el-icon>
+          <h3>{{ t(item.title) }}</h3>
+          <p>{{ t(item.body) }}</p>
+          <strong>{{ t(item.result) }}</strong>
+        </article>
+      </div>
+    </section>
+
+    <section id="platform" class="proof-section">
       <div class="section-copy">
         <h2>{{ t("public.proof.title") }}</h2>
         <p>{{ t("public.proof.lead") }}</p>
@@ -126,6 +142,19 @@
       </div>
     </section>
 
+    <section id="faq" class="faq-section">
+      <div class="section-copy centered">
+        <h2>{{ t("public.faq.title") }}</h2>
+        <p>{{ t("public.faq.lead") }}</p>
+      </div>
+      <div class="faq-list">
+        <article v-for="item in faqItems" :key="item.question">
+          <h3>{{ t(item.question) }}</h3>
+          <p>{{ t(item.answer) }}</p>
+        </article>
+      </div>
+    </section>
+
     <section id="next" class="final-cta">
       <div>
         <h2>{{ t("public.final.title") }}</h2>
@@ -170,6 +199,15 @@ const audienceCards = [
   { icon: OfficeBuilding, title: "public.roles.leadership.title", body: "public.roles.leadership.body" },
   { icon: Lock, title: "public.roles.it.title", body: "public.roles.it.body" },
   { icon: MagicStick, title: "public.roles.builders.title", body: "public.roles.builders.body" },
+] as const;
+
+const useCaseCards = [
+  { icon: MagicStick, title: "public.useCase.support.title", body: "public.useCase.support.body", result: "public.useCase.support.result" },
+  { icon: Collection, title: "public.useCase.knowledge.title", body: "public.useCase.knowledge.body", result: "public.useCase.knowledge.result" },
+  { icon: DataAnalysis, title: "public.useCase.sales.title", body: "public.useCase.sales.body", result: "public.useCase.sales.result" },
+  { icon: Key, title: "public.useCase.finance.title", body: "public.useCase.finance.body", result: "public.useCase.finance.result" },
+  { icon: SetUp, title: "public.useCase.it.title", body: "public.useCase.it.body", result: "public.useCase.it.result" },
+  { icon: Connection, title: "public.useCase.workflow.title", body: "public.useCase.workflow.body", result: "public.useCase.workflow.result" },
 ] as const;
 
 const proofChecks = [
@@ -223,6 +261,15 @@ const plans = [
     items: ["public.plan.enterprise.item1", "public.plan.enterprise.item2", "public.plan.enterprise.item3"],
     featured: false,
   },
+] as const;
+
+const faqItems = [
+  { question: "public.faq.q1", answer: "public.faq.a1" },
+  { question: "public.faq.q2", answer: "public.faq.a2" },
+  { question: "public.faq.q3", answer: "public.faq.a3" },
+  { question: "public.faq.q4", answer: "public.faq.a4" },
+  { question: "public.faq.q5", answer: "public.faq.a5" },
+  { question: "public.faq.q6", answer: "public.faq.a6" },
 ] as const;
 </script>
 
@@ -329,14 +376,14 @@ const plans = [
   grid-template-columns: minmax(0, 0.9fr) minmax(520px, 1.25fr);
   align-items: center;
   gap: clamp(32px, 5vw, 76px);
-  padding: 56px clamp(20px, 5vw, 72px) 54px;
+  padding: 38px clamp(20px, 5vw, 72px) 34px;
   border-bottom: 1px solid #eef2f7;
 }
 
 .hero-copy h1 {
   max-width: 720px;
   margin: 0;
-  font-size: 60px;
+  font-size: 54px;
   line-height: 1.04;
   letter-spacing: 0;
   text-wrap: balance;
@@ -344,7 +391,7 @@ const plans = [
 
 .hero-copy p {
   max-width: 620px;
-  margin: 24px 0 0;
+  margin: 18px 0 0;
   color: #475569;
   font-size: 18px;
   line-height: 1.65;
@@ -352,14 +399,14 @@ const plans = [
 
 .hero-actions {
   gap: 14px;
-  margin-top: 32px;
+  margin-top: 24px;
   flex-wrap: wrap;
 }
 
 .trust-row {
   gap: 18px;
   flex-wrap: wrap;
-  margin: 30px 0 0;
+  margin: 22px 0 0;
   padding: 0;
   list-style: none;
   color: #0f766e;
@@ -407,9 +454,11 @@ const plans = [
 }
 
 .audience-section,
+.use-case-section,
 .proof-section,
 .delivery-section,
 .pricing-section,
+.faq-section,
 .final-cta {
   padding: 76px clamp(20px, 5vw, 72px);
 }
@@ -425,6 +474,7 @@ const plans = [
 }
 
 .audience-grid,
+.use-case-grid,
 .capability-grid,
 .pricing-grid {
   display: grid;
@@ -437,8 +487,10 @@ const plans = [
 }
 
 .audience-card,
+.use-case-card,
 .capability-grid article,
 .pricing-card,
+.faq-list article,
 .proof-panel,
 .final-cta {
   border: 1px solid #e2e8f0;
@@ -451,6 +503,7 @@ const plans = [
 }
 
 .audience-card .el-icon,
+.use-case-card .el-icon,
 .capability-grid .el-icon {
   width: 42px;
   height: 42px;
@@ -462,10 +515,12 @@ const plans = [
 }
 
 .audience-card h3,
+.use-case-card h3,
 .proof-copy h3,
 .capability-grid h3,
 .pricing-card h3,
-.delivery-steps h3 {
+.delivery-steps h3,
+.faq-list h3 {
   margin: 0;
   color: #0f172a;
   font-size: 20px;
@@ -473,12 +528,14 @@ const plans = [
 }
 
 .audience-card p,
+.use-case-card p,
 .section-copy p,
 .proof-copy p,
 .capability-grid p,
 .pricing-card p,
 .delivery-steps p,
 .delivery-note,
+.faq-list p,
 .final-cta p {
   color: #64748b;
   line-height: 1.65;
@@ -487,6 +544,32 @@ const plans = [
 .proof-section,
 .pricing-section {
   background: #f8fafc;
+}
+
+.use-case-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 36px;
+}
+
+.use-case-card {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  padding: 26px;
+}
+
+.use-case-card .el-icon {
+  margin-bottom: 8px;
+}
+
+.use-case-card p {
+  margin: 0;
+}
+
+.use-case-card strong {
+  margin-top: 4px;
+  color: #0f766e;
+  font-size: 14px;
 }
 
 .section-copy {
@@ -645,6 +728,21 @@ const plans = [
   margin-top: 8px;
 }
 
+.faq-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  margin-top: 36px;
+}
+
+.faq-list article {
+  padding: 26px;
+}
+
+.faq-list p {
+  margin-bottom: 0;
+}
+
 .final-cta {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -675,9 +773,11 @@ const plans = [
   }
 
   .audience-grid,
+  .use-case-grid,
   .pricing-grid,
   .capability-grid,
-  .delivery-steps {
+  .delivery-steps,
+  .faq-list {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -702,11 +802,37 @@ const plans = [
   }
 
   .hero-section {
-    padding-top: 44px;
+    padding-top: 26px;
+    padding-bottom: 28px;
   }
 
   .hero-copy h1 {
-    font-size: 42px;
+    font-size: 34px;
+  }
+
+  .hero-copy p {
+    margin-top: 14px;
+    font-size: 16px;
+    line-height: 1.55;
+  }
+
+  .hero-actions {
+    margin-top: 20px;
+  }
+
+  .trust-row {
+    margin-top: 18px;
+  }
+
+  .product-frame img {
+    height: 190px;
+    object-fit: cover;
+    object-position: top left;
+  }
+
+  .product-frame figcaption {
+    padding: 10px 12px;
+    font-size: 12px;
   }
 
   .audience-section h2,
@@ -721,9 +847,11 @@ const plans = [
   }
 
   .audience-grid,
+  .use-case-grid,
   .pricing-grid,
   .capability-grid,
-  .delivery-steps {
+  .delivery-steps,
+  .faq-list {
     grid-template-columns: 1fr;
   }
 
