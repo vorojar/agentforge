@@ -1,72 +1,120 @@
 <template>
   <div>
     <div class="page-header">
-      <h2>{{ isEdit ? form.name || "Agent" : "Create Agent" }}</h2>
-      <el-button @click="$router.push('/agents')">Back</el-button>
+      <h2>{{ isEdit ? form.name || t("agent.titleFallback") : t("agents.createAgent") }}</h2>
+      <el-button @click="$router.push('/agents')">{{ t("common.back") }}</el-button>
     </div>
 
     <el-tabs v-model="activeTab" type="border-card" v-loading="loading">
       <!-- Tab 1: Basic Info -->
-      <el-tab-pane label="Basic Info" name="basic">
+      <el-tab-pane :label="t('agent.basicInfo')" name="basic">
         <el-form :model="form" label-width="140px" style="max-width: 700px">
-          <el-form-item label="Name" required>
-            <el-input v-model="form.name" placeholder="Agent name" />
+          <el-form-item :label="t('common.name')" required>
+            <el-input v-model="form.name" :placeholder="t('agent.agentName')" />
           </el-form-item>
 
-          <el-form-item label="Description">
+          <el-form-item :label="t('common.description')">
             <el-input v-model="form.description" type="textarea" :rows="2" />
           </el-form-item>
 
-          <el-form-item label="System Prompt" required>
-            <el-input v-model="form.systemPrompt" type="textarea" :rows="8"
-              placeholder="Define the agent's role and behavior..." />
+          <el-form-item :label="t('common.category')">
+            <el-input v-model="form.category" :placeholder="t('agent.optionalCategory')" />
           </el-form-item>
 
-          <el-form-item label="Model" required>
-            <el-select v-model="form.providerId" style="width: 100%" placeholder="Select a model"
+          <el-form-item :label="t('agent.systemPrompt')" required>
+            <el-input v-model="form.systemPrompt" type="textarea" :rows="8"
+              :placeholder="t('agent.systemPromptPlaceholder')" />
+          </el-form-item>
+
+          <el-form-item :label="t('common.model')" required>
+            <el-select v-model="form.providerId" style="width: 100%" :placeholder="t('agent.selectModel')"
               @change="onProviderChange">
               <el-option v-for="p in availableProviders" :key="p.id" :label="p.name" :value="p.id">
                 <span>{{ p.name }}</span>
-                <el-tag v-if="p.isPrimary" type="success" size="small" style="margin-left: 8px">Primary</el-tag>
+                <el-tag v-if="p.isPrimary" type="success" size="small" style="margin-left: 8px">{{ t("common.primary") }}</el-tag>
               </el-option>
             </el-select>
+            <div v-if="selectedProvider" class="model-capabilities">
+              <el-tag v-if="selectedProvider.capabilities.supportsTools" size="small">{{ t("cap.tools") }}</el-tag>
+              <el-tag v-if="selectedProvider.capabilities.supportsVision" size="small">{{ t("cap.vision") }}</el-tag>
+              <el-tag v-if="selectedProvider.capabilities.supportsThinking" size="small">{{ t("cap.thinking") }}</el-tag>
+              <el-tag v-if="selectedProvider.capabilities.supportsStreaming" size="small">{{ t("cap.streaming") }}</el-tag>
+            </div>
           </el-form-item>
 
-          <el-form-item label="Temperature">
+          <el-form-item :label="t('agent.fallbackModels')">
+            <div style="width: 100%">
+              <div
+                v-for="(fallback, index) in form.fallbackModels"
+                :key="index"
+                style="display: flex; gap: 8px; margin-bottom: 8px"
+              >
+                <el-select v-model="fallback.providerId" style="flex: 1" :placeholder="t('agent.provider')" @change="onFallbackProviderChange(index)">
+                  <el-option v-for="p in availableProviders" :key="p.id" :label="p.name" :value="p.id" />
+                </el-select>
+                <el-input v-model="fallback.model" style="flex: 1" :placeholder="t('common.model')" />
+                <el-button @click="removeFallbackModel(index)">{{ t("agent.remove") }}</el-button>
+              </div>
+              <el-button size="small" @click="addFallbackModel">{{ t("agent.addFallback") }}</el-button>
+            </div>
+          </el-form-item>
+
+          <el-form-item :label="t('agent.fallbackCooldown')">
+            <el-input-number v-model="form.fallbackCooldownSeconds" :min="0" :max="86400" :step="60" />
+            <el-text type="info" size="small" style="margin-left: 8px">{{ t("agent.seconds") }}</el-text>
+          </el-form-item>
+
+          <el-form-item :label="t('agent.temperature')">
             <el-slider v-model="form.temperature" :min="0" :max="1" :step="0.1" show-input />
           </el-form-item>
 
-          <el-form-item label="Max Tokens">
+          <el-form-item :label="t('agent.maxTokens')">
             <el-input-number v-model="form.maxTokens" :min="256" :max="32768" :step="256" />
           </el-form-item>
 
-          <el-form-item label="Max Iterations">
+          <el-form-item :label="t('agent.maxIterations')">
             <el-input-number v-model="form.maxIterations" :min="1" :max="50" />
           </el-form-item>
 
-          <el-form-item label="Streaming">
+          <el-form-item :label="t('cap.streaming')">
             <el-switch v-model="form.streaming" />
           </el-form-item>
 
-          <el-form-item label="Extended Thinking">
-            <el-switch v-model="form.thinking" />
-            <el-text type="info" size="small" style="margin-left: 8px">启用后可查看 AI 的思考过程（Claude 等模型支持）</el-text>
+          <el-form-item :label="t('agent.extendedThinking')">
+            <el-switch v-model="form.thinking" :disabled="selectedProvider && !selectedProvider.capabilities.supportsThinking" />
+            <el-text type="info" size="small" style="margin-left: 8px">{{ t("agent.thinkingHelp") }}</el-text>
+            <el-alert
+              v-if="selectedProvider && !selectedProvider.capabilities.supportsThinking"
+              type="warning"
+              :closable="false"
+              show-icon
+              :title="t('agent.thinkingUnsupported')"
+              style="margin-top: 8px"
+            />
           </el-form-item>
 
           <el-form-item>
-            <el-button type="primary" @click="handleSave" :loading="saving">Save</el-button>
+            <el-button type="primary" @click="handleSave" :loading="saving">{{ t("common.save") }}</el-button>
           </el-form-item>
         </el-form>
       </el-tab-pane>
 
       <!-- Tab 2: Tools & Skills -->
-      <el-tab-pane label="Tools & Skills" name="tools" :disabled="!isEdit">
+      <el-tab-pane :label="t('agent.toolsSkills')" name="tools" :disabled="!isEdit">
         <div style="max-width: 700px">
-          <h3 style="margin-bottom: 12px">Tool Whitelist</h3>
+          <h3 style="margin-bottom: 12px">{{ t("agent.toolWhitelist") }}</h3>
           <p style="color: #909399; font-size: 13px; margin-bottom: 12px">
-            Select which tools this agent can use. Leave empty to allow all.
+            {{ t("agent.toolWhitelistHelp") }}
           </p>
-          <el-checkbox-group v-model="form.tools">
+          <el-alert
+            v-if="selectedProvider && !selectedProvider.capabilities.supportsTools"
+            type="warning"
+            :closable="false"
+            show-icon
+            :title="t('agent.toolsUnsupported')"
+            style="margin-bottom: 12px"
+          />
+          <el-checkbox-group v-model="form.tools" :disabled="selectedProvider && !selectedProvider.capabilities.supportsTools">
             <el-checkbox v-for="tool in availableTools.filter(t => t.name !== 'search_knowledge' && t.name !== 'get_skill_content')" :key="tool.name" :label="tool.name" :value="tool.name"
               style="display: block; margin-bottom: 8px">
               <span>{{ tool.name }}</span>
@@ -77,31 +125,32 @@
 
           <el-divider />
 
-          <h3 style="margin-bottom: 12px">Skills</h3>
-          <el-select v-model="form.skills" multiple style="width: 100%" placeholder="Select skills">
+          <h3 style="margin-bottom: 12px">{{ t("nav.skills") }}</h3>
+          <el-select v-model="form.skills" multiple style="width: 100%" :placeholder="t('agent.selectSkills')">
             <el-option v-for="skill in availableSkills" :key="skill.name" :label="skill.name" :value="skill.name" />
           </el-select>
 
           <el-divider />
 
-          <el-button type="primary" @click="handleSave" :loading="saving">Save</el-button>
+          <el-button type="primary" @click="handleSave" :loading="saving">{{ t("common.save") }}</el-button>
         </div>
       </el-tab-pane>
 
       <!-- Tab 3: Knowledge -->
-      <el-tab-pane label="Knowledge" name="knowledge" :disabled="!isEdit">
+      <el-tab-pane :label="t('agent.knowledge')" name="knowledge" :disabled="!isEdit">
         <div style="max-width: 900px">
-          <h3 style="margin-bottom: 8px">Associated Knowledge Bases</h3>
+          <h3 style="margin-bottom: 8px">{{ t("agent.associatedKnowledgeBases") }}</h3>
           <p style="color: #909399; font-size: 13px; margin-bottom: 16px">
-            Select knowledge bases for this agent. Manage knowledge bases in the
-            <router-link to="/knowledge-bases" style="color: #409eff">Knowledge Base Management</router-link> page.
+            {{ t("agent.knowledgeHelpPrefix") }}
+            <router-link to="/knowledge-bases" style="color: #409eff">{{ t("page.knowledgeManagement") }}</router-link>
+            {{ t("agent.knowledgeHelpSuffix") }}
           </p>
 
           <el-select
             v-model="selectedKbIds"
             multiple
             style="width: 100%; margin-bottom: 16px"
-            placeholder="Select knowledge bases..."
+            :placeholder="t('agent.selectKnowledgeBases')"
             @change="handleKbChange"
             v-loading="knowledgeLoading"
           >
@@ -119,34 +168,34 @@
           </el-select>
 
           <el-table v-if="selectedKbDetails.length > 0" :data="selectedKbDetails" size="small">
-            <el-table-column prop="name" label="Knowledge Base" min-width="160" />
-            <el-table-column prop="description" label="Description" min-width="200">
+            <el-table-column prop="name" :label="t('agent.knowledgeBase')" min-width="160" />
+            <el-table-column prop="description" :label="t('common.description')" min-width="200">
               <template #default="{ row }">{{ row.description || '-' }}</template>
             </el-table-column>
-            <el-table-column label="Sources" width="80" align="center">
+            <el-table-column :label="t('agent.sources')" width="80" align="center">
               <template #default="{ row }">{{ row.sources?.length ?? 0 }}</template>
             </el-table-column>
             <el-table-column label="" width="100" align="center">
               <template #default="{ row }">
-                <el-button link size="small" @click="$router.push('/knowledge-bases')">Manage</el-button>
+                <el-button link size="small" @click="$router.push('/knowledge-bases')">{{ t("common.manage") }}</el-button>
               </template>
             </el-table-column>
           </el-table>
 
-          <el-empty v-else-if="!knowledgeLoading" description="No knowledge bases associated" />
+          <el-empty v-else-if="!knowledgeLoading" :description="t('agent.noKnowledgeBases')" />
         </div>
       </el-tab-pane>
 
       <!-- Tab 4: API -->
-      <el-tab-pane label="API" name="api" :disabled="!isEdit">
+      <el-tab-pane :label="t('agent.api')" name="api" :disabled="!isEdit">
         <div style="max-width: 700px">
-          <h3 style="margin-bottom: 16px">Usage Stats</h3>
+          <h3 style="margin-bottom: 16px">{{ t("agent.usageStats") }}</h3>
           <el-row :gutter="16" style="margin-bottom: 24px">
             <el-col :span="12">
               <el-card shadow="never">
                 <div class="stat-card">
                   <div class="stat-value">{{ agentUsage.totalRequests }}</div>
-                  <div class="stat-label">Total Requests</div>
+                  <div class="stat-label">{{ t("agent.totalRequests") }}</div>
                 </div>
               </el-card>
             </el-col>
@@ -154,7 +203,7 @@
               <el-card shadow="never">
                 <div class="stat-card">
                   <div class="stat-value">{{ (agentUsage.totalTokensIn + agentUsage.totalTokensOut).toLocaleString() }}</div>
-                  <div class="stat-label">Total Tokens</div>
+                  <div class="stat-label">{{ t("agent.totalTokens") }}</div>
                 </div>
               </el-card>
             </el-col>
@@ -162,81 +211,81 @@
 
           <el-divider />
 
-          <h3 style="margin-bottom: 16px">API Keys</h3>
+          <h3 style="margin-bottom: 16px">{{ t("agent.apiKeys") }}</h3>
           <el-table :data="apiKeys" size="small" style="margin-bottom: 16px">
-            <el-table-column prop="keyPrefix" label="Key" width="120">
+            <el-table-column prop="keyPrefix" :label="t('common.key')" width="120">
               <template #default="{ row }">
                 <code>{{ row.keyPrefix }}...</code>
               </template>
             </el-table-column>
-            <el-table-column prop="name" label="Name" />
-            <el-table-column prop="lastUsedAt" label="Last Used" width="180">
-              <template #default="{ row }">{{ row.lastUsedAt || "Never" }}</template>
+            <el-table-column prop="name" :label="t('common.name')" />
+            <el-table-column prop="lastUsedAt" :label="t('agent.lastUsed')" width="180">
+              <template #default="{ row }">{{ row.lastUsedAt || t("common.never") }}</template>
             </el-table-column>
             <el-table-column label="" width="80">
               <template #default="{ row }">
-                <el-popconfirm title="Revoke this key?" @confirm="revokeKey(row.id)">
+                <el-popconfirm :title="t('agent.revokeConfirm')" @confirm="revokeKey(row.id)">
                   <template #reference>
-                    <el-button link type="danger" size="small">Revoke</el-button>
+                    <el-button link type="danger" size="small">{{ t("agent.revoke") }}</el-button>
                   </template>
                 </el-popconfirm>
               </template>
             </el-table-column>
           </el-table>
-          <el-button size="small" @click="generateKey">Generate New Key</el-button>
+          <el-button size="small" @click="generateKey">{{ t("agent.generateNewKey") }}</el-button>
 
           <div v-if="newlyCreatedKey" style="margin-top: 12px">
             <el-alert type="success" :closable="false" style="margin-bottom: 8px">
-              <p>New API key created. Copy it now — it won't be shown again:</p>
+              <p>{{ t("agent.newKeyCreated") }}</p>
               <code style="font-size: 14px; font-weight: bold; display: block; margin-top: 4px">{{ newlyCreatedKey }}</code>
-              <el-button size="small" style="margin-top: 8px" @click="copyKey(newlyCreatedKey)">Copy</el-button>
+              <el-button size="small" style="margin-top: 8px" @click="copyKey(newlyCreatedKey)">{{ t("common.copy") }}</el-button>
             </el-alert>
           </div>
 
           <el-divider />
 
-          <h3 style="margin-bottom: 16px">API Documentation</h3>
+          <h3 style="margin-bottom: 16px">{{ t("agent.apiDocumentation") }}</h3>
           <div style="background: #f5f7fa; padding: 16px; border-radius: 4px">
 
-            <h4 style="margin-bottom: 8px">Request Body</h4>
+            <h4 style="margin-bottom: 8px">{{ t("agent.requestBody") }}</h4>
             <el-table :data="apiParamDocs" size="small" border style="margin-bottom: 16px; font-size: 12px">
-              <el-table-column prop="field" label="字段" width="120" />
-              <el-table-column prop="type" label="类型" width="120" />
-              <el-table-column prop="required" label="必填" width="60" align="center" />
-              <el-table-column prop="desc" label="说明" />
+              <el-table-column prop="field" :label="t('common.field')" width="120" />
+              <el-table-column prop="type" :label="t('common.type')" width="120" />
+              <el-table-column prop="required" :label="t('common.requiredColumn')" width="80" align="center" />
+              <el-table-column prop="desc" :label="t('common.notes')" />
             </el-table>
 
-            <h4 style="margin-bottom: 6px; margin-top: 4px">images 字段结构</h4>
+            <h4 style="margin-bottom: 6px; margin-top: 4px">{{ t("agent.imagesFieldStructure") }}</h4>
             <el-text type="info" size="small" style="display: block; margin-bottom: 8px">
-              images 是数组，每个元素为以下两种格式之一：
+              {{ t("agent.imagesFieldHelp") }}
             </el-text>
             <el-table :data="imageParamDocs" size="small" border style="margin-bottom: 16px; font-size: 12px">
-              <el-table-column prop="format" label="格式" width="100" />
-              <el-table-column prop="field" label="字段" width="120" />
-              <el-table-column prop="type" label="类型" width="80" />
-              <el-table-column prop="desc" label="说明" />
+              <el-table-column prop="format" :label="t('common.format')" width="100" />
+              <el-table-column prop="field" :label="t('common.field')" width="120" />
+              <el-table-column prop="type" :label="t('common.type')" width="80" />
+              <el-table-column prop="desc" :label="t('common.notes')" />
             </el-table>
 
             <el-divider />
 
-            <h4 style="margin-bottom: 8px">Chat (non-streaming) — 纯文本</h4>
+            <h4 style="margin-bottom: 8px">{{ t("agent.chatPlainText") }}</h4>
             <pre style="font-size: 12px; white-space: pre-wrap; margin: 0">POST {{ baseUrl }}/api/chat
 
 curl -X POST {{ baseUrl }}/api/chat \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_API_KEY" \
-  -d '{"message": "Hello", "sessionId": "optional-session-id"}'</pre>
+  -d '{"message": "{{ t("agent.exampleHello") }}", "sessionId": "optional-session-id"}'</pre>
 
             <el-divider />
 
-            <h4 style="margin-bottom: 8px">Chat (non-streaming) — 携带图片（base64）</h4>
+            <h4 style="margin-bottom: 8px">{{ t("agent.chatBase64") }}</h4>
             <pre style="font-size: 12px; white-space: pre-wrap; margin: 0">POST {{ baseUrl }}/api/chat
 
 curl -X POST {{ baseUrl }}/api/chat \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_API_KEY" \
   -d '{
-  "message": "请描述这张图片",
+  "message": "{{ t("agent.exampleDescribeImage") }}",
   "images": [
     {
       "type": "base64",
@@ -248,14 +297,14 @@ curl -X POST {{ baseUrl }}/api/chat \
 
             <el-divider />
 
-            <h4 style="margin-bottom: 8px">Chat (non-streaming) — 携带图片（URL）</h4>
+            <h4 style="margin-bottom: 8px">{{ t("agent.chatUrl") }}</h4>
             <pre style="font-size: 12px; white-space: pre-wrap; margin: 0">POST {{ baseUrl }}/api/chat
 
 curl -X POST {{ baseUrl }}/api/chat \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_API_KEY" \
   -d '{
-  "message": "请描述这张图片",
+  "message": "{{ t("agent.exampleDescribeImage") }}",
   "images": [
     {
       "type": "url",
@@ -266,28 +315,28 @@ curl -X POST {{ baseUrl }}/api/chat \
 
             <el-divider />
 
-            <h4 style="margin-bottom: 8px">Chat (streaming)</h4>
+            <h4 style="margin-bottom: 8px">{{ t("agent.chatStreaming") }}</h4>
             <pre style="font-size: 12px; white-space: pre-wrap; margin: 0">POST {{ baseUrl }}/api/chat/stream
 
 curl -X POST {{ baseUrl }}/api/chat/stream \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_API_KEY" \
-  -d '{"message": "Hello"}'</pre>
+  -d '{"message": "{{ t("agent.exampleHello") }}"}'</pre>
 
             <el-divider />
 
-            <h4 style="margin-bottom: 8px">Streaming 响应事件格式（SSE）</h4>
+            <h4 style="margin-bottom: 8px">{{ t("agent.sseEvents") }}</h4>
             <el-table :data="sseEventDocs" size="small" border style="font-size: 12px">
               <el-table-column prop="event" label="event.type" width="140" />
-              <el-table-column prop="data" label="event.data 结构" width="220" />
-              <el-table-column prop="desc" label="说明" />
+              <el-table-column prop="data" :label="t('agent.eventDataStructure')" width="220" />
+              <el-table-column prop="desc" :label="t('common.notes')" />
             </el-table>
           </div>
         </div>
       </el-tab-pane>
 
       <!-- Tab 4: Test Chat -->
-      <el-tab-pane label="Test Chat" name="chat" :disabled="!isEdit">
+      <el-tab-pane :label="t('agent.testChat')" name="chat" :disabled="!isEdit">
         <div class="chat-container">
           <div class="chat-box" ref="chatBoxRef">
             <div v-for="(msg, i) in chatMessages" :key="i" :class="['chat-msg', msg.isSystemPrompt ? 'chat-msg-system' : `chat-msg-${msg.role}`]">
@@ -295,18 +344,18 @@ curl -X POST {{ baseUrl }}/api/chat/stream \
               <template v-if="msg.isSystemPrompt">
                 <div class="chat-msg-system-header" @click="toggleSystemPrompt(i)">
                   <el-icon style="margin-right: 4px"><CaretRight v-if="!msg.systemPromptExpanded" /><CaretBottom v-else /></el-icon>
-                  <el-tag size="small" type="info">System Prompt</el-tag>
-                  <span style="margin-left: 6px; color: #909399; font-size: 12px">{{ msg.text.length.toLocaleString() }} chars</span>
+                  <el-tag size="small" type="info">{{ t("agent.systemPrompt") }}</el-tag>
+                  <span style="margin-left: 6px; color: #909399; font-size: 12px">{{ t("agent.systemPromptChars", { count: msg.text.length.toLocaleString() }) }}</span>
                 </div>
                 <div v-if="msg.systemPromptExpanded" class="chat-msg-system-body">{{ msg.text }}</div>
               </template>
               <template v-else>
-                <div class="chat-msg-role">{{ msg.role === 'user' ? 'You' : 'Agent' }}</div>
+                <div class="chat-msg-role">{{ msg.role === 'user' ? t("agent.you") : t("agent.titleFallback") }}</div>
                 <!-- 思考过程折叠展示 -->
                 <div v-if="msg.thinking" class="chat-msg-thinking">
                   <div class="chat-msg-thinking-header" @click="toggleThinking(i)">
                     <el-icon style="margin-right: 4px"><CaretRight v-if="!msg.thinkingExpanded" /><CaretBottom v-else /></el-icon>
-                    <span>思考过程</span>
+                    <span>{{ t("agent.thinkingProcess") }}</span>
                   </div>
                   <div v-if="msg.thinkingExpanded" class="chat-msg-thinking-body">{{ msg.thinking }}</div>
                 </div>
@@ -323,14 +372,14 @@ curl -X POST {{ baseUrl }}/api/chat/stream \
                 <div v-if="msg.usage" style="font-size: 11px; color: #c0c4cc; margin-top: 4px">
                   {{ (msg.usage.tokensIn + msg.usage.tokensOut).toLocaleString() }} tokens
                   ({{ msg.usage.tokensIn.toLocaleString() }}↑ {{ msg.usage.tokensOut.toLocaleString() }}↓)
-                  <span v-if="msg.usage.cacheReadTokens" style="color: #67c23a"> · {{ msg.usage.cacheReadTokens.toLocaleString() }} cache</span>
+                  <span v-if="msg.usage.cacheReadTokens" style="color: #67c23a"> · {{ msg.usage.cacheReadTokens.toLocaleString() }} {{ t("sessions.cache") }}</span>
                   · {{ (msg.usage.durationMs / 1000).toFixed(1) }}s
                 </div>
               </template>
             </div>
             <div v-if="chatLoading" class="chat-msg chat-msg-assistant">
-              <div class="chat-msg-role">Agent</div>
-              <div class="chat-msg-text" style="color: #909399">Thinking...</div>
+              <div class="chat-msg-role">{{ t("agent.titleFallback") }}</div>
+              <div class="chat-msg-text" style="color: #909399">{{ t("agent.chatThinking") }}</div>
             </div>
           </div>
           <div class="chat-toolbar">
@@ -342,11 +391,17 @@ curl -X POST {{ baseUrl }}/api/chat/stream \
               </div>
             </div>
             <div class="chat-input-row">
-              <el-upload :show-file-list="false" :before-upload="handleChatImage" accept="image/*" style="flex-shrink: 0">
+              <el-upload
+                :show-file-list="false"
+                :before-upload="handleChatImage"
+                :disabled="selectedProvider && !selectedProvider.capabilities.supportsVision"
+                accept="image/*"
+                style="flex-shrink: 0"
+              >
                 <el-button :icon="Picture" circle />
               </el-upload>
-              <el-input v-model="chatInput" placeholder="Type a message..." @keyup.enter="sendChat" :disabled="chatLoading" style="flex: 1" />
-              <el-button type="primary" @click="sendChat" :loading="chatLoading">Send</el-button>
+              <el-input v-model="chatInput" :placeholder="t('agent.typeMessage')" @keyup.enter="sendChat" :disabled="chatLoading" style="flex: 1" />
+              <el-button type="primary" @click="sendChat" :loading="chatLoading">{{ t("common.send") }}</el-button>
             </div>
           </div>
         </div>
@@ -368,6 +423,7 @@ import {
 } from "@/api";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { Picture, CaretRight, CaretBottom, CircleClose } from "@element-plus/icons-vue";
+import { t } from "@/i18n";
 
 const route = useRoute();
 const router = useRouter();
@@ -380,9 +436,12 @@ const activeTab = ref("basic");
 const form = ref({
   name: "",
   description: "",
+  category: "",
   systemPrompt: "",
   providerId: "" as string,
   model: "",
+  fallbackModels: [] as Array<{ providerId?: string; model: string }>,
+  fallbackCooldownSeconds: 900,
   temperature: 0.7,
   maxTokens: 4096,
   maxIterations: 15,
@@ -395,11 +454,43 @@ const form = ref({
 const availableTools = ref<Array<{ name: string; description: string }>>([]);
 const httpToolNames = ref<Set<string>>(new Set());
 const availableSkills = ref<Array<{ name: string }>>([]);
-const availableProviders = ref<Array<{ id: string; name: string; defaultModel: string; isPrimary: boolean }>>([]);
+interface ModelCapabilities {
+  supportsTools: boolean;
+  supportsVision: boolean;
+  supportsThinking: boolean;
+  supportsStreaming: boolean;
+}
+interface ProviderItem {
+  id: string;
+  name: string;
+  defaultModel: string;
+  isPrimary: boolean;
+  capabilities: ModelCapabilities;
+}
+const availableProviders = ref<ProviderItem[]>([]);
+const selectedProvider = computed(() => availableProviders.value.find(p => p.id === form.value.providerId));
 
 function onProviderChange() {
   const provider = availableProviders.value.find(p => p.id === form.value.providerId);
   if (provider) form.value.model = provider.defaultModel;
+}
+
+function addFallbackModel() {
+  const provider = availableProviders.value.find(p => p.id !== form.value.providerId) ?? availableProviders.value[0];
+  form.value.fallbackModels.push({
+    providerId: provider?.id,
+    model: provider?.defaultModel ?? "",
+  });
+}
+
+function removeFallbackModel(index: number) {
+  form.value.fallbackModels.splice(index, 1);
+}
+
+function onFallbackProviderChange(index: number) {
+  const fallback = form.value.fallbackModels[index];
+  const provider = availableProviders.value.find(p => p.id === fallback?.providerId);
+  if (fallback && provider) fallback.model = provider.defaultModel;
 }
 
 // API tab state
@@ -409,27 +500,27 @@ const agentUsage = ref({ totalRequests: 0, totalTokensIn: 0, totalTokensOut: 0 }
 const baseUrl = ref(window.location.origin);
 
 // API 文档数据
-const apiParamDocs = [
-  { field: "message", type: "string", required: "否*", desc: "用户消息文本。message 和 images 至少提供一个" },
-  { field: "sessionId", type: "string", required: "否", desc: "会话 ID，用于保持多轮对话上下文。不传则创建新会话" },
-  { field: "images", type: "array", required: "否*", desc: "图片数组，支持 base64 内联或 URL 两种格式。message 和 images 至少提供一个" },
-];
+const apiParamDocs = computed(() => [
+  { field: "message", type: "string", required: t("common.optional"), desc: t("agent.apiDocMessageDesc") },
+  { field: "sessionId", type: "string", required: t("common.optional"), desc: t("agent.apiDocSessionDesc") },
+  { field: "images", type: "array", required: t("common.optional"), desc: t("agent.apiDocImagesDesc") },
+]);
 
-const imageParamDocs = [
-  { format: "base64", field: "type", type: "string", desc: '固定值 "base64"' },
-  { format: "base64", field: "mediaType", type: "string", desc: '图片 MIME 类型，如 "image/jpeg"、"image/png"、"image/webp"、"image/gif"' },
-  { format: "base64", field: "data", type: "string", desc: "图片的 base64 编码字符串（不含 data:xxx;base64, 前缀）" },
-  { format: "url", field: "type", type: "string", desc: '固定值 "url"' },
-  { format: "url", field: "url", type: "string", desc: "图片的完整 HTTP/HTTPS URL，需确保模型可访问" },
-];
+const imageParamDocs = computed(() => [
+  { format: "base64", field: "type", type: "string", desc: t("agent.apiDocFixedBase64") },
+  { format: "base64", field: "mediaType", type: "string", desc: t("agent.apiDocMediaType") },
+  { format: "base64", field: "data", type: "string", desc: t("agent.apiDocBase64Data") },
+  { format: "url", field: "type", type: "string", desc: t("agent.apiDocFixedUrl") },
+  { format: "url", field: "url", type: "string", desc: t("agent.apiDocImageUrl") },
+]);
 
-const sseEventDocs = [
-  { event: "thinking", data: "string", desc: "AI 思考过程文本片段（流式累积，仅支持思考模式的模型）" },
-  { event: "text", data: "string", desc: "AI 回复正文文本片段（流式累积）" },
-  { event: "tool_call", data: '{ name: string, input: object }', desc: "Agent 调用工具时触发" },
-  { event: "tool_result", data: '{ name: string, result: string }', desc: "工具执行完成后触发" },
-  { event: "done", data: '{ reply, sessionId, usage }', desc: "流式输出结束，包含完整回复、会话 ID 和 token 用量" },
-];
+const sseEventDocs = computed(() => [
+  { event: "thinking", data: "string", desc: t("agent.sseThinkingDesc") },
+  { event: "text", data: "string", desc: t("agent.sseTextDesc") },
+  { event: "tool_call", data: '{ name: string, input: object }', desc: t("agent.sseToolCallDesc") },
+  { event: "tool_result", data: '{ name: string, result: string }', desc: t("agent.sseToolResultDesc") },
+  { event: "done", data: '{ reply, sessionId, usage }', desc: t("agent.sseDoneDesc") },
+]);
 
 // Test chat state
 interface ChatMessage {
@@ -505,9 +596,9 @@ async function loadKnowledge() {
 async function handleKbChange(newIds: string[]) {
   try {
     await setAgentKnowledge(agentId.value, newIds);
-    ElMessage.success("Knowledge bases updated");
+    ElMessage.success(t("agent.kbUpdated"));
   } catch {
-    ElMessage.error("Failed to update");
+    ElMessage.error(t("agent.failedUpdate"));
   }
 }
 
@@ -542,9 +633,12 @@ async function loadData() {
       Object.assign(form.value, {
         name: data.name,
         description: data.description,
+        category: data.category ?? "",
         systemPrompt: data.systemPrompt,
         providerId: data.providerId ?? "",
         model: data.model,
+        fallbackModels: data.fallbackModels ?? [],
+        fallbackCooldownSeconds: data.fallbackCooldownSeconds ?? 900,
         temperature: data.temperature,
         maxTokens: data.maxTokens,
         maxIterations: data.maxIterations,
@@ -565,7 +659,7 @@ async function loadData() {
       }
     }
   } catch {
-    ElMessage.error("Failed to load data");
+    ElMessage.error(t("agent.failedLoadData"));
   } finally {
     loading.value = false;
   }
@@ -573,17 +667,21 @@ async function loadData() {
 
 async function handleSave() {
   if (!form.value.name || !form.value.systemPrompt) {
-    ElMessage.warning("Name and System Prompt are required");
+    ElMessage.warning(t("agent.requiredNamePrompt"));
     return;
   }
   saving.value = true;
   try {
+    const payload = {
+      ...form.value,
+      thinking: selectedProvider.value?.capabilities.supportsThinking ? form.value.thinking : false,
+    };
     if (isEdit.value) {
-      await updateAgent(agentId.value, form.value);
-      ElMessage.success("Agent updated");
+      await updateAgent(agentId.value, payload);
+      ElMessage.success(t("agent.updated"));
     } else {
-      const { data } = await createAgent(form.value);
-      ElMessage.success("Agent created");
+      const { data } = await createAgent(payload);
+      ElMessage.success(t("agent.created"));
       // Show the raw key immediately
       if (data.apiKeys?.[0]?.rawKey) {
         newlyCreatedKey.value = data.apiKeys[0].rawKey;
@@ -591,7 +689,7 @@ async function handleSave() {
       router.replace(`/agents/${data.id}/edit`);
     }
   } catch {
-    ElMessage.error("Failed to save agent");
+    ElMessage.error(t("agent.failedSave"));
   } finally {
     saving.value = false;
   }
@@ -599,17 +697,17 @@ async function handleSave() {
 
 async function generateKey() {
   try {
-    const { value: keyName } = await ElMessageBox.prompt("Give this key a name (for your reference)", "New API Key", {
+    const { value: keyName } = await ElMessageBox.prompt(t("agent.keyPromptMessage"), t("agent.newApiKey"), {
       inputValue: "",
-      inputPlaceholder: "e.g. production, dev-test, mobile-app",
-      confirmButtonText: "Generate",
-      cancelButtonText: "Cancel",
+      inputPlaceholder: t("agent.keyPromptPlaceholder"),
+      confirmButtonText: t("agent.generate"),
+      cancelButtonText: t("common.cancel"),
     });
-    const name = keyName?.trim() || "default";
+    const name = keyName?.trim() || t("common.default");
     const { data } = await createApiKey(agentId.value, name);
     newlyCreatedKey.value = data.rawKey;
     apiKeys.value.unshift(data);
-    ElMessage.success("API key generated");
+    ElMessage.success(t("agent.apiKeyGenerated"));
   } catch {
     // user cancelled or error
   }
@@ -619,15 +717,15 @@ async function revokeKey(keyId: string) {
   try {
     await deleteApiKey(agentId.value, keyId);
     apiKeys.value = apiKeys.value.filter((k) => k.id !== keyId);
-    ElMessage.success("Key revoked");
+    ElMessage.success(t("agent.keyRevoked"));
   } catch {
-    ElMessage.error("Failed to revoke key");
+    ElMessage.error(t("agent.failedRevoke"));
   }
 }
 
 function copyKey(key: string) {
   navigator.clipboard.writeText(key);
-  ElMessage.success("Copied to clipboard");
+  ElMessage.success(t("common.copied"));
 }
 
 /** 将 base64 dataURL 转换为 {type, data, mediaType} 格式供后端使用 */
@@ -684,8 +782,8 @@ async function sendChatNonStream(msg: string, images: string[]) {
       usage: data.usage,
     });
   } catch (e: unknown) {
-    const errMsg = (e as { response?: { data?: { error?: string } } })?.response?.data?.error || "Request failed";
-    chatMessages.value.push({ role: "assistant", text: `Error: ${errMsg}` });
+    const errMsg = (e as { response?: { data?: { error?: string } } })?.response?.data?.error || t("common.requestFailed");
+    chatMessages.value.push({ role: "assistant", text: t("agent.errorPrefix", { message: errMsg }) });
   }
 }
 
@@ -710,7 +808,7 @@ async function sendChatStream(msg: string, images: string[]) {
     });
 
     if (!response.ok) {
-      chatMessages.value.push({ role: "assistant", text: `Error: HTTP ${response.status}` });
+      chatMessages.value.push({ role: "assistant", text: t("agent.errorPrefix", { message: t("common.httpError", { status: response.status }) }) });
       return;
     }
 
@@ -770,7 +868,7 @@ async function sendChatStream(msg: string, images: string[]) {
       if (chatBoxRef.value) chatBoxRef.value.scrollTop = chatBoxRef.value.scrollHeight;
     }
   } catch (e: unknown) {
-    chatMessages.value.push({ role: "assistant", text: `Error: ${(e as Error).message}` });
+    chatMessages.value.push({ role: "assistant", text: t("agent.errorPrefix", { message: (e as Error).message }) });
   }
 }
 
@@ -915,5 +1013,11 @@ onMounted(loadData);
 .knowledge-editor:focus {
   border-color: #409eff;
   background: #fff;
+}
+.model-capabilities {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
 }
 </style>

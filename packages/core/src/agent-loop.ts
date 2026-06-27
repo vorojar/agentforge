@@ -12,12 +12,15 @@ import type {
   SkillRegistry,
   DatabaseAdapter,
   AgentConfig,
+  ProviderCandidate,
+  ProviderResolveOptions,
+  ModelTrace,
 } from "@agentforge/types";
 import { ToolExecutor } from "@agentforge/tools";
 import { ContextBuilder } from "./context.js";
 
 export interface ProviderResolver {
-  resolve(providerId?: string): LLMProvider;
+  resolve(candidates: ProviderCandidate[], agentKey?: string, options?: ProviderResolveOptions): LLMProvider;
 }
 
 export interface AgentLoopConfig {
@@ -60,6 +63,32 @@ function extractText(content: ContentBlock[]): string {
     .join("");
 }
 
+function compactContentForPersistence(content: string | ContentBlock[]): string | ContentBlock[] {
+  if (typeof content === "string") return content;
+  const compacted: ContentBlock[] = [];
+  let omittedImageCount = 0;
+  let omittedBytes = 0;
+  for (const block of content) {
+    if (block.type === "image" && block.source.type === "base64") {
+      omittedImageCount += 1;
+      omittedBytes += block.source.data.length;
+      compacted.push({
+        type: "text",
+        text: `[图片已发送给模型，但 base64 内容不写入历史记录：${block.source.mediaType}]`,
+      });
+    } else {
+      compacted.push(block);
+    }
+  }
+  if (omittedImageCount > 0) {
+    compacted.push({
+      type: "text",
+      text: `[已省略 ${omittedImageCount} 张图片的历史存储内容，约 ${(omittedBytes / 1024 / 1024).toFixed(1)}MB base64]`,
+    });
+  }
+  return compacted;
+}
+
 function getToolDefinitions(
   registry: ToolRegistry,
   toolNames: string[],
@@ -92,10 +121,33 @@ export class AgentLoop {
 
   private resolveProvider(agentConfig: AgentConfig): LLMProvider {
     if (this.config.providerRegistry) {
-      return this.config.providerRegistry.resolve(agentConfig.providerId);
+      return this.config.providerRegistry.resolve(
+        this.buildProviderCandidates(agentConfig),
+        agentConfig.id,
+        { fallbackCooldownMs: (agentConfig.fallbackCooldownSeconds ?? 900) * 1000 },
+      );
     }
     if (this.config.provider) return this.config.provider;
     throw new Error("No LLM provider configured");
+  }
+
+  private buildProviderCandidates(agentConfig: AgentConfig): ProviderCandidate[] {
+    const candidates: ProviderCandidate[] = [
+      { providerId: agentConfig.providerId, model: agentConfig.model },
+      ...(agentConfig.fallbackModels ?? []),
+    ];
+    const result: ProviderCandidate[] = [];
+    const seen = new Set<string>();
+    for (const candidate of candidates) {
+      const providerId = candidate.providerId?.trim();
+      const model = candidate.model?.trim();
+      if (!model) continue;
+      const key = `${providerId ?? ""}:${model}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      result.push({ providerId: providerId || undefined, model });
+    }
+    return result;
   }
 
   private buildUserContent(message: string, images?: ImageBlock[]): string | ContentBlock[] {
@@ -139,6 +191,7 @@ export class AgentLoop {
     let accumulatedText = "";
     let accumulatedThinking = "";
     let finalSystemPrompt = "";
+    let lastModel = agentConfig.model;
 
     for (let i = 0; i < agentConfig.maxIterations; i++) {
       const { systemPrompt, messages } = contextBuilder.build(
@@ -157,6 +210,8 @@ export class AgentLoop {
         thinking: agentConfig.thinking,
       });
 
+      const responseModel = response.model || agentConfig.model;
+      lastModel = responseModel;
       totalTokensIn += response.usage.tokensIn;
       totalTokensOut += response.usage.tokensOut;
       totalCacheRead += response.usage.cacheReadTokens ?? 0;
@@ -166,22 +221,22 @@ export class AgentLoop {
         const text = extractText(response.content);
         accumulatedText += text;
 
-        history.push({ role: "assistant", content: response.content });
+        history.push({ role: "assistant", content: response.content, thinking: response.thinking });
         await this.persistMessage(
           sid, agentConfig.id, "assistant", response.content,
           response.usage.tokensIn, response.usage.tokensOut, response.thinking,
-          response.usage.cacheReadTokens
+          response.usage.cacheReadTokens, responseModel, response.modelTrace
         );
 
         break;
       }
 
       if (response.stopReason === "tool_use") {
-        history.push({ role: "assistant", content: response.content });
+        history.push({ role: "assistant", content: response.content, thinking: response.thinking });
         await this.persistMessage(
           sid, agentConfig.id, "assistant", response.content,
           response.usage.tokensIn, response.usage.tokensOut, response.thinking,
-          response.usage.cacheReadTokens
+          response.usage.cacheReadTokens, responseModel, response.modelTrace
         );
 
         const resultBlocks: ToolResultBlock[] = [];
@@ -224,7 +279,7 @@ export class AgentLoop {
         sessionId: sid,
         tokensIn: totalTokensIn,
         tokensOut: totalTokensOut,
-        model: agentConfig.model,
+        model: lastModel,
         durationMs,
       });
     }
@@ -276,6 +331,7 @@ export class AgentLoop {
     let accumulatedText = "";
     const toolCalls: AgentRunResult["toolCalls"] = [];
     let systemPromptEmitted = false;
+    let lastModel = agentConfig.model;
 
     for (let i = 0; i < agentConfig.maxIterations; i++) {
       const { systemPrompt, messages } = contextBuilder.build(
@@ -305,6 +361,8 @@ export class AgentLoop {
       let iterationTokensIn = 0;
       let iterationTokensOut = 0;
       let iterationCacheRead = 0;
+      let iterationModel = agentConfig.model;
+      let iterationModelTrace: ModelTrace | undefined;
 
       for await (const chunk of stream) {
         if (chunk.type === "thinking" && chunk.text) {
@@ -347,6 +405,9 @@ export class AgentLoop {
             totalTokensOut += iterationTokensOut;
             totalCacheRead += iterationCacheRead;
           }
+          iterationModel = chunk.model ?? agentConfig.model;
+          iterationModelTrace = chunk.modelTrace;
+          lastModel = iterationModel;
         }
       }
 
@@ -363,14 +424,14 @@ export class AgentLoop {
       if (pendingText) mergedBlocks.push({ type: "text", text: pendingText });
 
       if (stopReason === "end_turn" || stopReason === "max_tokens") {
-        history.push({ role: "assistant", content: mergedBlocks });
-        await this.persistMessage(sid, agentConfig.id, "assistant", mergedBlocks, iterationTokensIn || undefined, iterationTokensOut || undefined, iterationThinking || undefined, iterationCacheRead || undefined);
+        history.push({ role: "assistant", content: mergedBlocks, thinking: iterationThinking || undefined });
+        await this.persistMessage(sid, agentConfig.id, "assistant", mergedBlocks, iterationTokensIn || undefined, iterationTokensOut || undefined, iterationThinking || undefined, iterationCacheRead || undefined, iterationModel, iterationModelTrace);
         break;
       }
 
       if (stopReason === "tool_use") {
-        history.push({ role: "assistant", content: mergedBlocks });
-        await this.persistMessage(sid, agentConfig.id, "assistant", mergedBlocks, iterationTokensIn || undefined, iterationTokensOut || undefined, iterationThinking || undefined, iterationCacheRead || undefined);
+        history.push({ role: "assistant", content: mergedBlocks, thinking: iterationThinking || undefined });
+        await this.persistMessage(sid, agentConfig.id, "assistant", mergedBlocks, iterationTokensIn || undefined, iterationTokensOut || undefined, iterationThinking || undefined, iterationCacheRead || undefined, iterationModel, iterationModelTrace);
 
         const resultBlocks: ToolResultBlock[] = [];
         for (const block of contentBlocks) {
@@ -414,7 +475,7 @@ export class AgentLoop {
         sessionId: sid,
         tokensIn: totalTokensIn,
         tokensOut: totalTokensOut,
-        model: agentConfig.model,
+        model: lastModel,
         durationMs,
       });
     }
@@ -443,6 +504,7 @@ export class AgentLoop {
     return messages.map((m) => ({
       role: m.role === "tool" ? ("user" as const) : (m.role as "user" | "assistant"),
       content: m.content,
+      thinking: m.thinking,
     }));
   }
 
@@ -460,17 +522,21 @@ export class AgentLoop {
     tokensIn?: number,
     tokensOut?: number,
     thinking?: string,
-    cacheReadTokens?: number
+    cacheReadTokens?: number,
+    model?: string,
+    modelTrace?: ModelTrace
   ): Promise<void> {
     if (!this.config.db) return;
     await this.config.db.addMessage({
       sessionId,
       role,
-      content,
+      content: compactContentForPersistence(content),
       thinking,
       tokensIn,
       tokensOut,
       cacheReadTokens,
+      model,
+      modelTrace,
     });
   }
 }

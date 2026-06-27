@@ -1,5 +1,7 @@
 # AgentForge — Project Guide
 
+For current project maintenance rules, read `AGENTS.md` first. This file keeps historical Claude-oriented notes, but `AGENTS.md` and `docs/MAINTENANCE.md` are the durable source for verification, i18n, failover, database, and UI maintenance discipline.
+
 ## What is this
 
 Enterprise AI Agent service platform. Docker-deployable, Vue3 admin UI, business teams create agents and call them via API keys. Monorepo with 8 packages under `packages/`.
@@ -75,7 +77,8 @@ Every feature commit, bug fix, or breaking change MUST update CHANGELOG.md in th
 ```bash
 pnpm install          # Install deps
 pnpm build            # Build all packages
-pnpm test             # Run 108 tests
+pnpm test             # Run the test suite
+./scripts/verify.sh   # Preferred full verification entry
 pnpm dev              # Start dev (API :3000 + Web :5173)
 ```
 

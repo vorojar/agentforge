@@ -48,6 +48,9 @@ describe("SQLiteAdapter", () => {
         description: "A custom agent",
         systemPrompt: "Custom prompt",
         model: "gpt-4",
+        fallbackModels: [{ providerId: "provider-2", model: "gpt-4o-mini" }],
+        fallbackCooldownSeconds: 120,
+        category: " support ",
         temperature: 0.5,
         maxTokens: 2048,
         maxIterations: 10,
@@ -59,6 +62,9 @@ describe("SQLiteAdapter", () => {
       expect(agent.name).toBe("Custom Agent");
       expect(agent.description).toBe("A custom agent");
       expect(agent.model).toBe("gpt-4");
+      expect(agent.fallbackModels).toEqual([{ providerId: "provider-2", model: "gpt-4o-mini" }]);
+      expect(agent.fallbackCooldownSeconds).toBe(120);
+      expect(agent.category).toBe("support");
       expect(agent.temperature).toBe(0.5);
       expect(agent.maxTokens).toBe(2048);
       expect(agent.maxIterations).toBe(10);
@@ -87,9 +93,16 @@ describe("SQLiteAdapter", () => {
 
     it("should update an agent", async () => {
       const agent = await db.createAgent({ name: "Old", systemPrompt: "P" });
-      const updated = await db.updateAgent(agent.id, { name: "New", temperature: 0.9 });
+      const updated = await db.updateAgent(agent.id, {
+        name: "New",
+        temperature: 0.9,
+        fallbackModels: [{ providerId: "provider-2", model: "fallback-model" }],
+        category: " ops ",
+      });
       expect(updated!.name).toBe("New");
       expect(updated!.temperature).toBe(0.9);
+      expect(updated!.fallbackModels).toEqual([{ providerId: "provider-2", model: "fallback-model" }]);
+      expect(updated!.category).toBe("ops");
       expect(updated!.systemPrompt).toBe("P");
     });
 
@@ -199,6 +212,15 @@ describe("SQLiteAdapter", () => {
       expect(fetched).toEqual(created);
     });
 
+    it("should create rerun sessions in the same family", async () => {
+      const root = await db.createSession(agentId);
+      const rerun = await db.createSession(agentId, { sourceSessionId: root.id });
+      expect(rerun.rootSessionId).toBe(root.id);
+      expect(rerun.sourceSessionId).toBe(root.id);
+      const family = await db.listSessionFamily(root.id);
+      expect(family.map(session => session.id)).toEqual([root.id, rerun.id]);
+    });
+
     it("should return null for non-existent session", async () => {
       expect(await db.getSession("non-existent")).toBeNull();
     });
@@ -276,6 +298,29 @@ describe("SQLiteAdapter", () => {
         thinking: "Let me think about this...",
       });
       expect(msg.thinking).toBe("Let me think about this...");
+    });
+
+    it("should add a message with model trace", async () => {
+      const modelTrace = {
+        requestedModel: "primary-model",
+        selectedProviderId: "backup",
+        selectedModel: "backup-model",
+        fallbackUsed: true,
+        attempts: [
+          { providerId: "primary", model: "primary-model", attempt: 1, status: "failed" as const, error: "timeout" },
+          { providerId: "backup", model: "backup-model", attempt: 1, status: "success" as const },
+        ],
+      };
+      await db.addMessage({
+        sessionId,
+        role: "assistant",
+        content: "Answer",
+        model: "backup-model",
+        modelTrace,
+      });
+
+      const messages = await db.getMessages(sessionId);
+      expect(messages[0].modelTrace).toEqual(modelTrace);
     });
 
     it("should get messages for a session in order", async () => {
@@ -445,11 +490,21 @@ describe("SQLiteAdapter", () => {
           required: ["item"],
         },
         bodyTemplate: '{"item": "{item}", "qty": {quantity}}',
+        category: " orders ",
       });
       expect(tool.name).toBe("create_order");
       expect(tool.method).toBe("POST");
       expect(tool.headers).toEqual({ Authorization: "Bearer token123" });
       expect(tool.parameters.required).toEqual(["item"]);
+      expect(tool.category).toBe("orders");
+    });
+
+    it("should store skill categories separately from skill files", async () => {
+      expect(await db.listSkillCategories()).toEqual({});
+      await db.setSkillCategory("code-review", "engineering");
+      expect(await db.listSkillCategories()).toEqual({ "code-review": "engineering" });
+      await db.setSkillCategory("code-review", "");
+      expect(await db.listSkillCategories()).toEqual({});
     });
 
     it("should get an HTTP tool by id", async () => {
@@ -581,6 +636,49 @@ describe("SQLiteAdapter", () => {
       await db.ingestKnowledge(kb.id, "doc.txt", "raw", ["chunk"]);
       expect(await db.deleteKnowledgeSource(kb.id, "doc.txt")).toBe(true);
       expect(await db.listKnowledgeSources(kb.id)).toHaveLength(0);
+    });
+  });
+
+  // --- Providers ---
+
+  describe("Providers", () => {
+    it("should create a provider with default capabilities", async () => {
+      const provider = await db.createProvider({
+        name: "Claude",
+        type: "claude",
+        apiKey: "sk-test",
+        defaultModel: "claude-sonnet",
+      });
+
+      expect(provider.capabilities).toEqual({
+        supportsTools: true,
+        supportsVision: true,
+        supportsThinking: true,
+        supportsStreaming: true,
+      });
+    });
+
+    it("should update provider capabilities", async () => {
+      const provider = await db.createProvider({
+        name: "Text only",
+        type: "openai",
+        apiKey: "sk-test",
+        defaultModel: "text-model",
+      });
+
+      const updated = await db.updateProvider(provider.id, {
+        capabilities: {
+          supportsVision: false,
+          supportsThinking: true,
+        },
+      });
+
+      expect(updated!.capabilities).toEqual({
+        supportsTools: true,
+        supportsVision: false,
+        supportsThinking: true,
+        supportsStreaming: true,
+      });
     });
   });
 

@@ -8,6 +8,7 @@ export interface Skill {
   /** Available files in skill directory (e.g. "SKILL.md", "template.md", "examples/foo.md") */
   availableFiles?: string[];
   enabled: boolean;
+  category?: string;
   createdAt: string;
   updatedAt: string;
 }

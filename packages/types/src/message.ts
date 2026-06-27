@@ -1,3 +1,5 @@
+import type { ModelTrace } from "./llm.js";
+
 export type ContentBlock =
   | TextBlock
   | ImageBlock
@@ -40,6 +42,7 @@ export interface Message {
   /** AI 思考过程文本（仅 assistant 消息） */
   thinking?: string;
   model?: string;
+  modelTrace?: ModelTrace;
   tokensIn?: number;
   tokensOut?: number;
   cacheReadTokens?: number;
@@ -51,11 +54,15 @@ export interface Message {
 export interface Session {
   id: string;
   agentId: string;
+  rootSessionId?: string;
+  sourceSessionId?: string | null;
   messageCount?: number;
   totalTokensIn?: number;
   totalTokensOut?: number;
   totalCacheRead?: number;
   firstMessage?: string;
+  models?: string[];
+  familySize?: number;
   createdAt: string;
   updatedAt: string;
 }

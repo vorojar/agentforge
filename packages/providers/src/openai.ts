@@ -1,4 +1,4 @@
-import OpenAI from "openai";
+import type OpenAI from "openai";
 import type {
   LLMProvider,
   LLMRequest,
@@ -76,11 +76,15 @@ async function toOpenAIMessages(
         }
       }
 
-      result.push({
+      const assistantMsg: Record<string, unknown> = {
         role: "assistant",
-        content: textContent || null,
+        content: textContent || "",
         tool_calls: toolCalls.length > 0 ? toolCalls : undefined,
-      });
+      };
+      if (msg.thinking) {
+        assistantMsg.reasoning_content = msg.thinking;
+      }
+      result.push(assistantMsg as unknown as ChatCompletionMessageParam);
     } else {
       // user role - may contain text, image, tool_result blocks
       const userParts: OpenAI.Chat.Completions.ChatCompletionContentPart[] = [];
@@ -162,16 +166,68 @@ function ensureParsed<T>(value: T | string): T {
   return value;
 }
 
+function isUnsupportedImageInputError(error: unknown): boolean {
+  const message = (error as Error).message ?? "";
+  return message.includes("No endpoints found that support image input");
+}
+
+function contentHasImage(content: string | ContentBlock[]): boolean {
+  return Array.isArray(content) && content.some((block) => block.type === "image");
+}
+
+function requestHasImage(request: LLMRequest): boolean {
+  return request.messages.some((msg) => contentHasImage(msg.content));
+}
+
+function replaceImagesWithText(content: string | ContentBlock[]): string | ContentBlock[] {
+  if (typeof content === "string") return content;
+  return content.map((block) => block.type === "image"
+    ? { type: "text" as const, text: "[图片已省略：当前模型不支持图片输入]" }
+    : block
+  );
+}
+
+function withoutImages(request: LLMRequest): LLMRequest {
+  return {
+    ...request,
+    messages: request.messages.map((msg) => ({
+      ...msg,
+      content: replaceImagesWithText(msg.content),
+    })),
+  };
+}
+
 export class OpenAIProvider implements LLMProvider {
   readonly name = "openai";
-  private client: OpenAI;
+  private client?: OpenAI;
 
-  constructor(config: { apiKey: string; baseUrl?: string }) {
-    this.client = new OpenAI({
-      apiKey: config.apiKey,
-      baseURL: config.baseUrl,
-      timeout: 60_000,
-    });
+  constructor(private readonly config: { apiKey: string; baseUrl?: string }) {}
+
+  private async getClient(): Promise<OpenAI> {
+    if (!this.client) {
+      const { default: OpenAIClient } = await import("openai");
+      this.client = new OpenAIClient({
+        apiKey: this.config.apiKey,
+        baseURL: this.config.baseUrl,
+        timeout: 180_000,
+        maxRetries: 0,
+      });
+    }
+    return this.client;
+  }
+
+  private async createCompletion(
+    params: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming
+  ): Promise<OpenAI.Chat.Completions.ChatCompletion> {
+    const client = await this.getClient();
+    return client.chat.completions.create(params);
+  }
+
+  private async createStream(
+    params: OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming
+  ): Promise<AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>> {
+    const client = await this.getClient();
+    return client.chat.completions.create(params) as Promise<AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>>;
   }
 
   private buildThinkingParam(thinking?: boolean): Record<string, unknown> {
@@ -180,18 +236,35 @@ export class OpenAIProvider implements LLMProvider {
     return {};
   }
 
-  async chat(request: LLMRequest): Promise<LLMResponse> {
-    const params: Record<string, unknown> = {
+  private async buildChatParams(request: LLMRequest, stream = false): Promise<Record<string, unknown>> {
+    return {
       model: request.model,
       messages: await toOpenAIMessages(request.systemPrompt, request.messages),
       tools: request.tools ? toOpenAITools(request.tools) : undefined,
       max_tokens: request.maxTokens,
       temperature: request.temperature,
+      ...(stream ? { stream: true, stream_options: { include_usage: true } } : {}),
       ...this.buildThinkingParam(request.thinking),
     };
-    const rawResponse = await this.client.chat.completions.create(
-      params as unknown as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming,
-    );
+  }
+
+  private async createChatCompletion(request: LLMRequest) {
+    const params = await this.buildChatParams(request);
+    try {
+      return await this.createCompletion(
+        params as unknown as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming,
+      );
+    } catch (error) {
+      if (!requestHasImage(request) || !isUnsupportedImageInputError(error)) throw error;
+      const retryParams = await this.buildChatParams(withoutImages(request));
+      return await this.createCompletion(
+        retryParams as unknown as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming,
+      );
+    }
+  }
+
+  async chat(request: LLMRequest): Promise<LLMResponse> {
+    const rawResponse = await this.createChatCompletion(request);
     const response = ensureParsed(rawResponse);
 
     const responseAny = response as unknown as Record<string, unknown>;
@@ -218,11 +291,8 @@ export class OpenAIProvider implements LLMProvider {
       }
     }
 
-    let thinking: string | undefined;
-    if (request.thinking) {
-      const msgAny = choice.message as unknown as Record<string, unknown>;
-      thinking = (msgAny.reasoning_content as string) || undefined;
-    }
+    const msgAny = choice.message as unknown as Record<string, unknown>;
+    const thinking = (msgAny.reasoning_content as string) || undefined;
 
     const usageAny = response.usage as unknown as Record<string, Record<string, number>> | undefined;
     const cacheReadTokens = usageAny?.prompt_tokens_details?.cached_tokens || undefined;
@@ -241,19 +311,19 @@ export class OpenAIProvider implements LLMProvider {
   }
 
   async *stream(request: LLMRequest): AsyncIterable<LLMStreamChunk> {
-    const params: Record<string, unknown> = {
-      model: request.model,
-      messages: await toOpenAIMessages(request.systemPrompt, request.messages),
-      tools: request.tools ? toOpenAITools(request.tools) : undefined,
-      max_tokens: request.maxTokens,
-      temperature: request.temperature,
-      stream: true,
-      stream_options: { include_usage: true },
-      ...this.buildThinkingParam(request.thinking),
-    };
-    const stream = await this.client.chat.completions.create(
-      params as unknown as OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming,
-    );
+    const params = await this.buildChatParams(request, true);
+    let stream: AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>;
+    try {
+      stream = await this.createStream(
+        params as unknown as OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming,
+      );
+    } catch (error) {
+      if (!requestHasImage(request) || !isUnsupportedImageInputError(error)) throw error;
+      const retryParams = await this.buildChatParams(withoutImages(request), true);
+      stream = await this.createStream(
+        retryParams as unknown as OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming,
+      );
+    }
 
     const toolCalls = new Map<
       number,
@@ -268,7 +338,7 @@ export class OpenAIProvider implements LLMProvider {
       const delta = chunk.choices?.[0]?.delta;
       finishReason = chunk.choices?.[0]?.finish_reason ?? finishReason;
 
-      if (request.thinking && delta) {
+      if (delta) {
         const deltaAny = delta as Record<string, unknown> | undefined;
         if (deltaAny?.reasoning_content) {
           yield { type: "thinking", text: deltaAny.reasoning_content as string };

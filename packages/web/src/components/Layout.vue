@@ -15,61 +15,77 @@
       >
         <el-menu-item index="/dashboard">
           <el-icon><DataAnalysis /></el-icon>
-          <span>Dashboard</span>
+          <span>{{ t("nav.dashboard") }}</span>
         </el-menu-item>
         <el-menu-item index="/agents">
           <el-icon><User /></el-icon>
-          <span>Agents</span>
+          <span>{{ t("nav.agents") }}</span>
         </el-menu-item>
         <el-menu-item index="/knowledge-bases">
           <el-icon><Collection /></el-icon>
-          <span>Knowledge</span>
+          <span>{{ t("nav.knowledge") }}</span>
         </el-menu-item>
         <el-menu-item index="/providers">
           <el-icon><Connection /></el-icon>
-          <span>Models</span>
+          <span>{{ t("nav.models") }}</span>
         </el-menu-item>
         <el-menu-item index="/tools">
           <el-icon><SetUp /></el-icon>
-          <span>Tools</span>
+          <span>{{ t("nav.tools") }}</span>
         </el-menu-item>
         <el-menu-item index="/skills">
           <el-icon><MagicStick /></el-icon>
-          <span>Skills</span>
+          <span>{{ t("nav.skills") }}</span>
         </el-menu-item>
         <el-menu-item index="/sessions">
           <el-icon><ChatDotSquare /></el-icon>
-          <span>Sessions</span>
+          <span>{{ t("nav.sessions") }}</span>
         </el-menu-item>
       </el-menu>
     </el-aside>
     <el-container>
       <el-header style="background: #fff; border-bottom: 1px solid #f1f5f9; display: flex; align-items: center; justify-content: space-between; padding: 0 24px">
         <h1 style="font-size: 15px; font-weight: 600; color: #1e293b; letter-spacing: -0.01em">{{ pageTitle }}</h1>
-        <el-button size="small" @click="showSettings = true">
-          <el-icon><Setting /></el-icon>
-        </el-button>
+        <div class="header-actions">
+          <el-select
+            :model-value="locale"
+            size="small"
+            style="width: 116px"
+            :aria-label="t('common.language')"
+            @change="setLocale"
+          >
+            <el-option
+              v-for="option in localeOptions"
+              :key="option.value"
+              :label="t(option.labelKey)"
+              :value="option.value"
+            />
+          </el-select>
+          <el-button size="small" @click="showSettings = true">
+            <el-icon><Setting /></el-icon>
+          </el-button>
+        </div>
       </el-header>
       <el-main style="background: #f8fafc; overflow-y: auto; padding: 24px">
         <router-view />
       </el-main>
     </el-container>
 
-    <el-dialog v-model="showSettings" title="Settings" width="400px">
+    <el-dialog v-model="showSettings" :title="t('settings.title')" width="400px">
       <el-form label-width="120px">
-        <el-form-item label="Admin Secret">
+        <el-form-item :label="t('settings.adminSecret')">
           <el-input
             v-model="adminSecret"
             type="password"
             show-password
-            placeholder="Enter admin secret"
+            :placeholder="t('settings.adminSecretPlaceholder')"
             @change="saveSecret"
           />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button type="danger" @click="clearSecret">Logout</el-button>
-        <el-button @click="showSettings = false">Close</el-button>
+        <el-button type="danger" @click="clearSecret">{{ t("settings.logout") }}</el-button>
+        <el-button @click="showSettings = false">{{ t("common.close") }}</el-button>
       </template>
     </el-dialog>
   </el-container>
@@ -88,6 +104,7 @@ import {
   ChatDotSquare,
   Setting,
 } from "@element-plus/icons-vue";
+import { locale, localeOptions, setLocale, t } from "@/i18n";
 
 const route = useRoute();
 const showSettings = ref(false);
@@ -101,19 +118,19 @@ const activeMenu = computed(() => {
   return path;
 });
 
-const pageTitles: Record<string, string> = {
-  "/dashboard": "Dashboard",
-  "/agents": "Agent Management",
-  "/knowledge-bases": "Knowledge Base Management",
-  "/providers": "Model Management",
-  "/tools": "Tool Registry",
-  "/skills": "Skill Management",
-  "/sessions": "Conversation History",
-};
+const pageTitles = {
+  "/dashboard": "nav.dashboard",
+  "/agents": "page.agentManagement",
+  "/knowledge-bases": "page.knowledgeManagement",
+  "/providers": "page.modelManagement",
+  "/tools": "page.toolRegistry",
+  "/skills": "page.skillManagement",
+  "/sessions": "page.conversationHistory",
+} as const;
 
 const pageTitle = computed(() => {
-  for (const [prefix, title] of Object.entries(pageTitles)) {
-    if (route.path.startsWith(prefix)) return title;
+  for (const [prefix, key] of Object.entries(pageTitles)) {
+    if (route.path.startsWith(prefix)) return t(key);
   }
   return "AgentForge";
 });
@@ -149,5 +166,10 @@ function clearSecret() {
   font-weight: 700;
   color: #f1f5f9;
   letter-spacing: 0.5px;
+}
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 </style>

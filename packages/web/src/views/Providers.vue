@@ -9,7 +9,7 @@
   <div>
     <div class="page-header">
       <span></span>
-      <el-button type="primary" @click="openCreate">Add Model</el-button>
+      <el-button type="primary" @click="openCreate">{{ t("providers.addModel") }}</el-button>
     </div>
 
     <el-row :gutter="20">
@@ -19,26 +19,32 @@
             <div style="display: flex; justify-content: space-between; align-items: center">
               <span style="font-weight: 600">{{ p.name }}</span>
               <div style="display: flex; gap: 6px; align-items: center">
-                <el-tag v-if="p.isPrimary" type="success" size="small">Primary</el-tag>
+                <el-tag v-if="p.isPrimary" type="success" size="small">{{ t("common.primary") }}</el-tag>
                 <el-tag :type="p.enabled ? 'success' : 'info'" size="small">
-                  {{ p.enabled ? "On" : "Off" }}
+                  {{ p.enabled ? t("common.on") : t("common.off") }}
                 </el-tag>
               </div>
             </div>
           </template>
           <div style="font-size: 13px; color: #606266; line-height: 2">
-            <div><strong>Type:</strong> {{ p.type }}</div>
-            <div><strong>API Key:</strong> <code>{{ p.apiKey }}</code></div>
-            <div v-if="p.baseUrl"><strong>Base URL:</strong> {{ p.baseUrl }}</div>
-            <div><strong>Model:</strong> {{ p.defaultModel }}</div>
+            <div><strong>{{ t("common.type") }}:</strong> {{ p.type }}</div>
+            <div><strong>{{ t("providers.apiKey") }}:</strong> <code>{{ p.apiKey }}</code></div>
+            <div v-if="p.baseUrl"><strong>{{ t("providers.baseUrl") }}:</strong> {{ p.baseUrl }}</div>
+            <div><strong>{{ t("common.model") }}:</strong> {{ p.defaultModel }}</div>
+            <div class="capability-tags">
+              <el-tag v-if="p.capabilities.supportsTools" size="small">{{ t("cap.tools") }}</el-tag>
+              <el-tag v-if="p.capabilities.supportsVision" size="small">{{ t("cap.vision") }}</el-tag>
+              <el-tag v-if="p.capabilities.supportsThinking" size="small">{{ t("cap.thinking") }}</el-tag>
+              <el-tag v-if="p.capabilities.supportsStreaming" size="small">{{ t("cap.streaming") }}</el-tag>
+            </div>
           </div>
           <div style="margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap">
-            <el-button size="small" @click="openEdit(p)">Edit</el-button>
-            <el-button size="small" type="warning" @click="openChannels(p)">Channels</el-button>
-            <el-button size="small" v-if="!p.isPrimary" @click="setPrimary(p.id)">Set Primary</el-button>
-            <el-popconfirm title="Delete this model?" @confirm="handleDelete(p.id)">
+            <el-button size="small" @click="openEdit(p)">{{ t("common.edit") }}</el-button>
+            <el-button size="small" type="warning" @click="openChannels(p)">{{ t("providers.channels") }}</el-button>
+            <el-button size="small" v-if="!p.isPrimary" @click="setPrimary(p.id)">{{ t("providers.setPrimary") }}</el-button>
+            <el-popconfirm :title="t('providers.deleteConfirm')" @confirm="handleDelete(p.id)">
               <template #reference>
-                <el-button size="small" type="danger">Delete</el-button>
+                <el-button size="small" type="danger">{{ t("common.delete") }}</el-button>
               </template>
             </el-popconfirm>
           </div>
@@ -47,83 +53,90 @@
     </el-row>
 
     <!-- Provider Form Dialog -->
-    <el-dialog v-model="formVisible" :title="editingProvider ? 'Edit Model' : 'Add Model'" width="550px">
+    <el-dialog v-model="formVisible" :title="editingProvider ? t('providers.editModel') : t('providers.addModelTitle')" width="550px">
       <el-form :model="form" label-width="120px">
-        <el-form-item label="Name" required>
+        <el-form-item :label="t('common.name')" required>
           <el-input v-model="form.name" placeholder="e.g. 火山引擎 (豆包)" />
         </el-form-item>
-        <el-form-item label="Type" required>
-          <el-select v-model="form.type" style="width: 100%">
-            <el-option label="OpenAI Compatible" value="openai" />
-            <el-option label="Anthropic Claude" value="claude" />
+        <el-form-item :label="t('common.type')" required>
+          <el-select v-model="form.type" style="width: 100%" @change="onTypeChange">
+            <el-option :label="t('providers.openaiCompatible')" value="openai" />
+            <el-option :label="t('providers.anthropicClaude')" value="claude" />
           </el-select>
         </el-form-item>
-        <el-form-item label="API Key" required>
+        <el-form-item :label="t('providers.apiKey')" required>
           <el-input v-model="form.apiKey" type="password" show-password placeholder="sk-..." />
         </el-form-item>
-        <el-form-item label="Base URL">
+        <el-form-item :label="t('providers.baseUrl')">
           <el-input v-model="form.baseUrl" placeholder="https://api.openai.com/v1 (optional)" />
-          <el-text type="info" size="small">Required for OpenAI-compatible providers (e.g. 豆包, DeepSeek)</el-text>
+          <el-text type="info" size="small">{{ t("providers.baseUrlHelp") }}</el-text>
         </el-form-item>
-        <el-form-item label="Model Name" required>
+        <el-form-item :label="t('providers.modelName')" required>
           <el-input v-model="form.defaultModel" placeholder="e.g. gpt-4o, doubao-seed-2-0-lite-260215" />
         </el-form-item>
-        <el-form-item label="Enabled">
+        <el-form-item :label="t('providers.capabilities')">
+          <div class="capability-switches">
+            <el-checkbox v-model="form.capabilities.supportsTools">{{ t("cap.tools") }}</el-checkbox>
+            <el-checkbox v-model="form.capabilities.supportsVision">{{ t("cap.vision") }}</el-checkbox>
+            <el-checkbox v-model="form.capabilities.supportsThinking">{{ t("cap.thinking") }}</el-checkbox>
+            <el-checkbox v-model="form.capabilities.supportsStreaming">{{ t("cap.streaming") }}</el-checkbox>
+          </div>
+        </el-form-item>
+        <el-form-item :label="t('common.enabled')">
           <el-switch v-model="form.enabled" />
         </el-form-item>
-        <el-form-item label="Primary">
+        <el-form-item :label="t('common.primary')">
           <el-switch v-model="form.isPrimary" />
-          <el-text type="info" size="small" style="margin-left: 8px">Agents without a model will use this one</el-text>
+          <el-text type="info" size="small" style="margin-left: 8px">{{ t("providers.primaryHelp") }}</el-text>
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="formVisible = false">Cancel</el-button>
-        <el-button type="primary" @click="handleSave" :loading="saving">Save</el-button>
+        <el-button @click="formVisible = false">{{ t("common.cancel") }}</el-button>
+        <el-button type="primary" @click="handleSave" :loading="saving">{{ t("common.save") }}</el-button>
       </template>
     </el-dialog>
 
     <!-- Channels Dialog -->
-    <el-dialog v-model="channelVisible" :title="'Channels: ' + channelProvider?.name" width="900px" top="3vh">
+    <el-dialog v-model="channelVisible" :title="t('providers.channelsTitle', { name: channelProvider?.name || '' })" width="900px" top="3vh">
       <div style="margin-bottom: 16px">
         <p style="color: #909399; font-size: 13px; margin-bottom: 12px">
-          Create API keys for independent forwarding. Each channel has its own key and usage statistics.
-          The forwarding endpoint is fully <strong>OpenAI-compatible</strong>.
+          {{ t("providers.channelHelp") }}
         </p>
         <div style="display: flex; gap: 8px; align-items: center">
-          <el-input v-model="newChannelName" placeholder="Channel name (e.g. iOS App, Backend)" style="width: 250px" />
-          <el-button type="primary" :loading="creatingChannel" @click="handleCreateChannel">Create Channel</el-button>
+          <el-input v-model="newChannelName" :placeholder="t('providers.channelNamePlaceholder')" style="width: 250px" />
+          <el-button type="primary" :loading="creatingChannel" @click="handleCreateChannel">{{ t("providers.createChannel") }}</el-button>
         </div>
       </div>
 
       <!-- Newly created key alert -->
       <el-alert v-if="newlyCreatedChannelKey" type="success" :closable="false" style="margin-bottom: 16px">
-        <p>New channel key created. Copy it now — it won't be shown again:</p>
+        <p>{{ t("providers.newChannelKey") }}</p>
         <code style="font-size: 14px; font-weight: bold; display: block; margin-top: 4px">{{ newlyCreatedChannelKey }}</code>
-        <el-button size="small" style="margin-top: 8px" @click="copyKey(newlyCreatedChannelKey)">Copy</el-button>
+        <el-button size="small" style="margin-top: 8px" @click="copyKey(newlyCreatedChannelKey)">{{ t("common.copy") }}</el-button>
       </el-alert>
 
-      <el-table :data="channels" size="small" v-loading="channelLoading" empty-text="No channels yet">
-        <el-table-column prop="name" label="Channel" min-width="120" />
-        <el-table-column prop="keyPrefix" label="Key Prefix" width="120">
+      <el-table :data="channels" size="small" v-loading="channelLoading" :empty-text="t('providers.noChannels')">
+        <el-table-column prop="name" :label="t('common.channel')" min-width="120" />
+        <el-table-column prop="keyPrefix" :label="t('providers.keyPrefix')" width="120">
           <template #default="{ row }"><code>{{ row.keyPrefix }}...</code></template>
         </el-table-column>
-        <el-table-column label="Requests" width="90" align="center">
+        <el-table-column :label="t('common.requests')" width="90" align="center">
           <template #default="{ row }">{{ channelStatsMap[row.id]?.totalRequests ?? '-' }}</template>
         </el-table-column>
-        <el-table-column label="Tokens In" width="100" align="center">
+        <el-table-column :label="t('providers.tokensIn')" width="100" align="center">
           <template #default="{ row }">{{ (channelStatsMap[row.id]?.totalTokensIn ?? 0).toLocaleString() }}</template>
         </el-table-column>
-        <el-table-column label="Tokens Out" width="100" align="center">
+        <el-table-column :label="t('providers.tokensOut')" width="100" align="center">
           <template #default="{ row }">{{ (channelStatsMap[row.id]?.totalTokensOut ?? 0).toLocaleString() }}</template>
         </el-table-column>
-        <el-table-column prop="createdAt" label="Created" width="110">
+        <el-table-column prop="createdAt" :label="t('common.created')" width="110">
           <template #default="{ row }">{{ row.createdAt?.slice(0, 10) }}</template>
         </el-table-column>
         <el-table-column label="" width="80" align="center">
           <template #default="{ row }">
-            <el-popconfirm title="Delete this channel?" @confirm="handleDeleteChannel(row.id)">
+            <el-popconfirm :title="t('providers.deleteChannelConfirm')" @confirm="handleDeleteChannel(row.id)">
               <template #reference>
-                <el-button link type="danger" size="small">Delete</el-button>
+                <el-button link type="danger" size="small">{{ t("common.delete") }}</el-button>
               </template>
             </el-popconfirm>
           </template>
@@ -133,38 +146,38 @@
       <!-- API Usage Examples -->
       <el-divider />
       <el-collapse v-model="exampleCollapse">
-        <el-collapse-item title="API Usage Examples (click to expand)" name="examples">
+        <el-collapse-item :title="t('providers.usageExamples')" name="examples">
           <div class="example-section">
             <div class="example-header">
               <span class="example-info">
-                Endpoint: <code>{{ apiBaseUrl }}/v1/chat/completions</code>
+                {{ t("common.endpoint") }}: <code>{{ apiBaseUrl }}/v1/chat/completions</code>
                 &nbsp;&nbsp;|&nbsp;&nbsp;
-                Model: <code>{{ channelProvider?.defaultModel }}</code>
+                {{ t("common.model") }}: <code>{{ channelProvider?.defaultModel }}</code>
               </span>
             </div>
 
             <el-tabs v-model="exampleTab">
               <el-tab-pane label="cURL" name="curl">
                 <div class="code-block">
-                  <el-button class="copy-btn" size="small" link @click="copyCode('curl')">Copy</el-button>
+                  <el-button class="copy-btn" size="small" link @click="copyCode('curl')">{{ t("providers.copyCode") }}</el-button>
                   <pre><code>{{ curlExample }}</code></pre>
                 </div>
               </el-tab-pane>
               <el-tab-pane label="Python" name="python">
                 <div class="code-block">
-                  <el-button class="copy-btn" size="small" link @click="copyCode('python')">Copy</el-button>
+                  <el-button class="copy-btn" size="small" link @click="copyCode('python')">{{ t("providers.copyCode") }}</el-button>
                   <pre><code>{{ pythonExample }}</code></pre>
                 </div>
               </el-tab-pane>
               <el-tab-pane label="JavaScript" name="javascript">
                 <div class="code-block">
-                  <el-button class="copy-btn" size="small" link @click="copyCode('javascript')">Copy</el-button>
+                  <el-button class="copy-btn" size="small" link @click="copyCode('javascript')">{{ t("providers.copyCode") }}</el-button>
                   <pre><code>{{ jsExample }}</code></pre>
                 </div>
               </el-tab-pane>
               <el-tab-pane label="Python (OpenAI SDK)" name="openai-sdk">
                 <div class="code-block">
-                  <el-button class="copy-btn" size="small" link @click="copyCode('openai-sdk')">Copy</el-button>
+                  <el-button class="copy-btn" size="small" link @click="copyCode('openai-sdk')">{{ t("providers.copyCode") }}</el-button>
                   <pre><code>{{ openaiSdkExample }}</code></pre>
                 </div>
               </el-tab-pane>
@@ -183,10 +196,19 @@ import {
   getChannels, createChannel, deleteChannel, getProviderChannelStats,
 } from "@/api";
 import { ElMessage } from "element-plus";
+import { t } from "@/i18n";
 
 interface ProviderItem {
   id: string; name: string; type: string; apiKey: string;
   baseUrl?: string; defaultModel: string; enabled: boolean; isPrimary: boolean;
+  capabilities: ModelCapabilities;
+}
+
+interface ModelCapabilities {
+  supportsTools: boolean;
+  supportsVision: boolean;
+  supportsThinking: boolean;
+  supportsStreaming: boolean;
 }
 
 interface ChannelItem {
@@ -204,6 +226,7 @@ const exampleTab = ref("curl");
 const apiBaseUrl = computed(() => window.location.origin);
 const exampleKey = computed(() => newlyCreatedChannelKey.value || "af-ch-YOUR_CHANNEL_KEY");
 const exampleModel = computed(() => channelProvider.value?.defaultModel || "your-model-name");
+const examplePrompt = computed(() => t("providers.examplePrompt"));
 
 const curlExample = computed(() =>
 `curl -X POST ${apiBaseUrl.value}/v1/chat/completions \\
@@ -212,7 +235,7 @@ const curlExample = computed(() =>
   -d '{
     "model": "${exampleModel.value}",
     "messages": [
-      {"role": "user", "content": "Hello!"}
+      {"role": "user", "content": "${examplePrompt.value}"}
     ],
     "max_tokens": 1000,
     "stream": false
@@ -229,7 +252,7 @@ response = requests.post(
     },
     json={
         "model": "${exampleModel.value}",
-        "messages": [{"role": "user", "content": "Hello!"}],
+        "messages": [{"role": "user", "content": "${examplePrompt.value}"}],
         "max_tokens": 1000,
     },
 )
@@ -245,7 +268,7 @@ const jsExample = computed(() =>
   },
   body: JSON.stringify({
     model: "${exampleModel.value}",
-    messages: [{ role: "user", content: "Hello!" }],
+    messages: [{ role: "user", content: "${examplePrompt.value}" }],
     max_tokens: 1000,
   }),
 });
@@ -262,7 +285,7 @@ client = OpenAI(
 
 response = client.chat.completions.create(
     model="${exampleModel.value}",
-    messages=[{"role": "user", "content": "Hello!"}],
+    messages=[{"role": "user", "content": "${examplePrompt.value}"}],
     max_tokens=1000,
 )
 print(response.choices[0].message.content)`);
@@ -274,6 +297,7 @@ const saving = ref(false);
 const form = ref({
   name: "", type: "openai", apiKey: "", baseUrl: "",
   defaultModel: "", enabled: true, isPrimary: false,
+  capabilities: defaultCapabilities("openai"),
 });
 
 const channelVisible = ref(false);
@@ -290,29 +314,51 @@ async function loadProviders() {
     const { data } = await getProviders();
     providers.value = data;
   } catch {
-    ElMessage.error("Failed to load models");
+    ElMessage.error(t("providers.failedLoad"));
   }
 }
 
 function openCreate() {
   editingProvider.value = null;
-  form.value = { name: "", type: "openai", apiKey: "", baseUrl: "", defaultModel: "", enabled: true, isPrimary: false };
+  form.value = { name: "", type: "openai", apiKey: "", baseUrl: "", defaultModel: "", enabled: true, isPrimary: false, capabilities: defaultCapabilities("openai") };
   formVisible.value = true;
 }
 
 function openEdit(p: ProviderItem) {
   editingProvider.value = p;
-  form.value = { name: p.name, type: p.type, apiKey: "", baseUrl: p.baseUrl ?? "", defaultModel: p.defaultModel, enabled: p.enabled, isPrimary: p.isPrimary };
+  form.value = {
+    name: p.name,
+    type: p.type,
+    apiKey: "",
+    baseUrl: p.baseUrl ?? "",
+    defaultModel: p.defaultModel,
+    enabled: p.enabled,
+    isPrimary: p.isPrimary,
+    capabilities: { ...p.capabilities },
+  };
   formVisible.value = true;
+}
+
+function defaultCapabilities(type: string): ModelCapabilities {
+  return {
+    supportsTools: true,
+    supportsVision: true,
+    supportsThinking: type === "claude",
+    supportsStreaming: true,
+  };
+}
+
+function onTypeChange(type: string) {
+  form.value.capabilities = defaultCapabilities(type);
 }
 
 async function handleSave() {
   if (!form.value.name || !form.value.type || !form.value.defaultModel) {
-    ElMessage.warning("Name, Type, and Model Name are required");
+    ElMessage.warning(t("providers.nameModelRequired"));
     return;
   }
   if (!editingProvider.value && !form.value.apiKey) {
-    ElMessage.warning("API Key is required");
+    ElMessage.warning(t("providers.apiKeyRequired"));
     return;
   }
   saving.value = true;
@@ -326,11 +372,11 @@ async function handleSave() {
     } else {
       await createProviderApi(payload);
     }
-    ElMessage.success("Model saved");
+    ElMessage.success(t("providers.saved"));
     formVisible.value = false;
     loadProviders();
   } catch {
-    ElMessage.error("Failed to save model");
+    ElMessage.error(t("providers.failedSave"));
   } finally {
     saving.value = false;
   }
@@ -339,20 +385,20 @@ async function handleSave() {
 async function setPrimary(id: string) {
   try {
     await updateProviderApi(id, { isPrimary: true });
-    ElMessage.success("Primary model updated");
+    ElMessage.success(t("providers.primaryUpdated"));
     loadProviders();
   } catch {
-    ElMessage.error("Failed to set primary model");
+    ElMessage.error(t("providers.failedPrimary"));
   }
 }
 
 async function handleDelete(id: string) {
   try {
     await deleteProviderApi(id);
-    ElMessage.success("Model deleted");
+    ElMessage.success(t("providers.deleted"));
     loadProviders();
   } catch {
-    ElMessage.error("Failed to delete model");
+    ElMessage.error(t("providers.failedDelete"));
   }
 }
 
@@ -378,7 +424,7 @@ async function loadChannels(providerId: string) {
     }
     channelStatsMap.value = map;
   } catch {
-    ElMessage.error("Failed to load channels");
+    ElMessage.error(t("providers.failedLoadChannels"));
   } finally {
     channelLoading.value = false;
   }
@@ -386,7 +432,7 @@ async function loadChannels(providerId: string) {
 
 async function handleCreateChannel() {
   if (!channelProvider.value || !newChannelName.value.trim()) {
-    ElMessage.warning("Channel name is required");
+    ElMessage.warning(t("providers.channelNameRequired"));
     return;
   }
   creatingChannel.value = true;
@@ -394,10 +440,10 @@ async function handleCreateChannel() {
     const { data } = await createChannel(channelProvider.value.id, newChannelName.value.trim());
     newlyCreatedChannelKey.value = data.rawKey;
     newChannelName.value = "";
-    ElMessage.success("Channel created");
+    ElMessage.success(t("providers.channelCreated"));
     await loadChannels(channelProvider.value.id);
   } catch {
-    ElMessage.error("Failed to create channel");
+    ElMessage.error(t("providers.failedCreateChannel"));
   } finally {
     creatingChannel.value = false;
   }
@@ -407,16 +453,16 @@ async function handleDeleteChannel(channelId: string) {
   if (!channelProvider.value) return;
   try {
     await deleteChannel(channelProvider.value.id, channelId);
-    ElMessage.success("Channel deleted");
+    ElMessage.success(t("providers.channelDeleted"));
     await loadChannels(channelProvider.value.id);
   } catch {
-    ElMessage.error("Failed to delete channel");
+    ElMessage.error(t("providers.failedDeleteChannel"));
   }
 }
 
 function copyKey(key: string) {
   navigator.clipboard.writeText(key);
-  ElMessage.success("Copied to clipboard");
+  ElMessage.success(t("common.copied"));
 }
 
 function copyCode(tab: string) {
@@ -427,7 +473,7 @@ function copyCode(tab: string) {
     "openai-sdk": openaiSdkExample.value,
   };
   navigator.clipboard.writeText(codeMap[tab] ?? "");
-  ElMessage.success("Code copied to clipboard");
+  ElMessage.success(t("providers.codeCopied"));
 }
 
 onMounted(loadProviders);
@@ -436,6 +482,17 @@ onMounted(loadProviders);
 <style scoped>
 .provider-primary {
   border-color: #67c23a;
+}
+.capability-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.capability-switches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
 }
 .example-section {
   padding: 0 4px;

@@ -64,9 +64,10 @@ export interface DatabaseAdapter {
   touchApiKey(id: string): Promise<void>;
 
   // Sessions
-  createSession(agentId: string): Promise<Session>;
+  createSession(agentId: string, options?: { sourceSessionId?: string }): Promise<Session>;
   getSession(id: string): Promise<Session | null>;
   listSessions(agentId?: string): Promise<Session[]>;
+  listSessionFamily(rootSessionId: string): Promise<Session[]>;
   deleteSession(id: string): Promise<boolean>;
 
   // Messages
@@ -87,6 +88,10 @@ export interface DatabaseAdapter {
   listHttpTools(): Promise<HttpTool[]>;
   updateHttpTool(id: string, input: HttpToolUpdateInput): Promise<HttpTool | null>;
   deleteHttpTool(id: string): Promise<boolean>;
+
+  // Skill Categories
+  listSkillCategories(): Promise<Record<string, string>>;
+  setSkillCategory(skillName: string, category: string): Promise<void>;
 
   // Providers
   createProvider(input: ProviderCreateInput): Promise<ProviderConfig>;

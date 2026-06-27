@@ -16,7 +16,7 @@ export function loadConfig(): AppConfig {
 
   return {
     port: parseInt(process.env.PORT ?? "3000", 10),
-    dbPath: process.env.DB_PATH ?? "data/agentforge.db",
+    dbPath: process.env.DB_PATH ?? process.env.DATABASE_URL ?? "data/agentforge.db",
     llmProvider: process.env.LLM_PROVIDER ?? "claude",
     llmApiKey,
     llmBaseUrl: process.env.LLM_BASE_URL || undefined,

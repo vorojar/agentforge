@@ -2,48 +2,48 @@
   <div>
     <div class="page-header">
       <span></span>
-      <el-select v-model="filterAgent" clearable placeholder="Filter by Agent" style="width: 200px" @change="onFilterChange">
+      <el-select v-model="filterAgent" clearable :placeholder="t('sessions.filterByAgent')" style="width: 200px" @change="onFilterChange">
         <el-option v-for="a in agents" :key="a.id" :label="a.name" :value="a.id" />
       </el-select>
     </div>
 
     <el-table :data="pagedSessions" v-loading="loading" stripe @row-click="openSession" style="cursor: pointer">
-      <el-table-column label="Conversation" min-width="250">
+      <el-table-column :label="t('sessions.conversation')" min-width="250">
         <template #default="{ row }">
-          <span style="color: #303133">{{ truncate(formatFirstMessage(row.firstMessage), 60) || '(empty)' }}</span>
+          <span style="color: #303133">{{ truncate(formatFirstMessage(row.firstMessage), 60) || t("sessions.emptyMessage") }}</span>
         </template>
       </el-table-column>
-      <el-table-column prop="agentId" label="Agent" min-width="120">
+      <el-table-column prop="agentId" :label="t('common.agent')" min-width="120">
         <template #default="{ row }">
           {{ agentMap[row.agentId] || row.agentId }}
         </template>
       </el-table-column>
-      <el-table-column prop="messageCount" label="Messages" width="100" align="center">
+      <el-table-column prop="messageCount" :label="t('sessions.messages')" width="100" align="center">
         <template #default="{ row }">
           {{ row.messageCount ?? 0 }}
         </template>
       </el-table-column>
-      <el-table-column label="Tokens" min-width="200">
+      <el-table-column :label="t('common.tokens')" min-width="200">
         <template #default="{ row }">
           <span>{{ ((row.totalTokensIn ?? 0) + (row.totalTokensOut ?? 0)).toLocaleString() }}</span>
           <span style="color: #909399; font-size: 12px; margin-left: 4px">
             ({{ (row.totalTokensIn ?? 0).toLocaleString() }}↑ {{ (row.totalTokensOut ?? 0).toLocaleString() }}↓)
           </span>
           <span v-if="row.totalCacheRead > 0" style="color: #67c23a; font-size: 12px; margin-left: 4px">
-            {{ Math.round(row.totalCacheRead / (row.totalTokensIn || 1) * 100) }}% cache
+            {{ Math.round(row.totalCacheRead / (row.totalTokensIn || 1) * 100) }}% {{ t("sessions.cache") }}
           </span>
         </template>
       </el-table-column>
-      <el-table-column prop="updatedAt" label="Last Activity" min-width="160">
+      <el-table-column prop="updatedAt" :label="t('sessions.lastActivity')" min-width="160">
         <template #default="{ row }">
           {{ formatDateTime(row.updatedAt) }}
         </template>
       </el-table-column>
-      <el-table-column label="Actions" width="100" align="center">
+      <el-table-column :label="t('common.actions')" width="100" align="center">
         <template #default="{ row }">
-          <el-popconfirm title="Delete session?" @confirm.stop="handleDelete(row.id)">
+          <el-popconfirm :title="t('sessions.deleteConfirm')" @confirm.stop="handleDelete(row.id)">
             <template #reference>
-              <el-button link type="danger" @click.stop>Delete</el-button>
+              <el-button link type="danger" @click.stop>{{ t("common.delete") }}</el-button>
             </template>
           </el-popconfirm>
         </template>
@@ -67,6 +67,7 @@ import { useRouter } from "vue-router";
 import { getSessions, getAgents, deleteSession } from "@/api";
 import { ElMessage } from "element-plus";
 import { formatDateTime } from "@/utils/format";
+import { t } from "@/i18n";
 
 function formatFirstMessage(raw: string | undefined): string {
   if (!raw) return "";
@@ -76,9 +77,9 @@ function formatFirstMessage(raw: string | undefined): string {
     const parts: string[] = [];
     for (const block of parsed) {
       if (block.type === "text" && block.text) parts.push(block.text);
-      else if (block.type === "image") parts.push("[图片]");
+      else if (block.type === "image") parts.push(t("sessions.imagePlaceholder"));
     }
-    return parts.join(" ") || "[图片]";
+    return parts.join(" ") || t("sessions.imagePlaceholder");
   } catch {
     return raw;
   }
@@ -114,7 +115,7 @@ async function loadSessions() {
     const { data } = await getSessions(filterAgent.value || undefined);
     allSessions.value = data;
   } catch {
-    ElMessage.error("Failed to load sessions");
+    ElMessage.error(t("sessions.failedLoad"));
   } finally {
     loading.value = false;
   }
@@ -137,10 +138,10 @@ function openSession(row: Record<string, unknown>) {
 async function handleDelete(id: string) {
   try {
     await deleteSession(id);
-    ElMessage.success("Session deleted");
+    ElMessage.success(t("sessions.deleted"));
     loadSessions();
   } catch {
-    ElMessage.error("Failed to delete session");
+    ElMessage.error(t("sessions.failedDelete"));
   }
 }
 

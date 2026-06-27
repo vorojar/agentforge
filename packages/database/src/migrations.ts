@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS providers (
   api_key TEXT NOT NULL,
   base_url TEXT,
   default_model TEXT NOT NULL,
+  capabilities TEXT,
   enabled INTEGER DEFAULT 1,
   is_primary INTEGER DEFAULT 0,
   created_at TEXT DEFAULT (datetime('now')),
@@ -26,6 +27,8 @@ CREATE TABLE IF NOT EXISTS agents (
   system_prompt TEXT NOT NULL,
   provider_id TEXT,
   model TEXT NOT NULL DEFAULT 'claude-sonnet-4-20250514',
+  fallback_models TEXT,
+  fallback_cooldown_seconds INTEGER DEFAULT 900,
   temperature REAL DEFAULT 0.7,
   max_tokens INTEGER DEFAULT 4096,
   max_iterations INTEGER DEFAULT 15,
@@ -33,6 +36,7 @@ CREATE TABLE IF NOT EXISTS agents (
   thinking INTEGER DEFAULT 0,
   tools TEXT,
   skills TEXT,
+  category TEXT NOT NULL DEFAULT '',
   enabled INTEGER DEFAULT 1,
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now'))
@@ -53,6 +57,8 @@ CREATE TABLE IF NOT EXISTS api_keys (
 CREATE TABLE IF NOT EXISTS sessions (
   id TEXT PRIMARY KEY,
   agent_id TEXT NOT NULL,
+  root_session_id TEXT,
+  source_session_id TEXT,
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now')),
   FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE
@@ -65,6 +71,7 @@ CREATE TABLE IF NOT EXISTS messages (
   content TEXT NOT NULL,
   thinking TEXT,
   model TEXT,
+  model_trace TEXT,
   tokens_in INTEGER DEFAULT 0,
   tokens_out INTEGER DEFAULT 0,
   cache_read_tokens INTEGER DEFAULT 0,
@@ -96,7 +103,14 @@ CREATE TABLE IF NOT EXISTS http_tools (
   parameters TEXT,
   body_template TEXT,
   enabled INTEGER DEFAULT 1,
+  category TEXT NOT NULL DEFAULT '',
   created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS skill_categories (
+  skill_name TEXT PRIMARY KEY,
+  category TEXT NOT NULL DEFAULT '',
   updated_at TEXT DEFAULT (datetime('now'))
 );
 
@@ -179,6 +193,10 @@ export const SQLITE_INDEXES = [
   "CREATE INDEX IF NOT EXISTS idx_provider_channels_provider ON provider_channels(provider_id)",
   "CREATE INDEX IF NOT EXISTS idx_proxy_usage_channel ON proxy_usage_logs(channel_id, created_at)",
   "CREATE INDEX IF NOT EXISTS idx_proxy_usage_provider ON proxy_usage_logs(provider_id, created_at)",
+  "CREATE INDEX IF NOT EXISTS idx_agents_category ON agents(category)",
+  "CREATE INDEX IF NOT EXISTS idx_http_tools_category ON http_tools(category)",
+  "CREATE INDEX IF NOT EXISTS idx_skill_categories_category ON skill_categories(category)",
+  "CREATE INDEX IF NOT EXISTS idx_sessions_root ON sessions(root_session_id)",
 ];
 
 export const SQLITE_INCREMENTAL_MIGRATIONS = [
@@ -216,6 +234,30 @@ export const SQLITE_INCREMENTAL_MIGRATIONS = [
       `CREATE TABLE IF NOT EXISTS proxy_usage_logs (id TEXT PRIMARY KEY, channel_id TEXT NOT NULL, provider_id TEXT NOT NULL, model TEXT NOT NULL, tokens_in INTEGER DEFAULT 0, tokens_out INTEGER DEFAULT 0, duration_ms INTEGER DEFAULT 0, created_at TEXT)`,
     ],
   },
+  {
+    name: "add_categories_fallbacks_and_session_family",
+    up: [
+      "ALTER TABLE agents ADD COLUMN category TEXT NOT NULL DEFAULT ''",
+      "ALTER TABLE agents ADD COLUMN fallback_models TEXT",
+      "ALTER TABLE agents ADD COLUMN fallback_cooldown_seconds INTEGER DEFAULT 900",
+      "ALTER TABLE http_tools ADD COLUMN category TEXT NOT NULL DEFAULT ''",
+      `CREATE TABLE IF NOT EXISTS skill_categories (skill_name TEXT PRIMARY KEY, category TEXT NOT NULL DEFAULT '', updated_at TEXT DEFAULT (datetime('now')))`,
+      "ALTER TABLE sessions ADD COLUMN root_session_id TEXT",
+      "ALTER TABLE sessions ADD COLUMN source_session_id TEXT",
+    ],
+  },
+  {
+    name: "add_message_model_trace",
+    up: [
+      "ALTER TABLE messages ADD COLUMN model_trace TEXT",
+    ],
+  },
+  {
+    name: "add_provider_capabilities",
+    up: [
+      "ALTER TABLE providers ADD COLUMN capabilities TEXT",
+    ],
+  },
 ];
 
 // ==================== MySQL ====================
@@ -228,6 +270,7 @@ CREATE TABLE IF NOT EXISTS providers (
   api_key TEXT NOT NULL,
   base_url TEXT,
   default_model VARCHAR(255) NOT NULL,
+  capabilities JSON,
   enabled TINYINT(1) DEFAULT 1,
   is_primary TINYINT(1) DEFAULT 0,
   created_at DATETIME DEFAULT NOW(),
@@ -241,6 +284,8 @@ CREATE TABLE IF NOT EXISTS agents (
   system_prompt LONGTEXT NOT NULL,
   provider_id VARCHAR(36),
   model VARCHAR(255) NOT NULL DEFAULT 'claude-sonnet-4-20250514',
+  fallback_models JSON,
+  fallback_cooldown_seconds INT DEFAULT 900,
   temperature DOUBLE DEFAULT 0.7,
   max_tokens INT DEFAULT 4096,
   max_iterations INT DEFAULT 15,
@@ -248,6 +293,7 @@ CREATE TABLE IF NOT EXISTS agents (
   thinking TINYINT(1) DEFAULT 0,
   tools JSON,
   skills JSON,
+  category VARCHAR(100) NOT NULL DEFAULT '',
   enabled TINYINT(1) DEFAULT 1,
   created_at DATETIME DEFAULT NOW(),
   updated_at DATETIME DEFAULT NOW()
@@ -268,6 +314,8 @@ CREATE TABLE IF NOT EXISTS api_keys (
 CREATE TABLE IF NOT EXISTS sessions (
   id VARCHAR(36) PRIMARY KEY,
   agent_id VARCHAR(36) NOT NULL,
+  root_session_id VARCHAR(36),
+  source_session_id VARCHAR(36),
   created_at DATETIME DEFAULT NOW(),
   updated_at DATETIME DEFAULT NOW(),
   FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE
@@ -280,6 +328,7 @@ CREATE TABLE IF NOT EXISTS messages (
   content LONGTEXT NOT NULL,
   thinking LONGTEXT,
   model VARCHAR(255),
+  model_trace LONGTEXT,
   tokens_in INT DEFAULT 0,
   tokens_out INT DEFAULT 0,
   cache_read_tokens INT DEFAULT 0,
@@ -311,7 +360,14 @@ CREATE TABLE IF NOT EXISTS http_tools (
   parameters JSON,
   body_template TEXT,
   enabled TINYINT(1) DEFAULT 1,
+  category VARCHAR(100) NOT NULL DEFAULT '',
   created_at DATETIME DEFAULT NOW(),
+  updated_at DATETIME DEFAULT NOW()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS skill_categories (
+  skill_name VARCHAR(255) PRIMARY KEY,
+  category VARCHAR(100) NOT NULL DEFAULT '',
   updated_at DATETIME DEFAULT NOW()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
@@ -394,4 +450,20 @@ export const MYSQL_INDEXES = [
   "CREATE INDEX idx_provider_channels_provider ON provider_channels(provider_id)",
   "CREATE INDEX idx_proxy_usage_channel ON proxy_usage_logs(channel_id, created_at)",
   "CREATE INDEX idx_proxy_usage_provider ON proxy_usage_logs(provider_id, created_at)",
+  "CREATE INDEX idx_agents_category ON agents(category)",
+  "CREATE INDEX idx_http_tools_category ON http_tools(category)",
+  "CREATE INDEX idx_skill_categories_category ON skill_categories(category)",
+  "CREATE INDEX idx_sessions_root ON sessions(root_session_id)",
+];
+
+export const MYSQL_ALTERS = [
+  "ALTER TABLE agents ADD COLUMN category VARCHAR(100) NOT NULL DEFAULT ''",
+  "ALTER TABLE agents ADD COLUMN fallback_models JSON",
+  "ALTER TABLE agents ADD COLUMN fallback_cooldown_seconds INT DEFAULT 900",
+  "ALTER TABLE http_tools ADD COLUMN category VARCHAR(100) NOT NULL DEFAULT ''",
+  "CREATE TABLE IF NOT EXISTS skill_categories (skill_name VARCHAR(255) PRIMARY KEY, category VARCHAR(100) NOT NULL DEFAULT '', updated_at DATETIME DEFAULT NOW()) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+  "ALTER TABLE sessions ADD COLUMN root_session_id VARCHAR(36)",
+  "ALTER TABLE sessions ADD COLUMN source_session_id VARCHAR(36)",
+  "ALTER TABLE messages ADD COLUMN model_trace LONGTEXT",
+  "ALTER TABLE providers ADD COLUMN capabilities JSON",
 ];

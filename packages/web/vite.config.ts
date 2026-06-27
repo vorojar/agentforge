@@ -21,5 +21,16 @@ export default defineConfig({
   build: {
     outDir: "dist",
     emptyOutDir: true,
+    chunkSizeWarningLimit: 1500,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          "vendor-vue": ["vue", "vue-router"],
+          "vendor-element": ["element-plus", "@element-plus/icons-vue"],
+          "vendor-echarts": ["echarts", "vue-echarts"],
+          "vendor-axios": ["axios"],
+        },
+      },
+    },
   },
 });

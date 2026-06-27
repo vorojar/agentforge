@@ -37,11 +37,54 @@ import type {
   ProxyUsageLog,
   ChannelStats,
   ContentBlock,
+  ModelTrace,
+  ModelCapabilities,
 } from "@agentforge/types";
-import { MYSQL_MIGRATIONS, MYSQL_INDEXES } from "./migrations.js";
+import { MYSQL_MIGRATIONS, MYSQL_INDEXES, MYSQL_ALTERS } from "./migrations.js";
 
 function hashKey(raw: string): string {
   return createHash("sha256").update(raw).digest("hex");
+}
+
+function parseJsonArray<T>(value: unknown): T[] {
+  if (!value) return [];
+  if (Array.isArray(value)) return value as T[];
+  if (typeof value !== "string") return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed as T[] : [];
+  } catch {
+    return [];
+  }
+}
+
+function parseJsonObject<T>(value: unknown): T | undefined {
+  if (!value) return undefined;
+  if (typeof value === "object") return value as T;
+  if (typeof value !== "string") return undefined;
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as T : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function normalizeCategory(category?: string): string {
+  return category?.trim() ?? "";
+}
+
+function defaultModelCapabilities(type?: string): ModelCapabilities {
+  return {
+    supportsTools: true,
+    supportsVision: true,
+    supportsThinking: type === "claude",
+    supportsStreaming: true,
+  };
+}
+
+function normalizeModelCapabilities(type: string | undefined, input?: Partial<ModelCapabilities>): ModelCapabilities {
+  return { ...defaultModelCapabilities(type), ...(input ?? {}) };
 }
 
 export interface MySQLConfig {
@@ -74,6 +117,9 @@ export class MySQLAdapter implements DatabaseAdapter {
     for (const stmt of statements) {
       await this.pool.execute(stmt);
     }
+    for (const alter of MYSQL_ALTERS) {
+      try { await this.pool.execute(alter); } catch { /* column/table may already exist */ }
+    }
     for (const idx of MYSQL_INDEXES) {
       try { await this.pool.execute(idx); } catch { /* index may already exist */ }
     }
@@ -85,12 +131,13 @@ export class MySQLAdapter implements DatabaseAdapter {
     const id = uuidv4();
     const now = this.nowStr();
     await this.pool.execute(
-      `INSERT INTO agents (id, name, description, system_prompt, provider_id, model, temperature, max_tokens, max_iterations, streaming, thinking, tools, skills, enabled, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
+      `INSERT INTO agents (id, name, description, system_prompt, provider_id, model, fallback_models, fallback_cooldown_seconds, temperature, max_tokens, max_iterations, streaming, thinking, tools, skills, category, enabled, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
       [id, input.name, input.description ?? "", input.systemPrompt, input.providerId ?? null,
-       input.model ?? "claude-sonnet-4-20250514", input.temperature ?? 0.7, input.maxTokens ?? 4096,
+       input.model ?? "claude-sonnet-4-20250514", JSON.stringify(input.fallbackModels ?? []), input.fallbackCooldownSeconds ?? 900,
+       input.temperature ?? 0.7, input.maxTokens ?? 4096,
        input.maxIterations ?? 15, input.streaming ? 1 : 0, input.thinking ? 1 : 0,
-       JSON.stringify(input.tools ?? []), JSON.stringify(input.skills ?? []), now, now]
+       JSON.stringify(input.tools ?? []), JSON.stringify(input.skills ?? []), normalizeCategory(input.category), now, now]
     );
     return (await this.getAgent(id))!;
   }
@@ -116,6 +163,8 @@ export class MySQLAdapter implements DatabaseAdapter {
     if (input.systemPrompt !== undefined) { fields.push("system_prompt = ?"); values.push(input.systemPrompt); }
     if (input.providerId !== undefined) { fields.push("provider_id = ?"); values.push(input.providerId || null); }
     if (input.model !== undefined) { fields.push("model = ?"); values.push(input.model); }
+    if (input.fallbackModels !== undefined) { fields.push("fallback_models = ?"); values.push(JSON.stringify(input.fallbackModels)); }
+    if (input.fallbackCooldownSeconds !== undefined) { fields.push("fallback_cooldown_seconds = ?"); values.push(input.fallbackCooldownSeconds); }
     if (input.temperature !== undefined) { fields.push("temperature = ?"); values.push(input.temperature); }
     if (input.maxTokens !== undefined) { fields.push("max_tokens = ?"); values.push(input.maxTokens); }
     if (input.maxIterations !== undefined) { fields.push("max_iterations = ?"); values.push(input.maxIterations); }
@@ -123,6 +172,7 @@ export class MySQLAdapter implements DatabaseAdapter {
     if (input.thinking !== undefined) { fields.push("thinking = ?"); values.push(input.thinking ? 1 : 0); }
     if (input.tools !== undefined) { fields.push("tools = ?"); values.push(JSON.stringify(input.tools)); }
     if (input.skills !== undefined) { fields.push("skills = ?"); values.push(JSON.stringify(input.skills)); }
+    if (input.category !== undefined) { fields.push("category = ?"); values.push(normalizeCategory(input.category)); }
     if (input.enabled !== undefined) { fields.push("enabled = ?"); values.push(input.enabled ? 1 : 0); }
     if (fields.length === 0) return existing;
     fields.push("updated_at = ?");
@@ -141,11 +191,17 @@ export class MySQLAdapter implements DatabaseAdapter {
     return {
       id: row.id, name: row.name, description: row.description ?? "",
       systemPrompt: row.system_prompt, providerId: row.provider_id ?? undefined,
-      model: row.model, temperature: row.temperature, maxTokens: row.max_tokens,
+      model: row.model,
+      fallbackModels: parseJsonArray(row.fallback_models).filter((item): item is { providerId?: string; model: string } => {
+        return !!item && typeof item === "object" && typeof (item as { model?: unknown }).model === "string";
+      }),
+      fallbackCooldownSeconds: Number(row.fallback_cooldown_seconds ?? 900),
+      temperature: row.temperature, maxTokens: row.max_tokens,
       maxIterations: row.max_iterations, streaming: row.streaming === 1,
       thinking: row.thinking === 1,
       tools: typeof row.tools === "string" ? JSON.parse(row.tools) : (row.tools ?? []),
       skills: typeof row.skills === "string" ? JSON.parse(row.skills) : (row.skills ?? []),
+      category: row.category ?? "",
       enabled: row.enabled === 1,
       createdAt: String(row.created_at), updatedAt: String(row.updated_at),
     };
@@ -200,11 +256,24 @@ export class MySQLAdapter implements DatabaseAdapter {
 
   // --- Sessions ---
 
-  async createSession(agentId: string): Promise<Session> {
+  async createSession(agentId: string, options?: { sourceSessionId?: string }): Promise<Session> {
     const id = uuidv4();
     const now = this.nowStr();
-    await this.pool.execute("INSERT INTO sessions (id, agent_id, created_at, updated_at) VALUES (?, ?, ?, ?)", [id, agentId, now, now]);
-    return { id, agentId, createdAt: now, updatedAt: now };
+    let rootSessionId = id;
+    if (options?.sourceSessionId) {
+      const [rows] = await this.pool.execute<RowDataPacket[]>(
+        "SELECT id, root_session_id FROM sessions WHERE id = ?",
+        [options.sourceSessionId],
+      );
+      if (rows.length > 0) {
+        rootSessionId = rows[0].root_session_id ?? rows[0].id;
+      }
+    }
+    await this.pool.execute(
+      "INSERT INTO sessions (id, agent_id, root_session_id, source_session_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+      [id, agentId, rootSessionId, options?.sourceSessionId ?? null, now, now],
+    );
+    return { id, agentId, rootSessionId, sourceSessionId: options?.sourceSessionId ?? null, createdAt: now, updatedAt: now };
   }
 
   async getSession(id: string): Promise<Session | null> {
@@ -225,7 +294,10 @@ export class MySQLAdapter implements DatabaseAdapter {
     const ids = sessionRows.map(r => r.id);
     const ph = ids.map(() => "?").join(",");
 
-    const [statRows, msgRows] = await Promise.all([
+    const roots = [...new Set(sessionRows.map(r => r.root_session_id ?? r.id))];
+    const rootPh = roots.map(() => "?").join(",");
+
+    const [statRows, msgRows, modelRows, familyRows] = await Promise.all([
       this.pool.execute<RowDataPacket[]>(
         `SELECT session_id, COUNT(*) as cnt, COALESCE(SUM(tokens_in),0) as ti,
                 COALESCE(SUM(tokens_out),0) as to2, COALESCE(SUM(cache_read_tokens),0) as cr
@@ -238,23 +310,46 @@ export class MySQLAdapter implements DatabaseAdapter {
            FROM messages WHERE session_id IN (${ph}) AND role = 'user' GROUP BY session_id
          ) sub ON m.session_id = sub.session_id AND m.created_at = sub.min_ca AND m.role = 'user'`, ids
       ).then(r => r[0]),
+      this.pool.execute<RowDataPacket[]>(
+        `SELECT session_id, JSON_ARRAYAGG(DISTINCT model) as models
+         FROM messages WHERE session_id IN (${ph}) AND model IS NOT NULL GROUP BY session_id`, ids
+      ).then(r => r[0]),
+      this.pool.execute<RowDataPacket[]>(
+        `SELECT COALESCE(root_session_id, id) as root_id, COUNT(*) as family_size
+         FROM sessions WHERE COALESCE(root_session_id, id) IN (${rootPh})
+         GROUP BY COALESCE(root_session_id, id)`, roots
+      ).then(r => r[0]),
     ]);
 
     const statMap = new Map(statRows.map(r => [r.session_id, r]));
     const msgMap = new Map(msgRows.map(r => [r.session_id, r.content]));
+    const modelMap = new Map(modelRows.map(r => [r.session_id, parseJsonArray<string>(r.models).filter(Boolean)]));
+    const familyMap = new Map(familyRows.map(r => [r.root_id, Number(r.family_size)]));
 
     return sessionRows.map(r => {
       const st = statMap.get(r.id);
       return {
         id: r.id, agentId: r.agent_id,
+        rootSessionId: r.root_session_id ?? r.id,
+        sourceSessionId: r.source_session_id ?? null,
         messageCount: st ? Number(st.cnt) : 0,
         totalTokensIn: st ? Number(st.ti) : 0,
         totalTokensOut: st ? Number(st.to2) : 0,
         totalCacheRead: st ? Number(st.cr) : 0,
         firstMessage: msgMap.get(r.id) ?? undefined,
+        models: modelMap.get(r.id) ?? [],
+        familySize: familyMap.get(r.root_session_id ?? r.id),
         createdAt: String(r.created_at), updatedAt: String(r.updated_at),
       };
     });
+  }
+
+  async listSessionFamily(rootSessionId: string): Promise<Session[]> {
+    const [rows] = await this.pool.execute<RowDataPacket[]>(
+      "SELECT * FROM sessions WHERE COALESCE(root_session_id, id) = ? ORDER BY CASE WHEN source_session_id IS NULL THEN 0 ELSE 1 END, created_at ASC",
+      [rootSessionId],
+    );
+    return rows.map(row => this.mapSession(row));
   }
 
   async deleteSession(id: string): Promise<boolean> {
@@ -263,15 +358,18 @@ export class MySQLAdapter implements DatabaseAdapter {
   }
 
   private mapSession(row: RowDataPacket): Session {
-    return {
+    const session: Session = {
       id: row.id, agentId: row.agent_id,
-      messageCount: row.message_count ?? undefined,
-      totalTokensIn: row.total_tokens_in ?? undefined,
-      totalTokensOut: row.total_tokens_out ?? undefined,
-      totalCacheRead: row.total_cache_read ?? undefined,
-      firstMessage: row.first_message ?? undefined,
+      rootSessionId: row.root_session_id ?? row.id,
+      sourceSessionId: row.source_session_id ?? null,
       createdAt: String(row.created_at), updatedAt: String(row.updated_at),
     };
+    if (row.message_count !== undefined) session.messageCount = Number(row.message_count);
+    if (row.total_tokens_in !== undefined) session.totalTokensIn = Number(row.total_tokens_in);
+    if (row.total_tokens_out !== undefined) session.totalTokensOut = Number(row.total_tokens_out);
+    if (row.total_cache_read !== undefined) session.totalCacheRead = Number(row.total_cache_read);
+    if (row.first_message !== undefined) session.firstMessage = row.first_message;
+    return session;
   }
 
   // --- Messages ---
@@ -281,9 +379,10 @@ export class MySQLAdapter implements DatabaseAdapter {
     const now = this.nowStr();
     const content = typeof message.content === "string" ? message.content : JSON.stringify(message.content);
     await this.pool.execute(
-      `INSERT INTO messages (id, session_id, role, content, thinking, model, tokens_in, tokens_out, cache_read_tokens, duration_ms, tool_calls, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO messages (id, session_id, role, content, thinking, model, model_trace, tokens_in, tokens_out, cache_read_tokens, duration_ms, tool_calls, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [id, message.sessionId, message.role, content, message.thinking ?? null, message.model ?? null,
+       message.modelTrace ? JSON.stringify(message.modelTrace) : null,
        message.tokensIn ?? 0, message.tokensOut ?? 0, message.cacheReadTokens ?? 0,
        message.durationMs ?? 0, message.toolCalls ?? null, now]
     );
@@ -291,7 +390,9 @@ export class MySQLAdapter implements DatabaseAdapter {
     return {
       id, sessionId: message.sessionId, role: message.role, content: message.content,
       thinking: message.thinking, model: message.model, tokensIn: message.tokensIn,
-      tokensOut: message.tokensOut, durationMs: message.durationMs, toolCalls: message.toolCalls,
+      modelTrace: message.modelTrace,
+      tokensOut: message.tokensOut, cacheReadTokens: message.cacheReadTokens,
+      durationMs: message.durationMs, toolCalls: message.toolCalls,
       createdAt: now,
     };
   }
@@ -311,6 +412,7 @@ export class MySQLAdapter implements DatabaseAdapter {
     return {
       id: row.id, sessionId: row.session_id, role: row.role as Message["role"], content,
       thinking: row.thinking ?? undefined, model: row.model ?? undefined,
+      modelTrace: parseJsonObject<ModelTrace>(row.model_trace),
       tokensIn: row.tokens_in ?? undefined, tokensOut: row.tokens_out ?? undefined,
       cacheReadTokens: row.cache_read_tokens ?? undefined,
       durationMs: row.duration_ms ?? undefined, toolCalls: row.tool_calls ?? undefined,
@@ -398,10 +500,10 @@ export class MySQLAdapter implements DatabaseAdapter {
     const id = uuidv4();
     const now = this.nowStr();
     await this.pool.execute(
-      `INSERT INTO http_tools (id, name, description, method, url, headers, parameters, body_template, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
+      `INSERT INTO http_tools (id, name, description, method, url, headers, parameters, body_template, enabled, category, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`,
       [id, input.name, input.description ?? "", input.method ?? "GET", input.url,
        JSON.stringify(input.headers ?? {}), JSON.stringify(input.parameters ?? { type: "object", properties: {} }),
-       input.bodyTemplate ?? "", now, now]
+       input.bodyTemplate ?? "", normalizeCategory(input.category), now, now]
     );
     return (await this.getHttpTool(id))!;
   }
@@ -430,6 +532,7 @@ export class MySQLAdapter implements DatabaseAdapter {
     if (input.parameters !== undefined) { fields.push("parameters = ?"); values.push(JSON.stringify(input.parameters)); }
     if (input.bodyTemplate !== undefined) { fields.push("body_template = ?"); values.push(input.bodyTemplate); }
     if (input.enabled !== undefined) { fields.push("enabled = ?"); values.push(input.enabled ? 1 : 0); }
+    if (input.category !== undefined) { fields.push("category = ?"); values.push(normalizeCategory(input.category)); }
     if (fields.length === 0) return existing;
     fields.push("updated_at = ?"); values.push(this.nowStr()); values.push(id);
     await this.pool.execute(`UPDATE http_tools SET ${fields.join(", ")} WHERE id = ?`, values);
@@ -448,8 +551,28 @@ export class MySQLAdapter implements DatabaseAdapter {
       headers: typeof row.headers === "string" ? JSON.parse(row.headers) : (row.headers ?? {}),
       parameters: typeof row.parameters === "string" ? JSON.parse(row.parameters) : (row.parameters ?? {}),
       bodyTemplate: row.body_template ?? "", enabled: row.enabled === 1,
+      category: row.category ?? "",
       createdAt: String(row.created_at), updatedAt: String(row.updated_at),
     };
+  }
+
+  async listSkillCategories(): Promise<Record<string, string>> {
+    const [rows] = await this.pool.execute<RowDataPacket[]>("SELECT skill_name, category FROM skill_categories");
+    return Object.fromEntries(rows.map(row => [row.skill_name as string, row.category as string]));
+  }
+
+  async setSkillCategory(skillName: string, category: string): Promise<void> {
+    const normalized = category.trim();
+    if (!normalized) {
+      await this.pool.execute("DELETE FROM skill_categories WHERE skill_name = ?", [skillName]);
+      return;
+    }
+    await this.pool.execute(
+      `INSERT INTO skill_categories (skill_name, category, updated_at)
+       VALUES (?, ?, NOW())
+       ON DUPLICATE KEY UPDATE category = VALUES(category), updated_at = NOW()`,
+      [skillName, normalized],
+    );
   }
 
   // --- Providers ---
@@ -461,8 +584,9 @@ export class MySQLAdapter implements DatabaseAdapter {
       await this.pool.execute("UPDATE providers SET is_primary = 0");
     }
     await this.pool.execute(
-      `INSERT INTO providers (id, name, type, api_key, base_url, default_model, enabled, is_primary, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO providers (id, name, type, api_key, base_url, default_model, capabilities, enabled, is_primary, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [id, input.name, input.type, input.apiKey, input.baseUrl ?? null, input.defaultModel,
+       JSON.stringify(normalizeModelCapabilities(input.type, input.capabilities)),
        input.enabled !== false ? 1 : 0, input.isPrimary ? 1 : 0, now, now]
     );
     return (await this.getProvider(id))!;
@@ -492,6 +616,7 @@ export class MySQLAdapter implements DatabaseAdapter {
     if (input.apiKey !== undefined) { fields.push("api_key = ?"); values.push(input.apiKey); }
     if (input.baseUrl !== undefined) { fields.push("base_url = ?"); values.push(input.baseUrl || null); }
     if (input.defaultModel !== undefined) { fields.push("default_model = ?"); values.push(input.defaultModel); }
+    if (input.capabilities !== undefined) { fields.push("capabilities = ?"); values.push(JSON.stringify(normalizeModelCapabilities(input.type ?? existing.type, input.capabilities))); }
     if (input.enabled !== undefined) { fields.push("enabled = ?"); values.push(input.enabled ? 1 : 0); }
     if (input.isPrimary !== undefined) { fields.push("is_primary = ?"); values.push(input.isPrimary ? 1 : 0); }
     if (fields.length === 0) return existing;
@@ -516,6 +641,7 @@ export class MySQLAdapter implements DatabaseAdapter {
     return {
       id: row.id, name: row.name, type: row.type, apiKey: row.api_key,
       baseUrl: row.base_url ?? undefined, defaultModel: row.default_model,
+      capabilities: normalizeModelCapabilities(row.type, parseJsonObject<Partial<ModelCapabilities>>(row.capabilities)),
       enabled: row.enabled === 1, isPrimary: row.is_primary === 1,
       createdAt: String(row.created_at), updatedAt: String(row.updated_at),
     };
@@ -734,7 +860,8 @@ export class MySQLAdapter implements DatabaseAdapter {
     const [rows] = await this.pool.execute<RowDataPacket[]>(
       `SELECT pc.*, p.id as p_id, p.name as p_name, p.type as p_type, p.api_key as p_api_key,
               p.base_url as p_base_url, p.default_model as p_default_model, p.enabled as p_enabled,
-              p.is_primary as p_is_primary, p.created_at as p_created_at, p.updated_at as p_updated_at
+              p.capabilities as p_capabilities, p.is_primary as p_is_primary,
+              p.created_at as p_created_at, p.updated_at as p_updated_at
        FROM provider_channels pc JOIN providers p ON p.id = pc.provider_id
        WHERE pc.key_hash = ? AND pc.enabled = 1`, [keyHash]
     );
@@ -747,6 +874,7 @@ export class MySQLAdapter implements DatabaseAdapter {
       providerConfig: {
         id: r.p_id, name: r.p_name, type: r.p_type, apiKey: r.p_api_key,
         baseUrl: r.p_base_url ?? undefined, defaultModel: r.p_default_model,
+        capabilities: normalizeModelCapabilities(r.p_type, parseJsonObject<Partial<ModelCapabilities>>(r.p_capabilities)),
         enabled: r.p_enabled === 1, isPrimary: r.p_is_primary === 1,
         createdAt: String(r.p_created_at), updatedAt: String(r.p_updated_at),
       },

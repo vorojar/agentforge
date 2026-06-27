@@ -24,6 +24,7 @@ export async function httpToolRoutes(fastify: FastifyInstance, opts: { ctx: AppC
       headers?: Record<string, string>;
       parameters?: { type: "object"; properties: Record<string, unknown>; required?: string[] };
       bodyTemplate?: string;
+      category?: string;
     };
 
     if (!body.name || !body.url) {

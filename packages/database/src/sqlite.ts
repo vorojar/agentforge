@@ -29,11 +29,54 @@ import type {
   ProxyUsageLog,
   ChannelStats,
   ContentBlock,
+  ModelTrace,
+  ModelCapabilities,
 } from "@agentforge/types";
 import { SQLITE_MIGRATIONS, SQLITE_INDEXES, SQLITE_INCREMENTAL_MIGRATIONS } from "./migrations.js";
 
 function hashKey(raw: string): string {
   return createHash("sha256").update(raw).digest("hex");
+}
+
+function parseJsonArray<T>(value: unknown): T[] {
+  if (!value) return [];
+  if (Array.isArray(value)) return value as T[];
+  if (typeof value !== "string") return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed as T[] : [];
+  } catch {
+    return [];
+  }
+}
+
+function parseJsonObject<T>(value: unknown): T | undefined {
+  if (!value) return undefined;
+  if (typeof value === "object") return value as T;
+  if (typeof value !== "string") return undefined;
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as T : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function normalizeCategory(category?: string): string {
+  return category?.trim() ?? "";
+}
+
+function defaultModelCapabilities(type?: string): ModelCapabilities {
+  return {
+    supportsTools: true,
+    supportsVision: true,
+    supportsThinking: type === "claude",
+    supportsStreaming: true,
+  };
+}
+
+function normalizeModelCapabilities(type: string | undefined, input?: Partial<ModelCapabilities>): ModelCapabilities {
+  return { ...defaultModelCapabilities(type), ...(input ?? {}) };
 }
 
 export class SQLiteAdapter implements DatabaseAdapter {
@@ -64,14 +107,16 @@ export class SQLiteAdapter implements DatabaseAdapter {
     const id = uuidv4();
     const now = new Date().toISOString();
     this.db.prepare(`
-      INSERT INTO agents (id, name, description, system_prompt, provider_id, model, temperature, max_tokens, max_iterations, streaming, thinking, tools, skills, enabled, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+      INSERT INTO agents (id, name, description, system_prompt, provider_id, model, fallback_models, fallback_cooldown_seconds, temperature, max_tokens, max_iterations, streaming, thinking, tools, skills, category, enabled, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
     `).run(
       id, input.name, input.description ?? "", input.systemPrompt,
       input.providerId ?? null, input.model ?? "claude-sonnet-4-20250514",
+      JSON.stringify(input.fallbackModels ?? []), input.fallbackCooldownSeconds ?? 900,
       input.temperature ?? 0.7, input.maxTokens ?? 4096, input.maxIterations ?? 15,
       input.streaming ? 1 : 0, input.thinking ? 1 : 0,
       JSON.stringify(input.tools ?? []), JSON.stringify(input.skills ?? []),
+      normalizeCategory(input.category),
       now, now,
     );
     return (await this.getAgent(id))!;
@@ -100,6 +145,8 @@ export class SQLiteAdapter implements DatabaseAdapter {
     if (input.systemPrompt !== undefined) { fields.push("system_prompt = ?"); values.push(input.systemPrompt); }
     if (input.providerId !== undefined) { fields.push("provider_id = ?"); values.push(input.providerId || null); }
     if (input.model !== undefined) { fields.push("model = ?"); values.push(input.model); }
+    if (input.fallbackModels !== undefined) { fields.push("fallback_models = ?"); values.push(JSON.stringify(input.fallbackModels)); }
+    if (input.fallbackCooldownSeconds !== undefined) { fields.push("fallback_cooldown_seconds = ?"); values.push(input.fallbackCooldownSeconds); }
     if (input.temperature !== undefined) { fields.push("temperature = ?"); values.push(input.temperature); }
     if (input.maxTokens !== undefined) { fields.push("max_tokens = ?"); values.push(input.maxTokens); }
     if (input.maxIterations !== undefined) { fields.push("max_iterations = ?"); values.push(input.maxIterations); }
@@ -107,6 +154,7 @@ export class SQLiteAdapter implements DatabaseAdapter {
     if (input.thinking !== undefined) { fields.push("thinking = ?"); values.push(input.thinking ? 1 : 0); }
     if (input.tools !== undefined) { fields.push("tools = ?"); values.push(JSON.stringify(input.tools)); }
     if (input.skills !== undefined) { fields.push("skills = ?"); values.push(JSON.stringify(input.skills)); }
+    if (input.category !== undefined) { fields.push("category = ?"); values.push(normalizeCategory(input.category)); }
     if (input.enabled !== undefined) { fields.push("enabled = ?"); values.push(input.enabled ? 1 : 0); }
 
     if (fields.length === 0) return existing;
@@ -132,6 +180,10 @@ export class SQLiteAdapter implements DatabaseAdapter {
       systemPrompt: row.system_prompt as string,
       providerId: (row.provider_id as string) ?? undefined,
       model: row.model as string,
+      fallbackModels: parseJsonArray(row.fallback_models).filter((item): item is { providerId?: string; model: string } => {
+        return !!item && typeof item === "object" && typeof (item as { model?: unknown }).model === "string";
+      }),
+      fallbackCooldownSeconds: (row.fallback_cooldown_seconds as number | undefined) ?? 900,
       temperature: row.temperature as number,
       maxTokens: row.max_tokens as number,
       maxIterations: row.max_iterations as number,
@@ -139,6 +191,7 @@ export class SQLiteAdapter implements DatabaseAdapter {
       thinking: (row.thinking as number) === 1,
       tools: JSON.parse(row.tools as string),
       skills: JSON.parse(row.skills as string),
+      category: (row.category as string) ?? "",
       enabled: (row.enabled as number) === 1,
       createdAt: row.created_at as string,
       updatedAt: row.updated_at as string,
@@ -206,11 +259,18 @@ export class SQLiteAdapter implements DatabaseAdapter {
 
   // --- Sessions ---
 
-  async createSession(agentId: string): Promise<Session> {
+  async createSession(agentId: string, options?: { sourceSessionId?: string }): Promise<Session> {
     const id = uuidv4();
     const now = new Date().toISOString();
-    this.db.prepare("INSERT INTO sessions (id, agent_id, created_at, updated_at) VALUES (?, ?, ?, ?)").run(id, agentId, now, now);
-    return { id, agentId, createdAt: now, updatedAt: now };
+    const sourceSession = options?.sourceSessionId
+      ? this.db.prepare("SELECT * FROM sessions WHERE id = ?").get(options.sourceSessionId) as Record<string, unknown> | undefined
+      : undefined;
+    const rootSessionId = sourceSession
+      ? ((sourceSession.root_session_id as string | null) || (sourceSession.id as string))
+      : id;
+    this.db.prepare("INSERT INTO sessions (id, agent_id, root_session_id, source_session_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)")
+      .run(id, agentId, rootSessionId, options?.sourceSessionId ?? null, now, now);
+    return { id, agentId, rootSessionId, sourceSessionId: options?.sourceSessionId ?? null, createdAt: now, updatedAt: now };
   }
 
   async getSession(id: string): Promise<Session | null> {
@@ -224,7 +284,9 @@ export class SQLiteAdapter implements DatabaseAdapter {
       COALESCE(SUM(m.tokens_in), 0) as total_tokens_in,
       COALESCE(SUM(m.tokens_out), 0) as total_tokens_out,
       COALESCE(SUM(m.cache_read_tokens), 0) as total_cache_read,
-      (SELECT content FROM messages WHERE session_id = s.id AND role = 'user' ORDER BY created_at ASC LIMIT 1) as first_message
+      (SELECT content FROM messages WHERE session_id = s.id AND role = 'user' ORDER BY created_at ASC LIMIT 1) as first_message,
+      (SELECT json_group_array(DISTINCT model) FROM messages WHERE session_id = s.id AND model IS NOT NULL) as models,
+      (SELECT COUNT(*) FROM sessions sf WHERE COALESCE(sf.root_session_id, sf.id) = COALESCE(s.root_session_id, s.id)) as family_size
       FROM sessions s LEFT JOIN messages m ON m.session_id = s.id
       ${agentId ? "WHERE s.agent_id = ?" : ""}
       GROUP BY s.id ORDER BY s.updated_at DESC
@@ -234,23 +296,44 @@ export class SQLiteAdapter implements DatabaseAdapter {
     return rows.map((r) => this.mapSession(r));
   }
 
+  async listSessionFamily(rootSessionId: string): Promise<Session[]> {
+    const rows = this.db.prepare(`
+      SELECT s.*, COUNT(m.id) as message_count,
+        COALESCE(SUM(m.tokens_in), 0) as total_tokens_in,
+        COALESCE(SUM(m.tokens_out), 0) as total_tokens_out,
+        COALESCE(SUM(m.cache_read_tokens), 0) as total_cache_read,
+        (SELECT content FROM messages WHERE session_id = s.id AND role = 'user' ORDER BY created_at ASC LIMIT 1) as first_message,
+        (SELECT json_group_array(DISTINCT model) FROM messages WHERE session_id = s.id AND model IS NOT NULL) as models
+      FROM sessions s LEFT JOIN messages m ON m.session_id = s.id
+      WHERE COALESCE(s.root_session_id, s.id) = ?
+      GROUP BY s.id
+      ORDER BY CASE WHEN s.source_session_id IS NULL THEN 0 ELSE 1 END, s.created_at ASC
+    `).all(rootSessionId) as Record<string, unknown>[];
+    return rows.map((r) => this.mapSession(r));
+  }
+
   async deleteSession(id: string): Promise<boolean> {
     const result = this.db.prepare("DELETE FROM sessions WHERE id = ?").run(id);
     return result.changes > 0;
   }
 
   private mapSession(row: Record<string, unknown>): Session {
-    return {
+    const session: Session = {
       id: row.id as string,
       agentId: row.agent_id as string,
-      messageCount: (row.message_count as number) ?? undefined,
-      totalTokensIn: (row.total_tokens_in as number) ?? undefined,
-      totalTokensOut: (row.total_tokens_out as number) ?? undefined,
-      totalCacheRead: (row.total_cache_read as number) ?? undefined,
-      firstMessage: (row.first_message as string) ?? undefined,
+      rootSessionId: (row.root_session_id as string) ?? (row.id as string),
+      sourceSessionId: (row.source_session_id as string) ?? null,
       createdAt: row.created_at as string,
       updatedAt: row.updated_at as string,
     };
+    if (row.message_count !== undefined) session.messageCount = row.message_count as number;
+    if (row.total_tokens_in !== undefined) session.totalTokensIn = row.total_tokens_in as number;
+    if (row.total_tokens_out !== undefined) session.totalTokensOut = row.total_tokens_out as number;
+    if (row.total_cache_read !== undefined) session.totalCacheRead = row.total_cache_read as number;
+    if (row.first_message !== undefined) session.firstMessage = row.first_message as string;
+    if (row.models !== undefined) session.models = parseJsonArray<string>(row.models).filter(Boolean);
+    if (row.family_size !== undefined) session.familySize = row.family_size as number;
+    return session;
   }
 
   // --- Messages ---
@@ -263,11 +346,12 @@ export class SQLiteAdapter implements DatabaseAdapter {
       : JSON.stringify(message.content);
 
     this.db.prepare(`
-      INSERT INTO messages (id, session_id, role, content, thinking, model, tokens_in, tokens_out, cache_read_tokens, duration_ms, tool_calls, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO messages (id, session_id, role, content, thinking, model, model_trace, tokens_in, tokens_out, cache_read_tokens, duration_ms, tool_calls, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id, message.sessionId, message.role, content,
       message.thinking ?? null, message.model ?? null,
+      message.modelTrace ? JSON.stringify(message.modelTrace) : null,
       message.tokensIn ?? 0, message.tokensOut ?? 0,
       message.cacheReadTokens ?? 0, message.durationMs ?? 0,
       message.toolCalls ?? null, now,
@@ -278,6 +362,7 @@ export class SQLiteAdapter implements DatabaseAdapter {
     return {
       id, sessionId: message.sessionId, role: message.role, content: message.content,
       thinking: message.thinking, model: message.model, tokensIn: message.tokensIn,
+      modelTrace: message.modelTrace,
       tokensOut: message.tokensOut, cacheReadTokens: message.cacheReadTokens,
       durationMs: message.durationMs, toolCalls: message.toolCalls, createdAt: now,
     };
@@ -303,6 +388,7 @@ export class SQLiteAdapter implements DatabaseAdapter {
       content,
       thinking: (row.thinking as string) ?? undefined,
       model: (row.model as string) ?? undefined,
+      modelTrace: parseJsonObject<ModelTrace>(row.model_trace),
       tokensIn: (row.tokens_in as number) ?? undefined,
       tokensOut: (row.tokens_out as number) ?? undefined,
       cacheReadTokens: (row.cache_read_tokens as number) ?? undefined,
@@ -407,12 +493,12 @@ export class SQLiteAdapter implements DatabaseAdapter {
     const id = uuidv4();
     const now = new Date().toISOString();
     this.db.prepare(`
-      INSERT INTO http_tools (id, name, description, method, url, headers, parameters, body_template, enabled, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+      INSERT INTO http_tools (id, name, description, method, url, headers, parameters, body_template, enabled, category, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
     `).run(
       id, input.name, input.description ?? "", input.method ?? "GET", input.url,
       JSON.stringify(input.headers ?? {}), JSON.stringify(input.parameters ?? { type: "object", properties: {} }),
-      input.bodyTemplate ?? "", now, now,
+      input.bodyTemplate ?? "", normalizeCategory(input.category), now, now,
     );
     return (await this.getHttpTool(id))!;
   }
@@ -443,6 +529,7 @@ export class SQLiteAdapter implements DatabaseAdapter {
     if (input.parameters !== undefined) { fields.push("parameters = ?"); values.push(JSON.stringify(input.parameters)); }
     if (input.bodyTemplate !== undefined) { fields.push("body_template = ?"); values.push(input.bodyTemplate); }
     if (input.enabled !== undefined) { fields.push("enabled = ?"); values.push(input.enabled ? 1 : 0); }
+    if (input.category !== undefined) { fields.push("category = ?"); values.push(normalizeCategory(input.category)); }
 
     if (fields.length === 0) return existing;
 
@@ -470,9 +557,28 @@ export class SQLiteAdapter implements DatabaseAdapter {
       parameters: JSON.parse(row.parameters as string),
       bodyTemplate: row.body_template as string,
       enabled: (row.enabled as number) === 1,
+      category: (row.category as string) ?? "",
       createdAt: row.created_at as string,
       updatedAt: row.updated_at as string,
     };
+  }
+
+  async listSkillCategories(): Promise<Record<string, string>> {
+    const rows = this.db.prepare("SELECT skill_name, category FROM skill_categories").all() as Record<string, unknown>[];
+    return Object.fromEntries(rows.map((row) => [row.skill_name as string, row.category as string]));
+  }
+
+  async setSkillCategory(skillName: string, category: string): Promise<void> {
+    const normalized = category.trim();
+    if (!normalized) {
+      this.db.prepare("DELETE FROM skill_categories WHERE skill_name = ?").run(skillName);
+      return;
+    }
+    this.db.prepare(`
+      INSERT INTO skill_categories (skill_name, category, updated_at)
+      VALUES (?, ?, ?)
+      ON CONFLICT(skill_name) DO UPDATE SET category = excluded.category, updated_at = excluded.updated_at
+    `).run(skillName, normalized, new Date().toISOString());
   }
 
   // --- Providers ---
@@ -484,9 +590,10 @@ export class SQLiteAdapter implements DatabaseAdapter {
       this.db.prepare("UPDATE providers SET is_primary = 0").run();
     }
     this.db.prepare(`
-      INSERT INTO providers (id, name, type, api_key, base_url, default_model, enabled, is_primary, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO providers (id, name, type, api_key, base_url, default_model, capabilities, enabled, is_primary, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(id, input.name, input.type, input.apiKey, input.baseUrl ?? null, input.defaultModel,
+      JSON.stringify(normalizeModelCapabilities(input.type, input.capabilities)),
       input.enabled !== false ? 1 : 0, input.isPrimary ? 1 : 0, now, now);
     return (await this.getProvider(id))!;
   }
@@ -517,6 +624,7 @@ export class SQLiteAdapter implements DatabaseAdapter {
     if (input.apiKey !== undefined) { fields.push("api_key = ?"); values.push(input.apiKey); }
     if (input.baseUrl !== undefined) { fields.push("base_url = ?"); values.push(input.baseUrl || null); }
     if (input.defaultModel !== undefined) { fields.push("default_model = ?"); values.push(input.defaultModel); }
+    if (input.capabilities !== undefined) { fields.push("capabilities = ?"); values.push(JSON.stringify(normalizeModelCapabilities(input.type ?? existing.type, input.capabilities))); }
     if (input.enabled !== undefined) { fields.push("enabled = ?"); values.push(input.enabled ? 1 : 0); }
     if (input.isPrimary !== undefined) { fields.push("is_primary = ?"); values.push(input.isPrimary ? 1 : 0); }
 
@@ -548,6 +656,7 @@ export class SQLiteAdapter implements DatabaseAdapter {
       apiKey: row.api_key as string,
       baseUrl: (row.base_url as string) ?? undefined,
       defaultModel: row.default_model as string,
+      capabilities: normalizeModelCapabilities(row.type as string, parseJsonObject<Partial<ModelCapabilities>>(row.capabilities)),
       enabled: (row.enabled as number) === 1,
       isPrimary: (row.is_primary as number) === 1,
       createdAt: row.created_at as string,
@@ -764,7 +873,8 @@ export class SQLiteAdapter implements DatabaseAdapter {
     const row = this.db.prepare(`
       SELECT pc.*, p.id as p_id, p.name as p_name, p.type as p_type, p.api_key as p_api_key,
              p.base_url as p_base_url, p.default_model as p_default_model, p.enabled as p_enabled,
-             p.is_primary as p_is_primary, p.created_at as p_created_at, p.updated_at as p_updated_at
+             p.capabilities as p_capabilities, p.is_primary as p_is_primary,
+             p.created_at as p_created_at, p.updated_at as p_updated_at
       FROM provider_channels pc JOIN providers p ON p.id = pc.provider_id
       WHERE pc.key_hash = ? AND pc.enabled = 1
     `).get(keyHash) as Record<string, unknown> | undefined;
@@ -778,6 +888,7 @@ export class SQLiteAdapter implements DatabaseAdapter {
         id: row.p_id as string, name: row.p_name as string, type: row.p_type as string,
         apiKey: row.p_api_key as string, baseUrl: (row.p_base_url as string) ?? undefined,
         defaultModel: row.p_default_model as string, enabled: (row.p_enabled as number) === 1,
+        capabilities: normalizeModelCapabilities(row.p_type as string, parseJsonObject<Partial<ModelCapabilities>>(row.p_capabilities)),
         isPrimary: (row.p_is_primary as number) === 1,
         createdAt: row.p_created_at as string, updatedAt: row.p_updated_at as string,
       },

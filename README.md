@@ -5,9 +5,13 @@
 ## 核心能力
 
 - **多模型** — 同时配置豆包、DeepSeek、Claude、OpenAI 等，每个 Agent 独立选择模型（Model = Provider + 默认模型名）
-- **Model Failover** — 主模型故障自动切换备用，60 秒冷却后恢复
+- **Model Failover** — 主模型故障自动切换备用模型，记录 fallback trace，冷却后恢复
+- **模型能力声明** — 每个 Model 声明 tools / vision / thinking / streaming 能力，Agent 配置和运行时会跳过不兼容候选
+- **分类管理** — Agent、HTTP Tool、Skill 支持 Category，便于多业务线管理
 - **知识库（RAG）** — 上传文档，自动分块（中英文句子感知） + 向量化（火山引擎 Embedding），混合搜索（向量 60% + BM25 40%），支持原始内容在线编辑与重切片
 - **HTTP API Tools** — 无需写代码，通过管理界面配置外部 API 为 Agent 工具，热加载无需重启
+- **OpenAI 兼容渠道** — 每个 Model 可创建独立 Channel API Key，兼容 `/v1/chat/completions`，并统计渠道用量
+- **多语言后台** — 管理后台支持中文、日语、英文，右上角可切换，默认跟随浏览器语言
 - **上下文压缩** — 长对话自动截断旧 tool 结果 + 超出 token 预算时裁剪历史
 - **流式输出** — SSE 实时流式返回，Test Chat 支持流式展示
 - **AI 思考过程** — 支持 Extended Thinking（Claude）和 Reasoning Content（豆包等），可折叠展示思考过程
@@ -35,7 +39,7 @@ open http://localhost:3000
 ```bash
 pnpm install
 cp .env.example .env
-pnpm -r build
+pnpm build
 pnpm dev
 # 后台: http://localhost:5173  API: http://localhost:3000
 ```
@@ -48,8 +52,7 @@ pnpm dev
 | `LLM_API_KEY` | — | LLM API Key（必填） |
 | `LLM_BASE_URL` | — | OpenAI 兼容 API 地址（豆包、DeepSeek 等） |
 | `DEFAULT_MODEL` | `claude-sonnet-4-20250514` | 默认模型 |
-| `DATABASE_TYPE` | `sqlite` | 数据库：`sqlite` / `postgresql` / `mysql` |
-| `DATABASE_URL` | `./data/agentforge.db` | 数据库连接地址 |
+| `DB_PATH` | `data/agentforge.db` | SQLite 数据库文件路径；兼容读取旧变量 `DATABASE_URL` |
 | `ADMIN_SECRET` | `admin` | 管理后台密钥（生产环境必须修改） |
 | `PORT` | `3000` | 服务端口 |
 | `CORS_ORIGIN` | `true` | CORS 允许的域名（生产环境设置具体域名） |
@@ -62,8 +65,8 @@ pnpm dev
 | 页面 | 功能 |
 |------|------|
 | **Dashboard** | 总量统计（Sessions/Requests/Tokens）、趋势图（今天/昨天/7/30/90天/自定义日期范围）、按模型/Agent/渠道用量分布，柱状图和表格统一联动筛选 |
-| **Agents** | 创建/编辑 Agent（Model、System Prompt、温度、工具白名单、Skill、Extended Thinking），Model 由 Models 页配置，Agent 只需选择 |
-| **Models** | 管理多个 LLM 模型（添加/启用/禁用/设主力），API Key 脱敏显示。每个 Model 对应一个 Provider + 固定模型名 |
+| **Agents** | 创建/编辑 Agent（Model、Fallback Models、Category、System Prompt、温度、工具白名单、Skill、Extended Thinking），Model 由 Models 页配置，Agent 只需选择 |
+| **Models** | 管理多个 LLM 模型（添加/启用/禁用/设主力、能力声明、Channel API Key），API Key 脱敏显示。每个 Model 对应一个 Provider + 固定模型名 |
 | **Tools** | 查看内置工具，配置 HTTP API Tools（CRUD + 在线测试） |
 | **Skills** | 卡片列表 / 文件编辑器（创建/删除/重命名 Skill 及其文件和文件夹） |
 | **Sessions** | 会话列表（首条消息预览、token 统计），Session Detail 紧凑展示工具调用 |
@@ -214,11 +217,24 @@ skills/           Skill 数据目录（每个子目录一个 Skill）
 - Docker healthcheck（`/health` 端点）
 - Skill / Knowledge 文件操作均有路径穿越防护
 
-## 测试
+## 维护与验证
+
+后续维护请先阅读 `AGENTS.md`，详细检查清单见 `docs/MAINTENANCE.md`。
+
+统一验证入口：
 
 ```bash
-pnpm test    # 单元测试
+./scripts/verify.sh
 ```
+
+等价于顺序运行：
+
+```bash
+pnpm build
+pnpm test
+```
+
+前端文案必须通过 `packages/web/src/i18n.ts` 维护，并同时补齐中文、日语、英文。交付前应保持构建无 Vite chunk size warning，测试无 `punycode` deprecation warning；UI 改动还需要浏览器检查主要页面和 console。
 
 ## License
 

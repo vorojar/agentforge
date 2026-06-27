@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import type { ModelCapabilities } from "@agentforge/types";
 import type { AppContext } from "../bootstrap.js";
 
 export async function providerRoutes(fastify: FastifyInstance, opts: { ctx: AppContext }) {
@@ -7,7 +8,7 @@ export async function providerRoutes(fastify: FastifyInstance, opts: { ctx: AppC
   fastify.post("/api/providers", async (request, reply) => {
     const body = request.body as {
       name: string; type: string; apiKey: string;
-      baseUrl?: string; defaultModel: string; isPrimary?: boolean;
+      baseUrl?: string; defaultModel: string; capabilities?: Partial<ModelCapabilities>; isPrimary?: boolean;
     };
     if (!body.name || !body.type || !body.apiKey || !body.defaultModel) {
       return reply.code(400).send({ error: "name, type, apiKey, and defaultModel are required" });

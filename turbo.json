@@ -10,7 +10,20 @@
     },
     "dev": {
       "cache": false,
-      "persistent": true
+      "persistent": true,
+      "passThroughEnv": [
+        "ADMIN_SECRET",
+        "CORS_ORIGIN",
+        "DB_PATH",
+        "DEFAULT_MODEL",
+        "LLM_API_KEY",
+        "LLM_BASE_URL",
+        "LLM_PROVIDER",
+        "LOG_LEVEL",
+        "PORT",
+        "VOLCANO_EMBEDDING_KEY",
+        "VOLCANO_EMBEDDING_MODEL"
+      ]
     },
     "clean": {
       "cache": false

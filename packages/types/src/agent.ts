@@ -1,3 +1,8 @@
+export interface AgentFallbackModel {
+  providerId?: string;
+  model: string;
+}
+
 export interface AgentConfig {
   id: string;
   name: string;
@@ -5,6 +10,8 @@ export interface AgentConfig {
   systemPrompt: string;
   providerId?: string;
   model: string;
+  fallbackModels: AgentFallbackModel[];
+  fallbackCooldownSeconds: number;
   temperature: number;
   maxTokens: number;
   maxIterations: number;
@@ -13,6 +20,7 @@ export interface AgentConfig {
   thinking: boolean;
   tools: string[];
   skills: string[];
+  category: string;
   enabled: boolean;
   createdAt: string;
   updatedAt: string;
@@ -24,6 +32,8 @@ export interface AgentCreateInput {
   systemPrompt: string;
   providerId?: string;
   model?: string;
+  fallbackModels?: AgentFallbackModel[];
+  fallbackCooldownSeconds?: number;
   temperature?: number;
   maxTokens?: number;
   maxIterations?: number;
@@ -31,6 +41,7 @@ export interface AgentCreateInput {
   thinking?: boolean;
   tools?: string[];
   skills?: string[];
+  category?: string;
 }
 
 export interface AgentUpdateInput {
@@ -39,6 +50,8 @@ export interface AgentUpdateInput {
   systemPrompt?: string;
   providerId?: string;
   model?: string;
+  fallbackModels?: AgentFallbackModel[];
+  fallbackCooldownSeconds?: number;
   temperature?: number;
   maxTokens?: number;
   maxIterations?: number;
@@ -46,5 +59,6 @@ export interface AgentUpdateInput {
   thinking?: boolean;
   tools?: string[];
   skills?: string[];
+  category?: string;
   enabled?: boolean;
 }

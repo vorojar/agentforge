@@ -10,6 +10,7 @@ export interface HttpTool {
   parameters: ToolParameterSchema;
   bodyTemplate: string;
   enabled: boolean;
+  category: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -22,6 +23,7 @@ export interface HttpToolCreateInput {
   headers?: Record<string, string>;
   parameters?: ToolParameterSchema;
   bodyTemplate?: string;
+  category?: string;
 }
 
 export interface HttpToolUpdateInput {
@@ -33,4 +35,5 @@ export interface HttpToolUpdateInput {
   parameters?: ToolParameterSchema;
   bodyTemplate?: string;
   enabled?: boolean;
+  category?: string;
 }

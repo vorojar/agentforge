@@ -50,6 +50,8 @@ export const testHttpTool = (id: string, params: Record<string, string>) =>
 // --- Skills ---
 export const getSkills = () => api.get("/skills");
 export const reloadSkills = () => api.post("/skills/reload");
+export const updateSkillCategory = (name: string, category: string) =>
+  api.put(`/skills/${name}/category`, { category });
 
 // --- Skills Editor ---
 export const getSkillFiles = (name: string) => api.get(`/skills/${name}/files`);
@@ -125,6 +127,9 @@ export const getSessions = (agentId?: string) =>
 export const getSession = (id: string) => api.get(`/sessions/${id}`);
 export const getSessionMessages = (id: string) =>
   api.get(`/sessions/${id}/messages`);
+export const getSessionFamily = (id: string) => api.get(`/sessions/${id}/family`);
+export const rerunSession = (id: string, data?: { providerId?: string; model?: string }) =>
+  api.post(`/sessions/${id}/rerun`, data ?? {});
 export const deleteSession = (id: string) => api.delete(`/sessions/${id}`);
 
 // --- Stats ---

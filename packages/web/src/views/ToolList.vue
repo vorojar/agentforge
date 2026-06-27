@@ -6,48 +6,54 @@
 
     <!-- All registered tools (builtin + HTTP) -->
     <el-table :data="tools" v-loading="loading" stripe>
-      <el-table-column prop="name" label="Name" width="200" />
-      <el-table-column prop="description" label="Description" />
-      <el-table-column label="Parameters" width="120" align="center">
+      <el-table-column prop="name" :label="t('common.name')" width="200" />
+      <el-table-column prop="description" :label="t('common.description')" />
+      <el-table-column :label="t('common.parameters')" width="120" align="center">
         <template #default="{ row }">
-          <el-button link type="primary" @click="showSchema(row)">View Schema</el-button>
+          <el-button link type="primary" @click="showSchema(row)">{{ t("tools.viewSchema") }}</el-button>
         </template>
       </el-table-column>
     </el-table>
 
     <!-- Schema dialog -->
-    <el-dialog v-model="schemaVisible" :title="`${selectedTool?.name} — Parameters`" width="600px">
+    <el-dialog v-model="schemaVisible" :title="t('tools.schemaTitle', { name: selectedTool?.name || '' })" width="600px">
       <pre style="background: #f5f7fa; padding: 16px; border-radius: 4px; overflow: auto; font-size: 13px">{{ schemaJson }}</pre>
     </el-dialog>
 
     <!-- HTTP API Tools management section -->
     <el-divider />
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px">
-      <h3>HTTP API Tools</h3>
-      <el-button type="primary" @click="openCreate">Add HTTP API Tool</el-button>
+      <h3>{{ t("tools.httpApiTools") }}</h3>
+      <el-button type="primary" @click="openCreate">{{ t("tools.addHttpTool") }}</el-button>
     </div>
     <el-text type="info" size="small" style="display: block; margin-bottom: 16px">
-      Configure external HTTP APIs as tools. Agents can call these APIs during conversations.
+      {{ t("tools.httpApiHelp") }}
     </el-text>
 
     <el-table :data="httpTools" v-loading="httpLoading" stripe>
-      <el-table-column prop="name" label="Name" width="180" />
-      <el-table-column prop="method" label="Method" width="80" />
-      <el-table-column prop="url" label="URL" />
-      <el-table-column label="Status" width="90" align="center">
+      <el-table-column prop="name" :label="t('common.name')" width="180" />
+      <el-table-column :label="t('common.category')" width="140">
+        <template #default="{ row }">
+          <el-tag v-if="row.category" size="small">{{ row.category }}</el-tag>
+          <span v-else style="color: #c0c4cc">{{ t("common.uncategorized") }}</span>
+        </template>
+      </el-table-column>
+      <el-table-column prop="method" :label="t('common.method')" width="80" />
+      <el-table-column prop="url" :label="t('common.url')" />
+      <el-table-column :label="t('common.status')" width="90" align="center">
         <template #default="{ row }">
           <el-tag :type="row.enabled ? 'success' : 'info'" size="small">
-            {{ row.enabled ? "On" : "Off" }}
+            {{ row.enabled ? t("common.on") : t("common.off") }}
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="Actions" width="220" align="center">
+      <el-table-column :label="t('common.actions')" width="220" align="center">
         <template #default="{ row }">
-          <el-button link type="success" @click="openTest(row)">Test</el-button>
-          <el-button link type="primary" @click="openEdit(row)">Edit</el-button>
-          <el-popconfirm title="Delete this tool?" @confirm="handleDelete(row.id)">
+          <el-button link type="success" @click="openTest(row)">{{ t("tools.test") }}</el-button>
+          <el-button link type="primary" @click="openEdit(row)">{{ t("common.edit") }}</el-button>
+          <el-popconfirm :title="t('tools.deleteConfirm')" @confirm="handleDelete(row.id)">
             <template #reference>
-              <el-button link type="danger">Delete</el-button>
+              <el-button link type="danger">{{ t("common.delete") }}</el-button>
             </template>
           </el-popconfirm>
         </template>
@@ -55,35 +61,38 @@
     </el-table>
 
     <!-- HTTP Tool test dialog -->
-    <el-dialog v-model="testVisible" :title="`Test: ${testTool?.name}`" width="600px">
+    <el-dialog v-model="testVisible" :title="t('tools.testTitle', { name: testTool?.name || '' })" width="600px">
       <el-form label-width="100px" v-if="testTool">
         <el-form-item v-for="param in testParams" :key="param.name" :label="param.name">
           <el-input v-model="param.value" :placeholder="param.description" />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="testVisible = false">Close</el-button>
-        <el-button type="primary" @click="runTest" :loading="testing">Send Request</el-button>
+        <el-button @click="testVisible = false">{{ t("common.close") }}</el-button>
+        <el-button type="primary" @click="runTest" :loading="testing">{{ t("tools.sendRequest") }}</el-button>
       </template>
       <div v-if="testResult !== null" style="margin-top: 12px">
         <el-divider />
         <el-tag :type="testResultError ? 'danger' : 'success'" size="small" style="margin-bottom: 8px">
-          {{ testResultError ? 'Error' : 'Success' }}
+          {{ testResultError ? t("common.error") : t("common.success") }}
         </el-tag>
         <pre style="background: #f5f7fa; padding: 12px; border-radius: 4px; font-size: 12px; max-height: 300px; overflow: auto; white-space: pre-wrap; word-break: break-all">{{ testResult }}</pre>
       </div>
     </el-dialog>
 
     <!-- HTTP Tool create/edit dialog -->
-    <el-dialog v-model="formVisible" :title="editingTool ? 'Edit HTTP Tool' : 'Create HTTP Tool'" width="650px">
+    <el-dialog v-model="formVisible" :title="editingTool ? t('tools.editHttpTool') : t('tools.createHttpTool')" width="650px">
       <el-form :model="form" label-width="120px">
-        <el-form-item label="Name" required>
+        <el-form-item :label="t('common.name')" required>
           <el-input v-model="form.name" placeholder="e.g. query_order" />
         </el-form-item>
-        <el-form-item label="Description">
-          <el-input v-model="form.description" placeholder="What this tool does" />
+        <el-form-item :label="t('common.description')">
+          <el-input v-model="form.description" :placeholder="t('skills.descriptionPlaceholder')" />
         </el-form-item>
-        <el-form-item label="Method">
+        <el-form-item :label="t('common.category')">
+          <el-input v-model="form.category" :placeholder="t('agent.optionalCategory')" />
+        </el-form-item>
+        <el-form-item :label="t('common.method')">
           <el-select v-model="form.method" style="width: 120px">
             <el-option label="GET" value="GET" />
             <el-option label="POST" value="POST" />
@@ -91,30 +100,30 @@
             <el-option label="DELETE" value="DELETE" />
           </el-select>
         </el-form-item>
-        <el-form-item label="URL" required>
+        <el-form-item :label="t('common.url')" required>
           <el-input v-model="form.url" placeholder="https://api.example.com/orders/{orderId}" />
-          <el-text type="info" size="small">Use {paramName} for URL path parameters</el-text>
+          <el-text type="info" size="small">{{ t("tools.useParamsHelp") }}</el-text>
         </el-form-item>
-        <el-form-item label="Headers">
+        <el-form-item :label="t('common.headers')">
           <el-input v-model="form.headersStr" type="textarea" :rows="3"
             placeholder='{"Authorization": "Bearer xxx"}' />
         </el-form-item>
-        <el-form-item label="Parameters">
+        <el-form-item :label="t('common.parameters')">
           <el-input v-model="form.parametersStr" type="textarea" :rows="5"
             :placeholder='parameterPlaceholder' />
-          <el-text type="info" size="small">JSON Schema format defining tool parameters</el-text>
+          <el-text type="info" size="small">{{ t("tools.jsonSchemaHelp") }}</el-text>
         </el-form-item>
-        <el-form-item label="Body Template" v-if="['POST','PUT','PATCH'].includes(form.method)">
+        <el-form-item :label="t('common.bodyTemplate')" v-if="['POST','PUT','PATCH'].includes(form.method)">
           <el-input v-model="form.bodyTemplate" type="textarea" :rows="4"
             placeholder='{"orderId": "{orderId}", "status": "{status}"}' />
         </el-form-item>
-        <el-form-item label="Enabled">
+        <el-form-item :label="t('common.enabled')">
           <el-switch v-model="form.enabled" />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="formVisible = false">Cancel</el-button>
-        <el-button type="primary" @click="handleSave" :loading="saving">Save</el-button>
+        <el-button @click="formVisible = false">{{ t("common.cancel") }}</el-button>
+        <el-button type="primary" @click="handleSave" :loading="saving">{{ t("common.save") }}</el-button>
       </template>
     </el-dialog>
   </div>
@@ -124,6 +133,7 @@
 import { ref, onMounted, computed } from "vue";
 import { getTools, getHttpTools, createHttpTool, updateHttpTool, deleteHttpTool, testHttpTool } from "@/api";
 import { ElMessage } from "element-plus";
+import { t } from "@/i18n";
 
 interface ToolDef {
   name: string;
@@ -141,6 +151,7 @@ interface HttpToolItem {
   parameters: Record<string, unknown>;
   bodyTemplate: string;
   enabled: boolean;
+  category?: string;
 }
 
 const allTools = ref<ToolDef[]>([]);
@@ -173,6 +184,7 @@ const form = ref({
   parametersStr: "",
   bodyTemplate: "",
   enabled: true,
+  category: "",
 });
 
 const parameterPlaceholder = `{
@@ -224,7 +236,7 @@ async function runTest() {
     }
   } catch (e) {
     testResultError.value = true;
-    testResult.value = `Request failed: ${(e as Error).message}`;
+    testResult.value = t("tools.requestFailedWithMessage", { message: (e as Error).message });
   } finally {
     testing.value = false;
   }
@@ -236,7 +248,7 @@ async function loadTools() {
     const { data } = await getTools();
     allTools.value = data;
   } catch {
-    ElMessage.error("Failed to load tools");
+    ElMessage.error(t("tools.failedLoad"));
   } finally {
     loading.value = false;
   }
@@ -265,7 +277,7 @@ function openCreate() {
   form.value = {
     name: "", description: "", method: "GET", url: "",
     headersStr: "{}", parametersStr: parameterPlaceholder,
-    bodyTemplate: "", enabled: true,
+    bodyTemplate: "", enabled: true, category: "",
   };
   formVisible.value = true;
 }
@@ -281,13 +293,14 @@ function openEdit(tool: HttpToolItem) {
     parametersStr: JSON.stringify(tool.parameters, null, 2),
     bodyTemplate: tool.bodyTemplate,
     enabled: tool.enabled,
+    category: tool.category ?? "",
   };
   formVisible.value = true;
 }
 
 async function handleSave() {
   if (!form.value.name || !form.value.url) {
-    ElMessage.warning("Name and URL are required");
+    ElMessage.warning(t("tools.nameUrlRequired"));
     return;
   }
   let headers: Record<string, string>;
@@ -296,7 +309,7 @@ async function handleSave() {
     headers = JSON.parse(form.value.headersStr);
     parameters = form.value.parametersStr ? JSON.parse(form.value.parametersStr) : { type: "object", properties: {} };
   } catch {
-    ElMessage.error("Invalid JSON in headers or parameters");
+    ElMessage.error(t("tools.invalidJson"));
     return;
   }
 
@@ -311,18 +324,19 @@ async function handleSave() {
       parameters,
       bodyTemplate: form.value.bodyTemplate,
       enabled: form.value.enabled,
+      category: form.value.category,
     };
     if (editingTool.value) {
       await updateHttpTool(editingTool.value.id, payload);
     } else {
       await createHttpTool(payload);
     }
-    ElMessage.success("Tool saved");
+    ElMessage.success(t("tools.saved"));
     formVisible.value = false;
     loadHttpTools();
     loadTools();
   } catch {
-    ElMessage.error("Failed to save tool");
+    ElMessage.error(t("tools.failedSave"));
   } finally {
     saving.value = false;
   }
@@ -331,11 +345,11 @@ async function handleSave() {
 async function handleDelete(id: string) {
   try {
     await deleteHttpTool(id);
-    ElMessage.success("Tool deleted");
+    ElMessage.success(t("tools.deleted"));
     loadHttpTools();
     loadTools();
   } catch {
-    ElMessage.error("Failed to delete tool");
+    ElMessage.error(t("tools.failedDelete"));
   }
 }
 

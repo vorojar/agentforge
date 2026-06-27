@@ -34,22 +34,22 @@
     <!-- Unified time filter -->
     <el-card style="margin-bottom: 20px" shadow="never" class="filter-card">
       <div class="filter-bar">
-        <span class="filter-label">Time Range</span>
+        <span class="filter-label">{{ t("dashboard.timeRange") }}</span>
         <el-radio-group v-model="activePreset" size="small" @change="onPresetChange">
-          <el-radio-button value="today">Today</el-radio-button>
-          <el-radio-button value="yesterday">Yesterday</el-radio-button>
-          <el-radio-button value="7">7 Days</el-radio-button>
-          <el-radio-button value="30">30 Days</el-radio-button>
-          <el-radio-button value="90">90 Days</el-radio-button>
-          <el-radio-button value="custom">Custom</el-radio-button>
+          <el-radio-button value="today">{{ t("dashboard.today") }}</el-radio-button>
+          <el-radio-button value="yesterday">{{ t("dashboard.yesterday") }}</el-radio-button>
+          <el-radio-button value="7">{{ t("dashboard.days7") }}</el-radio-button>
+          <el-radio-button value="30">{{ t("dashboard.days30") }}</el-radio-button>
+          <el-radio-button value="90">{{ t("dashboard.days90") }}</el-radio-button>
+          <el-radio-button value="custom">{{ t("dashboard.custom") }}</el-radio-button>
         </el-radio-group>
         <el-date-picker
           v-if="activePreset === 'custom'"
           v-model="customDateRange"
           type="daterange"
           range-separator="—"
-          start-placeholder="Start"
-          end-placeholder="End"
+          :start-placeholder="t('dashboard.startDate')"
+          :end-placeholder="t('dashboard.endDate')"
           size="small"
           value-format="YYYY-MM-DD"
           :clearable="false"
@@ -65,7 +65,7 @@
     <!-- Agent Usage Chart -->
     <el-card style="margin-bottom: 20px">
       <template #header>
-        <span>Agent Usage Trends</span>
+        <span>{{ t("dashboard.agentTrend") }}</span>
       </template>
       <div ref="chartRef" style="height: 320px"></div>
     </el-card>
@@ -73,7 +73,7 @@
     <!-- Proxy Channel Chart -->
     <el-card style="margin-bottom: 20px">
       <template #header>
-        <span>Channel Forwarding Trends</span>
+        <span>{{ t("dashboard.channelTrend") }}</span>
       </template>
       <div ref="proxyChartRef" style="height: 320px"></div>
     </el-card>
@@ -82,13 +82,13 @@
     <el-row :gutter="16">
       <el-col :span="8">
         <el-card>
-          <template #header><span>Usage by Model</span></template>
-          <el-table :data="modelStats" stripe size="small">
-            <el-table-column prop="model" label="Model" min-width="120" show-overflow-tooltip />
-            <el-table-column label="Requests" width="80" align="right">
+          <template #header><span>{{ t("dashboard.usageByModel") }}</span></template>
+          <el-table :data="modelStats" stripe size="small" class="dashboard-usage-table">
+            <el-table-column prop="model" :label="t('common.model')" min-width="120" show-overflow-tooltip />
+            <el-table-column :label="t('common.requests')" width="104" align="right" label-class-name="nowrap-table-header">
               <template #default="{ row }">{{ row.requests.toLocaleString() }}</template>
             </el-table-column>
-            <el-table-column label="Tokens" width="100" align="right">
+            <el-table-column :label="t('common.tokens')" width="100" align="right">
               <template #default="{ row }">{{ (row.tokensIn + row.tokensOut).toLocaleString() }}</template>
             </el-table-column>
           </el-table>
@@ -96,13 +96,13 @@
       </el-col>
       <el-col :span="8">
         <el-card>
-          <template #header><span>Usage by Agent</span></template>
-          <el-table :data="agentStats" stripe size="small">
-            <el-table-column prop="name" label="Agent" min-width="120" show-overflow-tooltip />
-            <el-table-column label="Requests" width="80" align="right">
+          <template #header><span>{{ t("dashboard.usageByAgent") }}</span></template>
+          <el-table :data="agentStats" stripe size="small" class="dashboard-usage-table">
+            <el-table-column prop="name" :label="t('common.agent')" min-width="120" show-overflow-tooltip />
+            <el-table-column :label="t('common.requests')" width="104" align="right" label-class-name="nowrap-table-header">
               <template #default="{ row }">{{ row.totalRequests.toLocaleString() }}</template>
             </el-table-column>
-            <el-table-column label="Tokens" width="100" align="right">
+            <el-table-column :label="t('common.tokens')" width="100" align="right">
               <template #default="{ row }">{{ (row.totalTokensIn + row.totalTokensOut).toLocaleString() }}</template>
             </el-table-column>
           </el-table>
@@ -110,13 +110,13 @@
       </el-col>
       <el-col :span="8">
         <el-card>
-          <template #header><span>Usage by Channel</span></template>
-          <el-table :data="channelStats" stripe size="small" empty-text="No channel data">
-            <el-table-column prop="channelName" label="Channel" min-width="120" show-overflow-tooltip />
-            <el-table-column label="Requests" width="80" align="right">
+          <template #header><span>{{ t("dashboard.usageByChannel") }}</span></template>
+          <el-table :data="channelStats" stripe size="small" :empty-text="t('dashboard.noChannelData')" class="dashboard-usage-table">
+            <el-table-column prop="channelName" :label="t('common.channel')" min-width="120" show-overflow-tooltip />
+            <el-table-column :label="t('common.requests')" width="104" align="right" label-class-name="nowrap-table-header">
               <template #default="{ row }">{{ row.totalRequests.toLocaleString() }}</template>
             </el-table-column>
-            <el-table-column label="Tokens" width="100" align="right">
+            <el-table-column :label="t('common.tokens')" width="100" align="right">
               <template #default="{ row }">{{ (row.totalTokensIn + row.totalTokensOut).toLocaleString() }}</template>
             </el-table-column>
           </el-table>
@@ -127,13 +127,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from "vue";
+import { ref, computed, onMounted, onUnmounted, watch } from "vue";
 import * as echarts from "echarts";
 import {
   getStats, getDailyStats, getModelStats, getAgentUsageStats,
   getProxyOverview, getProxyDailyStats, getProviders, getProviderChannelStats,
   type DateRange,
 } from "@/api";
+import { locale, t } from "@/i18n";
 
 const chartRef = ref<HTMLElement>();
 const proxyChartRef = ref<HTMLElement>();
@@ -185,29 +186,43 @@ const currentGranularity = computed<string | undefined>(() => {
 
 const filterDescription = computed(() => {
   const preset = activePreset.value;
-  if (preset === "today") return "Today";
-  if (preset === "yesterday") return "Yesterday";
+  if (preset === "today") return t("dashboard.today");
+  if (preset === "yesterday") return t("dashboard.yesterday");
   if (preset === "custom") {
     if (customDateRange.value[0] && customDateRange.value[1]) {
       return `${customDateRange.value[0]} ~ ${customDateRange.value[1]}`;
     }
-    return "Please select date range";
+    return t("dashboard.selectDateRange");
   }
-  return `Last ${preset} days`;
+  return t("dashboard.lastDays", { days: preset });
 });
 
-const statCards = ref([
-  { label: "Total Sessions", value: "0" },
-  { label: "Sessions Today", value: "0" },
-  { label: "Agent Requests", value: "0" },
-  { label: "Agent Tokens", value: "0" },
+const statValues = ref({
+  totalSessions: "0",
+  sessionsToday: "0",
+  agentRequests: "0",
+  agentTokens: "0",
+});
+
+const proxyValues = ref({
+  proxyChannels: "0",
+  proxyRequests: "0",
+  proxyTokensIn: "0",
+  proxyTokensOut: "0",
+});
+
+const statCards = computed(() => [
+  { label: t("dashboard.totalSessions"), value: statValues.value.totalSessions },
+  { label: t("dashboard.sessionsToday"), value: statValues.value.sessionsToday },
+  { label: t("dashboard.agentRequests"), value: statValues.value.agentRequests },
+  { label: t("dashboard.agentTokens"), value: statValues.value.agentTokens },
 ]);
 
-const proxyCards = ref([
-  { label: "Proxy Channels", value: "0" },
-  { label: "Proxy Requests", value: "0" },
-  { label: "Proxy Tokens In", value: "0" },
-  { label: "Proxy Tokens Out", value: "0" },
+const proxyCards = computed(() => [
+  { label: t("dashboard.proxyChannels"), value: proxyValues.value.proxyChannels },
+  { label: t("dashboard.proxyRequests"), value: proxyValues.value.proxyRequests },
+  { label: t("dashboard.proxyTokensIn"), value: proxyValues.value.proxyTokensIn },
+  { label: t("dashboard.proxyTokensOut"), value: proxyValues.value.proxyTokensOut },
 ]);
 
 interface ModelStat { model: string; requests: number; tokensIn: number; tokensOut: number }
@@ -241,24 +256,24 @@ function loadFilteredData() {
 async function loadStats() {
   try {
     const { data } = await getStats();
-    statCards.value = [
-      { label: "Total Sessions", value: (data.totalSessions ?? 0).toLocaleString() },
-      { label: "Sessions Today", value: String(data.sessionsToday ?? 0) },
-      { label: "Agent Requests", value: (data.totalRequests ?? 0).toLocaleString() },
-      { label: "Agent Tokens", value: ((data.totalTokensIn ?? 0) + (data.totalTokensOut ?? 0)).toLocaleString() },
-    ];
+    statValues.value = {
+      totalSessions: (data.totalSessions ?? 0).toLocaleString(),
+      sessionsToday: String(data.sessionsToday ?? 0),
+      agentRequests: (data.totalRequests ?? 0).toLocaleString(),
+      agentTokens: ((data.totalTokensIn ?? 0) + (data.totalTokensOut ?? 0)).toLocaleString(),
+    };
   } catch { /* ignore */ }
 }
 
 async function loadProxyStats() {
   try {
     const { data } = await getProxyOverview();
-    proxyCards.value = [
-      { label: "Proxy Channels", value: (data.totalChannels ?? 0).toLocaleString() },
-      { label: "Proxy Requests", value: (data.totalRequests ?? 0).toLocaleString() },
-      { label: "Proxy Tokens In", value: (data.totalTokensIn ?? 0).toLocaleString() },
-      { label: "Proxy Tokens Out", value: (data.totalTokensOut ?? 0).toLocaleString() },
-    ];
+    proxyValues.value = {
+      proxyChannels: (data.totalChannels ?? 0).toLocaleString(),
+      proxyRequests: (data.totalRequests ?? 0).toLocaleString(),
+      proxyTokensIn: (data.totalTokensIn ?? 0).toLocaleString(),
+      proxyTokensOut: (data.totalTokensOut ?? 0).toLocaleString(),
+    };
   } catch { /* ignore */ }
 }
 
@@ -307,6 +322,40 @@ function formatXLabel(dateStr: string, hourly: boolean): string {
   return dateStr.slice(5);
 }
 
+function emptyUsageChartOption() {
+  return {
+    tooltip: { trigger: "axis" },
+    legend: { data: [t("dashboard.tokensIn"), t("dashboard.tokensOut"), t("common.requests")] },
+    grid: { left: 60, right: 60, bottom: 30, top: 40 },
+    xAxis: { type: "category", data: [] },
+    yAxis: [
+      { type: "value", name: t("common.tokens") },
+      { type: "value", name: t("common.requests"), splitLine: { show: false } },
+    ],
+    series: [
+      { name: t("dashboard.tokensIn"), type: "bar", stack: "tokens", data: [], itemStyle: { color: "#409eff" } },
+      { name: t("dashboard.tokensOut"), type: "bar", stack: "tokens", data: [], itemStyle: { color: "#67c23a" } },
+      { name: t("common.requests"), type: "line", yAxisIndex: 1, smooth: true, data: [], itemStyle: { color: "#e6a23c" } },
+    ],
+  };
+}
+
+function emptyProxyChartOption() {
+  return {
+    ...emptyUsageChartOption(),
+    series: [
+      { name: t("dashboard.tokensIn"), type: "bar", stack: "tokens", data: [], itemStyle: { color: "#f56c6c" } },
+      { name: t("dashboard.tokensOut"), type: "bar", stack: "tokens", data: [], itemStyle: { color: "#e6a23c" } },
+      { name: t("common.requests"), type: "line", yAxisIndex: 1, smooth: true, data: [], itemStyle: { color: "#909399" } },
+    ],
+  };
+}
+
+function renderChart(instance: echarts.ECharts, option: unknown) {
+  instance.clear();
+  instance.setOption(option as echarts.EChartsOption, true);
+}
+
 async function loadChart() {
   if (!chartRef.value) return;
   if (!chartInstance) chartInstance = initChart(chartRef.value);
@@ -314,23 +363,23 @@ async function loadChart() {
 
   try {
     const { data } = await getDailyStats(undefined, currentDays.value, currentDateRange.value, currentGranularity.value);
-    chartInstance.setOption({
+    renderChart(chartInstance, {
       tooltip: { trigger: "axis" },
-      legend: { data: ["Tokens In", "Tokens Out", "Requests"] },
+      legend: { data: [t("dashboard.tokensIn"), t("dashboard.tokensOut"), t("common.requests")] },
       grid: { left: 60, right: 60, bottom: 30, top: 40 },
       xAxis: { type: "category", data: data.map((d: { date: string }) => formatXLabel(d.date, hourly)) },
       yAxis: [
-        { type: "value", name: "Tokens" },
-        { type: "value", name: "Requests", splitLine: { show: false } },
+        { type: "value", name: t("common.tokens") },
+        { type: "value", name: t("common.requests"), splitLine: { show: false } },
       ],
       series: [
-        { name: "Tokens In", type: "bar", stack: "tokens", data: data.map((d: { tokensIn: number }) => d.tokensIn), itemStyle: { color: "#409eff" } },
-        { name: "Tokens Out", type: "bar", stack: "tokens", data: data.map((d: { tokensOut: number }) => d.tokensOut), itemStyle: { color: "#67c23a" } },
-        { name: "Requests", type: "line", yAxisIndex: 1, smooth: true, data: data.map((d: { requests: number }) => d.requests), itemStyle: { color: "#e6a23c" } },
+        { name: t("dashboard.tokensIn"), type: "bar", stack: "tokens", data: data.map((d: { tokensIn: number }) => d.tokensIn), itemStyle: { color: "#409eff" } },
+        { name: t("dashboard.tokensOut"), type: "bar", stack: "tokens", data: data.map((d: { tokensOut: number }) => d.tokensOut), itemStyle: { color: "#67c23a" } },
+        { name: t("common.requests"), type: "line", yAxisIndex: 1, smooth: true, data: data.map((d: { requests: number }) => d.requests), itemStyle: { color: "#e6a23c" } },
       ],
-    }, true);
+    });
   } catch {
-    chartInstance.setOption({ xAxis: { data: [] }, series: [] }, true);
+    renderChart(chartInstance, emptyUsageChartOption());
   }
 }
 
@@ -341,23 +390,23 @@ async function loadProxyChart() {
 
   try {
     const { data } = await getProxyDailyStats(currentDays.value, currentDateRange.value, currentGranularity.value);
-    proxyChartInstance.setOption({
+    renderChart(proxyChartInstance, {
       tooltip: { trigger: "axis" },
-      legend: { data: ["Tokens In", "Tokens Out", "Requests"] },
+      legend: { data: [t("dashboard.tokensIn"), t("dashboard.tokensOut"), t("common.requests")] },
       grid: { left: 60, right: 60, bottom: 30, top: 40 },
       xAxis: { type: "category", data: data.map((d: { date: string }) => formatXLabel(d.date, hourly)) },
       yAxis: [
-        { type: "value", name: "Tokens" },
-        { type: "value", name: "Requests", splitLine: { show: false } },
+        { type: "value", name: t("common.tokens") },
+        { type: "value", name: t("common.requests"), splitLine: { show: false } },
       ],
       series: [
-        { name: "Tokens In", type: "bar", stack: "tokens", data: data.map((d: { tokensIn: number }) => d.tokensIn), itemStyle: { color: "#f56c6c" } },
-        { name: "Tokens Out", type: "bar", stack: "tokens", data: data.map((d: { tokensOut: number }) => d.tokensOut), itemStyle: { color: "#e6a23c" } },
-        { name: "Requests", type: "line", yAxisIndex: 1, smooth: true, data: data.map((d: { requests: number }) => d.requests), itemStyle: { color: "#909399" } },
+        { name: t("dashboard.tokensIn"), type: "bar", stack: "tokens", data: data.map((d: { tokensIn: number }) => d.tokensIn), itemStyle: { color: "#f56c6c" } },
+        { name: t("dashboard.tokensOut"), type: "bar", stack: "tokens", data: data.map((d: { tokensOut: number }) => d.tokensOut), itemStyle: { color: "#e6a23c" } },
+        { name: t("common.requests"), type: "line", yAxisIndex: 1, smooth: true, data: data.map((d: { requests: number }) => d.requests), itemStyle: { color: "#909399" } },
       ],
-    }, true);
+    });
   } catch {
-    proxyChartInstance.setOption({ xAxis: { data: [] }, series: [] }, true);
+    renderChart(proxyChartInstance, emptyProxyChartOption());
   }
 }
 
@@ -365,6 +414,11 @@ onMounted(() => {
   loadStats();
   loadProxyStats();
   loadFilteredData();
+});
+
+watch(locale, () => {
+  loadChart();
+  loadProxyChart();
 });
 
 onUnmounted(() => {
@@ -413,5 +467,9 @@ onUnmounted(() => {
   font-size: 12px;
   color: #909399;
   margin-left: auto;
+}
+.dashboard-usage-table :deep(.nowrap-table-header .cell) {
+  white-space: nowrap;
+  word-break: keep-all;
 }
 </style>

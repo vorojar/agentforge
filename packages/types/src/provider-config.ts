@@ -1,3 +1,10 @@
+export interface ModelCapabilities {
+  supportsTools: boolean;
+  supportsVision: boolean;
+  supportsThinking: boolean;
+  supportsStreaming: boolean;
+}
+
 export interface ProviderConfig {
   id: string;
   name: string;           // Display name, e.g. "火山引擎 (豆包)"
@@ -5,6 +12,7 @@ export interface ProviderConfig {
   apiKey: string;
   baseUrl?: string;
   defaultModel: string;
+  capabilities: ModelCapabilities;
   enabled: boolean;
   isPrimary: boolean;
   createdAt: string;
@@ -17,6 +25,7 @@ export interface ProviderCreateInput {
   apiKey: string;
   baseUrl?: string;
   defaultModel: string;
+  capabilities?: Partial<ModelCapabilities>;
   enabled?: boolean;
   isPrimary?: boolean;
 }
@@ -27,6 +36,7 @@ export interface ProviderUpdateInput {
   apiKey?: string;
   baseUrl?: string;
   defaultModel?: string;
+  capabilities?: Partial<ModelCapabilities>;
   enabled?: boolean;
   isPrimary?: boolean;
 }

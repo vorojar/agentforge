@@ -56,8 +56,7 @@ RUN mkdir -p /app/data
 EXPOSE 3000
 
 ENV NODE_ENV=production
-ENV DATABASE_TYPE=sqlite
-ENV DATABASE_URL=/app/data/agentforge.db
+ENV DB_PATH=/app/data/agentforge.db
 ENV PORT=3000
 
 CMD ["node", "packages/server/dist/index.js"]

@@ -11,13 +11,18 @@ export async function agentRoutes(fastify: FastifyInstance, opts: { ctx: AppCont
       name: string;
       description?: string;
       systemPrompt: string;
+      providerId?: string;
       model?: string;
+      fallbackModels?: Array<{ providerId?: string; model: string }>;
+      fallbackCooldownSeconds?: number;
       temperature?: number;
       maxTokens?: number;
       maxIterations?: number;
       streaming?: boolean;
+      thinking?: boolean;
       tools?: string[];
       skills?: string[];
+      category?: string;
     };
 
     if (!body.name || !body.systemPrompt) {

@@ -7,8 +7,8 @@
 <template>
   <div>
     <div style="display: flex; justify-content: space-between; margin-bottom: 16px">
-      <h2 style="margin: 0">Knowledge Bases</h2>
-      <el-button type="primary" @click="showCreateDialog = true">Create Knowledge Base</el-button>
+      <h2 style="margin: 0">{{ t("knowledge.title") }}</h2>
+      <el-button type="primary" @click="showCreateDialog = true">{{ t("knowledge.create") }}</el-button>
     </div>
 
     <el-row :gutter="16">
@@ -18,69 +18,69 @@
             <div style="display: flex; justify-content: space-between; align-items: center">
               <strong>{{ kb.name }}</strong>
               <div>
-                <el-button size="small" type="primary" @click="openKb(kb)">Manage</el-button>
-                <el-popconfirm title="Delete this knowledge base?" @confirm="handleDelete(kb.id)">
+                <el-button size="small" type="primary" @click="openKb(kb)">{{ t("common.manage") }}</el-button>
+                <el-popconfirm :title="t('knowledge.deleteConfirm')" @confirm="handleDelete(kb.id)">
                   <template #reference>
-                    <el-button size="small" type="danger">Delete</el-button>
+                    <el-button size="small" type="danger">{{ t("common.delete") }}</el-button>
                   </template>
                 </el-popconfirm>
               </div>
             </div>
           </template>
-          <p style="color: #909399; font-size: 13px; margin: 0 0 8px">{{ kb.description || 'No description' }}</p>
+          <p style="color: #909399; font-size: 13px; margin: 0 0 8px">{{ kb.description || t("common.noDescription") }}</p>
           <p style="margin: 0; font-size: 12px; color: #b0b0b0">
-            {{ kb.sources?.length ?? 0 }} sources | Created: {{ kb.createdAt?.slice(0, 10) }}
+            {{ t("knowledge.sourcesCount", { count: kb.sources?.length ?? 0 }) }} | {{ t("knowledge.createdAt") }} {{ kb.createdAt?.slice(0, 10) }}
           </p>
         </el-card>
       </el-col>
     </el-row>
 
-    <el-empty v-if="knowledgeBases.length === 0" description="No knowledge bases yet" />
+    <el-empty v-if="knowledgeBases.length === 0" :description="t('knowledge.empty')" />
 
     <!-- Create Dialog -->
-    <el-dialog v-model="showCreateDialog" title="Create Knowledge Base" width="500px">
+    <el-dialog v-model="showCreateDialog" :title="t('knowledge.create')" width="500px">
       <el-form label-width="100px">
-        <el-form-item label="Name">
-          <el-input v-model="createForm.name" placeholder="Knowledge base name" />
+        <el-form-item :label="t('common.name')">
+          <el-input v-model="createForm.name" :placeholder="t('knowledge.namePlaceholder')" />
         </el-form-item>
-        <el-form-item label="Description">
-          <el-input v-model="createForm.description" type="textarea" :rows="3" placeholder="Optional description" />
+        <el-form-item :label="t('common.description')">
+          <el-input v-model="createForm.description" type="textarea" :rows="3" :placeholder="t('knowledge.descriptionPlaceholder')" />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="showCreateDialog = false">Cancel</el-button>
-        <el-button type="primary" :loading="creating" @click="handleCreate">Create</el-button>
+        <el-button @click="showCreateDialog = false">{{ t("common.cancel") }}</el-button>
+        <el-button type="primary" :loading="creating" @click="handleCreate">{{ t("common.create") }}</el-button>
       </template>
     </el-dialog>
 
     <!-- Manage Dialog -->
-    <el-dialog v-model="showManageDialog" :title="'Manage: ' + currentKb?.name" width="800px" top="5vh">
+    <el-dialog v-model="showManageDialog" :title="t('knowledge.manageTitle', { name: currentKb?.name || '' })" width="800px" top="5vh">
       <div style="margin-bottom: 16px; display: flex; gap: 8px; align-items: center">
-        <el-input v-model="uploadForm.name" placeholder="Document name" style="width: 200px" />
+        <el-input v-model="uploadForm.name" :placeholder="t('knowledge.documentName')" style="width: 200px" />
         <el-upload
           :show-file-list="false"
           :before-upload="handleFileSelect"
           accept=".txt,.md,.csv,.json,.html,.xml"
         >
-          <el-button>Select File</el-button>
+          <el-button>{{ t("common.selectFile") }}</el-button>
         </el-upload>
         <el-button type="primary" :loading="uploading" :disabled="!uploadForm.name || !uploadForm.content" @click="handleUpload">
-          Upload
+          {{ t("common.upload") }}
         </el-button>
         <span v-if="uploadForm.content" style="font-size: 12px; color: #909399">
           {{ (uploadForm.content.length / 1024).toFixed(1) }} KB
         </span>
       </div>
 
-      <el-table :data="currentSources" style="width: 100%" empty-text="No documents uploaded">
-        <el-table-column prop="sourceName" label="Document" />
-        <el-table-column prop="chunkCount" label="Chunks" width="80" align="center" />
-        <el-table-column label="Actions" width="180" align="center">
+      <el-table :data="currentSources" style="width: 100%" :empty-text="t('knowledge.noDocuments')">
+        <el-table-column prop="sourceName" :label="t('common.document')" />
+        <el-table-column prop="chunkCount" :label="t('common.chunks')" width="80" align="center" />
+        <el-table-column :label="t('common.actions')" width="180" align="center">
           <template #default="{ row }">
-            <el-button size="small" @click="viewSource(row.sourceName)">View</el-button>
-            <el-popconfirm title="Delete this document?" @confirm="handleDeleteSource(row.sourceName)">
+            <el-button size="small" @click="viewSource(row.sourceName)">{{ t("common.view") }}</el-button>
+            <el-popconfirm :title="t('knowledge.deleteDocumentConfirm')" @confirm="handleDeleteSource(row.sourceName)">
               <template #reference>
-                <el-button size="small" type="danger">Delete</el-button>
+                <el-button size="small" type="danger">{{ t("common.delete") }}</el-button>
               </template>
             </el-popconfirm>
           </template>
@@ -89,11 +89,11 @@
     </el-dialog>
 
     <!-- View Source Dialog -->
-    <el-dialog v-model="showViewDialog" :title="viewingSource" width="700px" top="5vh">
+    <el-dialog v-model="showViewDialog" :title="t('knowledge.viewSourceTitle', { name: viewingSource })" width="700px" top="5vh">
       <el-input v-model="viewContent" type="textarea" :rows="20" />
       <template #footer>
-        <el-button @click="showViewDialog = false">Close</el-button>
-        <el-button type="primary" :loading="saving" @click="handleSaveContent">Save</el-button>
+        <el-button @click="showViewDialog = false">{{ t("common.close") }}</el-button>
+        <el-button type="primary" :loading="saving" @click="handleSaveContent">{{ t("common.save") }}</el-button>
       </template>
     </el-dialog>
   </div>
@@ -102,6 +102,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
 import { ElMessage } from 'element-plus';
+import { t } from '@/i18n';
 import {
   getKnowledgeBases,
   createKnowledgeBase,
@@ -149,14 +150,14 @@ async function handleCreate() {
     await createKnowledgeBase(createForm.value);
     showCreateDialog.value = false;
     createForm.value = { name: '', description: '' };
-    ElMessage.success('Knowledge base created');
+    ElMessage.success(t('knowledge.created'));
     await loadKbs();
   } finally { creating.value = false; }
 }
 
 async function handleDelete(id: string) {
   await deleteKnowledgeBase(id);
-  ElMessage.success('Deleted');
+  ElMessage.success(t('knowledge.deleted'));
   await loadKbs();
 }
 
@@ -185,7 +186,7 @@ async function handleUpload() {
   uploading.value = true;
   try {
     await uploadKnowledgeSource(currentKb.value.id, uploadForm.value);
-    ElMessage.success('Uploaded successfully');
+    ElMessage.success(t('knowledge.uploaded'));
     uploadForm.value = { name: '', content: '' };
     const { data } = await getKnowledgeSources(currentKb.value.id);
     currentSources.value = data;
@@ -206,7 +207,7 @@ async function handleSaveContent() {
   saving.value = true;
   try {
     await updateKnowledgeContent(currentKb.value.id, viewingSource.value, viewContent.value);
-    ElMessage.success('Saved');
+    ElMessage.success(t('knowledge.saved'));
     showViewDialog.value = false;
     const { data } = await getKnowledgeSources(currentKb.value.id);
     currentSources.value = data;
@@ -216,7 +217,7 @@ async function handleSaveContent() {
 async function handleDeleteSource(sourceName: string) {
   if (!currentKb.value) return;
   await deleteKnowledgeSource(currentKb.value.id, sourceName);
-  ElMessage.success('Deleted');
+  ElMessage.success(t('knowledge.deleted'));
   const { data } = await getKnowledgeSources(currentKb.value.id);
   currentSources.value = data;
   await loadKbs();

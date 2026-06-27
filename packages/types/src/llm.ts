@@ -12,9 +12,36 @@ export interface LLMRequest {
   thinking?: boolean;
 }
 
+export interface ProviderCandidate {
+  providerId?: string;
+  model: string;
+}
+
+export interface ProviderResolveOptions {
+  fallbackCooldownMs?: number;
+}
+
+export interface ModelTraceAttempt {
+  providerId: string;
+  model: string;
+  attempt: number;
+  status: "success" | "failed" | "skipped";
+  error?: string;
+}
+
+export interface ModelTrace {
+  requestedModel: string;
+  selectedProviderId?: string;
+  selectedModel?: string;
+  fallbackUsed: boolean;
+  attempts: ModelTraceAttempt[];
+}
+
 export interface LLMMessage {
   role: "user" | "assistant";
   content: string | ContentBlock[];
+  /** assistant 消息上一轮的 reasoning_content，reasoner 模型多轮请求时需要回传 */
+  thinking?: string;
 }
 
 export interface LLMResponse {
@@ -23,6 +50,7 @@ export interface LLMResponse {
   thinking?: string;
   stopReason: "end_turn" | "tool_use" | "max_tokens";
   model: string;
+  modelTrace?: ModelTrace;
   usage: LLMUsage;
 }
 
@@ -36,6 +64,8 @@ export interface LLMStreamChunk {
   };
   usage?: LLMUsage;
   stopReason?: "end_turn" | "tool_use" | "max_tokens";
+  model?: string;
+  modelTrace?: ModelTrace;
 }
 
 export interface LLMUsage {

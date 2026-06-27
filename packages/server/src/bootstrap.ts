@@ -6,7 +6,7 @@
  */
 
 import { resolve } from "node:path";
-import type { DatabaseAdapter, LLMProvider, ProviderConfig } from "@agentforge/types";
+import type { ContentBlock, DatabaseAdapter, LLMMessage, LLMProvider, LLMRequest, ModelCapabilities, ModelTrace, ModelTraceAttempt, ProviderCandidate, ProviderResolveOptions } from "@agentforge/types";
 import { createDatabase } from "@agentforge/database";
 import { createProvider } from "@agentforge/providers";
 import { ToolRegistryImpl, createBuiltinTools, createHttpTools, createKnowledgeSearchTool, createSkillContentTool, VolcanoEmbedding } from "@agentforge/tools";
@@ -25,94 +25,208 @@ export interface AppContext {
   config: AppConfig;
 }
 
-export class ProviderRegistry {
-  private providers = new Map<string, LLMProvider>();
-  private primaryId: string | null = null;
-  private cooldowns = new Map<string, number>();
-  private cooldownMs = 60_000;
+interface ProviderEntry {
+  provider: LLMProvider;
+  defaultModel: string;
+  capabilities: ModelCapabilities;
+}
 
-  register(id: string, provider: LLMProvider, isPrimary: boolean) {
-    this.providers.set(id, provider);
+interface ResolvedProviderCandidate {
+  providerId: string;
+  model: string;
+  entry: ProviderEntry;
+}
+
+const MAX_ATTEMPTS_PER_CANDIDATE = 2;
+const DEFAULT_FALLBACK_COOLDOWN_MS = 15 * 60 * 1000;
+
+export class ProviderRegistry {
+  private providers = new Map<string, ProviderEntry>();
+  private primaryId: string | null = null;
+  /** cooldown key: `${agentKey}:${providerId}:${model}` */
+  private cooldowns = new Map<string, number>();
+
+  register(id: string, provider: LLMProvider, isPrimary: boolean, defaultModel = "", capabilities?: ModelCapabilities) {
+    this.providers.set(id, { provider, defaultModel, capabilities: capabilities ?? defaultModelCapabilities() });
     if (isPrimary) this.primaryId = id;
   }
 
   get(id: string): LLMProvider | undefined {
-    return this.providers.get(id);
+    return this.providers.get(id)?.provider;
   }
 
   getPrimary(): LLMProvider | undefined {
-    if (this.primaryId) return this.providers.get(this.primaryId);
+    if (this.primaryId) return this.providers.get(this.primaryId)?.provider;
     const first = this.providers.values().next();
-    return first.done ? undefined : first.value;
+    return first.done ? undefined : first.value.provider;
   }
 
-  resolve(providerId?: string): LLMProvider {
-    if (providerId) {
-      const p = this.providers.get(providerId);
-      if (p && this.isAvailable(providerId)) return this.wrapWithFailover(providerId, p);
+  resolve(candidates: ProviderCandidate[], agentKey: string = "*", options?: ProviderResolveOptions): LLMProvider {
+    const resolved = this.resolveCandidates(candidates, agentKey);
+    if (resolved.length === 0) {
+      throw new Error("All candidate models are unavailable or not configured");
     }
-    if (this.primaryId && this.isAvailable(this.primaryId)) {
-      const p = this.providers.get(this.primaryId);
-      if (p) return this.wrapWithFailover(this.primaryId, p);
-    }
-    for (const [id, p] of this.providers) {
-      if (this.isAvailable(id)) return this.wrapWithFailover(id, p);
-    }
-    throw new Error("All LLM providers are unavailable (in cooldown)");
+    const fallbackCooldownMs = Math.max(0, options?.fallbackCooldownMs ?? DEFAULT_FALLBACK_COOLDOWN_MS);
+    return this.wrapWithFailover(agentKey, resolved, fallbackCooldownMs);
   }
 
-  private isAvailable(id: string): boolean {
-    const until = this.cooldowns.get(id);
+  private cdKey(agentKey: string, providerId: string, model: string): string {
+    return `${agentKey}:${providerId}:${model}`;
+  }
+
+  private isAvailable(agentKey: string, providerId: string, model: string): boolean {
+    const until = this.cooldowns.get(this.cdKey(agentKey, providerId, model));
     if (!until) return true;
     if (Date.now() >= until) {
-      this.cooldowns.delete(id);
+      this.cooldowns.delete(this.cdKey(agentKey, providerId, model));
       return true;
     }
     return false;
   }
 
-  private markDown(id: string): void {
-    this.cooldowns.set(id, Date.now() + this.cooldownMs);
+  private markDown(agentKey: string, providerId: string, model: string, fallbackCooldownMs: number): void {
+    if (fallbackCooldownMs <= 0) return;
+    this.cooldowns.set(this.cdKey(agentKey, providerId, model), Date.now() + fallbackCooldownMs);
   }
 
-  private wrapWithFailover(primaryId: string, primary: LLMProvider): LLMProvider {
+  private getDefaultProviderId(): string | undefined {
+    if (this.primaryId && this.providers.has(this.primaryId)) return this.primaryId;
+    return this.providers.keys().next().value;
+  }
+
+  private resolveCandidates(candidates: ProviderCandidate[], agentKey: string): ResolvedProviderCandidate[] {
+    const result: ResolvedProviderCandidate[] = [];
+    const seen = new Set<string>();
+    for (const candidate of candidates) {
+      const providerId = candidate.providerId?.trim() || this.getDefaultProviderId();
+      if (!providerId) continue;
+      const entry = this.providers.get(providerId);
+      if (!entry) continue;
+      const model = candidate.model?.trim() || entry.defaultModel.trim();
+      if (!model) continue;
+      const key = `${providerId}:${model}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      if (this.isAvailable(agentKey, providerId, model)) {
+        result.push({ providerId, model, entry });
+      }
+    }
+    return result;
+  }
+
+  private formatCandidateError(candidate: ResolvedProviderCandidate, attempt: number, error: unknown): string {
+    return `${candidate.providerId}/${candidate.model}#${attempt}: ${(error as Error).message}`;
+  }
+
+  private getIncompatibilityReason(candidate: ResolvedProviderCandidate, request: LLMRequest): string | undefined {
+    const caps = candidate.entry.capabilities;
+    if (request.thinking && !caps.supportsThinking) return "model does not support thinking";
+    if (request.tools?.length && !caps.supportsTools) return "model does not support tools";
+    if (requestHasImages(request.messages) && !caps.supportsVision) return "model does not support image input";
+    return undefined;
+  }
+
+  private buildModelTrace(
+    requestedModel: string,
+    attempts: ModelTraceAttempt[],
+    selected?: ResolvedProviderCandidate
+  ): ModelTrace {
+    return {
+      requestedModel,
+      selectedProviderId: selected?.providerId,
+      selectedModel: selected?.model,
+      fallbackUsed: attempts.slice(0, -1).some((attempt) => attempt.status !== "success"),
+      attempts: [...attempts],
+    };
+  }
+
+  private wrapWithFailover(agentKey: string, candidates: ResolvedProviderCandidate[], fallbackCooldownMs: number): LLMProvider {
     const registry = this;
     return {
-      name: primary.name,
+      name: candidates[0].entry.provider.name,
       chat: async (request) => {
-        try {
-          return await primary.chat(request);
-        } catch (error) {
-          registry.markDown(primaryId);
-          for (const [id, p] of registry.providers) {
-            if (id !== primaryId && registry.isAvailable(id)) {
-              try {
-                return await p.chat(request);
-              } catch {
-                registry.markDown(id);
+        const errors: string[] = [];
+        const attempts: ModelTraceAttempt[] = [];
+        for (const candidate of candidates) {
+          const reason = registry.getIncompatibilityReason(candidate, request);
+          if (reason) {
+            attempts.push({ providerId: candidate.providerId, model: candidate.model, attempt: 0, status: "skipped", error: reason });
+            errors.push(`${candidate.providerId}/${candidate.model}: ${reason}`);
+            continue;
+          }
+          for (let attempt = 1; attempt <= MAX_ATTEMPTS_PER_CANDIDATE; attempt++) {
+            try {
+              const response = await candidate.entry.provider.chat({ ...request, model: candidate.model });
+              attempts.push({ providerId: candidate.providerId, model: candidate.model, attempt, status: "success" });
+              return {
+                ...response,
+                model: response.model || candidate.model,
+                modelTrace: this.buildModelTrace(request.model, attempts, candidate),
+              };
+            } catch (error) {
+              errors.push(registry.formatCandidateError(candidate, attempt, error));
+              attempts.push({
+                providerId: candidate.providerId,
+                model: candidate.model,
+                attempt,
+                status: "failed",
+                error: (error as Error).message,
+              });
+              if (attempt === MAX_ATTEMPTS_PER_CANDIDATE) {
+                registry.markDown(agentKey, candidate.providerId, candidate.model, fallbackCooldownMs);
               }
             }
           }
-          throw error;
         }
+        throw new Error(`All candidate models failed: ${errors.join(" | ")}`);
       },
       stream: async function* (request) {
-        try {
-          yield* primary.stream(request);
-        } catch (error) {
-          registry.markDown(primaryId);
-          for (const [id, p] of registry.providers) {
-            if (id !== primaryId && registry.isAvailable(id)) {
-              try {
-                yield* p.stream(request);
-                return;
-              } catch {
-                registry.markDown(id);
+        const errors: string[] = [];
+        const attempts: ModelTraceAttempt[] = [];
+        for (const candidate of candidates) {
+          const reason = registry.getIncompatibilityReason(candidate, request);
+          if (reason) {
+            attempts.push({ providerId: candidate.providerId, model: candidate.model, attempt: 0, status: "skipped", error: reason });
+            errors.push(`${candidate.providerId}/${candidate.model}: ${reason}`);
+            continue;
+          }
+          for (let attempt = 1; attempt <= MAX_ATTEMPTS_PER_CANDIDATE; attempt++) {
+            let emittedChunk = false;
+            try {
+              for await (const chunk of candidate.entry.provider.stream({ ...request, model: candidate.model })) {
+                emittedChunk = true;
+                yield chunk.type === "done"
+                  ? {
+                      ...chunk,
+                      model: chunk.model ?? candidate.model,
+                      modelTrace: registry.buildModelTrace(request.model, [
+                        ...attempts,
+                        { providerId: candidate.providerId, model: candidate.model, attempt, status: "success" },
+                      ], candidate),
+                    }
+                  : chunk;
+              }
+              return;
+            } catch (error) {
+              if (emittedChunk) {
+                registry.markDown(agentKey, candidate.providerId, candidate.model, fallbackCooldownMs);
+                throw error;
+              }
+              errors.push(registry.formatCandidateError(candidate, attempt, error));
+              attempts.push({
+                providerId: candidate.providerId,
+                model: candidate.model,
+                attempt,
+                status: "failed",
+                error: (error as Error).message,
+              });
+              if (attempt === MAX_ATTEMPTS_PER_CANDIDATE) {
+                registry.markDown(agentKey, candidate.providerId, candidate.model, fallbackCooldownMs);
               }
             }
           }
-          throw error;
         }
+        throw new Error(`All candidate models failed: ${errors.join(" | ")}`);
       },
     } as LLMProvider;
   }
@@ -120,16 +234,33 @@ export class ProviderRegistry {
   async reload(db: DatabaseAdapter) {
     this.providers.clear();
     this.primaryId = null;
+    this.cooldowns.clear();
     for (const pc of await db.listProviders()) {
       if (!pc.enabled) continue;
       try {
         const provider = createProvider(pc.type, { apiKey: pc.apiKey, baseUrl: pc.baseUrl });
-        this.register(pc.id, provider, pc.isPrimary);
+        this.register(pc.id, provider, pc.isPrimary, pc.defaultModel, pc.capabilities);
       } catch {
         // skip invalid providers
       }
     }
   }
+}
+
+function defaultModelCapabilities(): ModelCapabilities {
+  return {
+    supportsTools: true,
+    supportsVision: true,
+    supportsThinking: false,
+    supportsStreaming: true,
+  };
+}
+
+function requestHasImages(messages: LLMMessage[]): boolean {
+  return messages.some((message) => {
+    if (!Array.isArray(message.content)) return false;
+    return message.content.some((block: ContentBlock) => block.type === "image");
+  });
 }
 
 export async function bootstrap(config: AppConfig): Promise<AppContext> {

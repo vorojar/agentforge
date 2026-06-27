@@ -15,18 +15,43 @@ import { loadSkillsFromDirectory } from "@agentforge/skills";
 import type { AppContext } from "../bootstrap.js";
 
 export async function skillRoutes(fastify: FastifyInstance, opts: { ctx: AppContext }) {
-  const { skillRegistry } = opts.ctx;
+  const { db, skillRegistry } = opts.ctx;
   const skillsDir = resolve(process.cwd(), "skills");
+
+  async function listSkillsWithCategories() {
+    const categories = await db.listSkillCategories();
+    return skillRegistry.list().map((skill) => ({
+      ...skill,
+      category: categories[skill.name] ?? "",
+    }));
+  }
+
+  async function getSkillWithCategory(name: string) {
+    const skill = skillRegistry.get(name);
+    if (!skill) return null;
+    const categories = await db.listSkillCategories();
+    return { ...skill, category: categories[skill.name] ?? "" };
+  }
 
   // List skills (read-only, loaded from filesystem)
   fastify.get("/api/skills", async () => {
-    return skillRegistry.list();
+    return listSkillsWithCategories();
+  });
+
+  fastify.put("/api/skills/:name/category", async (request, reply) => {
+    const { name } = request.params as { name: string };
+    if (!skillRegistry.get(name)) {
+      return reply.code(404).send({ error: "Skill not found" });
+    }
+    const { category } = (request.body ?? {}) as { category?: string };
+    await db.setSkillCategory(name, category ?? "");
+    return await getSkillWithCategory(name);
   });
 
   // Get single skill by name
   fastify.get("/api/skills/:name", async (request, reply) => {
     const { name } = request.params as { name: string };
-    const skill = skillRegistry.get(name);
+    const skill = await getSkillWithCategory(name);
     if (!skill) {
       return reply.code(404).send({ error: "Skill not found" });
     }

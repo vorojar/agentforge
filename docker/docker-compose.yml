@@ -8,8 +8,7 @@ services:
     volumes:
       - agentforge-data:/app/data
     environment:
-      - DATABASE_TYPE=${DATABASE_TYPE:-sqlite}
-      - DATABASE_URL=${DATABASE_URL:-/app/data/agentforge.db}
+      - DB_PATH=${DB_PATH:-/app/data/agentforge.db}
       - LLM_PROVIDER=${LLM_PROVIDER:-claude}
       - LLM_API_KEY=${LLM_API_KEY}
       - LLM_BASE_URL=${LLM_BASE_URL:-}
