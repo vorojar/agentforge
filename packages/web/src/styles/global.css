@@ -62,7 +62,7 @@ html, body, #app {
   font-size: 20px;
   font-weight: 600;
   color: #1e293b;
-  letter-spacing: -0.025em;
+  letter-spacing: 0;
 }
 
 /* --- Stat Cards --- */
@@ -75,7 +75,7 @@ html, body, #app {
   font-size: 28px;
   font-weight: 700;
   color: #6366f1;
-  letter-spacing: -0.025em;
+  letter-spacing: 0;
 }
 
 .stat-card .stat-label {
@@ -166,6 +166,11 @@ pre {
   border-radius: 8px;
   font-weight: 500;
   transition: all 0.15s ease;
+}
+
+:where([style*="gap"]) > .el-button + .el-button,
+:where(.header-actions, .section-actions, .chat-toolbar, .file-actions) > .el-button + .el-button {
+  margin-left: 0;
 }
 
 /* --- Tags: softer --- */

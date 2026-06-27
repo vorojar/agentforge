@@ -165,6 +165,10 @@ function startSso(provider: SsoProvider) {
 .login-button {
   width: 100%;
   margin-top: 8px;
+  min-height: 40px;
+  justify-content: center;
+  white-space: normal;
+  text-align: center;
 }
 .login-divider {
   display: flex;
@@ -187,5 +191,10 @@ function startSso(provider: SsoProvider) {
 }
 .sso-button {
   width: 100%;
+  min-height: 40px;
+  margin-left: 0;
+  justify-content: center;
+  white-space: normal;
+  text-align: center;
 }
 </style>

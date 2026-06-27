@@ -9,6 +9,12 @@ const routes = [
     component: () => import("./views/Login.vue"),
   },
   {
+    path: "/public",
+    name: "PublicLanding",
+    meta: { public: true },
+    component: () => import("./views/PublicLanding.vue"),
+  },
+  {
     path: "/",
     redirect: "/dashboard",
   },

@@ -5,15 +5,23 @@
     </div>
 
     <!-- All registered tools (builtin + HTTP) -->
-    <el-table :data="tools" v-loading="loading" stripe>
+    <el-table class="desktop-table" :data="tools" v-loading="loading" stripe>
       <el-table-column prop="name" :label="t('common.name')" width="200" />
-      <el-table-column prop="description" :label="t('common.description')" />
-      <el-table-column :label="t('common.parameters')" width="120" align="center">
+      <el-table-column prop="description" :label="t('common.description')" min-width="260" show-overflow-tooltip />
+      <el-table-column :label="t('common.parameters')" width="150" align="center">
         <template #default="{ row }">
           <el-button link type="primary" @click="showSchema(row)">{{ t("tools.viewSchema") }}</el-button>
         </template>
       </el-table-column>
     </el-table>
+    <div class="mobile-tool-list">
+      <article v-for="tool in tools" :key="tool.name" class="mobile-tool-card">
+        <div class="mobile-tool-title">{{ tool.name }}</div>
+        <p class="mobile-tool-description">{{ tool.description }}</p>
+        <el-button link type="primary" @click="showSchema(tool)">{{ t("tools.viewSchema") }}</el-button>
+      </article>
+      <el-empty v-if="!loading && tools.length === 0" :description="t('dashboard.noData')" />
+    </div>
 
     <!-- Schema dialog -->
     <el-dialog v-model="schemaVisible" :title="t('tools.schemaTitle', { name: selectedTool?.name || '' })" width="600px">
@@ -30,7 +38,7 @@
       {{ t("tools.httpApiHelp") }}
     </el-text>
 
-    <el-table :data="httpTools" v-loading="httpLoading" stripe>
+    <el-table class="desktop-table" :data="httpTools" v-loading="httpLoading" stripe>
       <el-table-column prop="name" :label="t('common.name')" width="180" />
       <el-table-column :label="t('common.category')" width="140">
         <template #default="{ row }">
@@ -39,7 +47,7 @@
         </template>
       </el-table-column>
       <el-table-column prop="method" :label="t('common.method')" width="80" />
-      <el-table-column prop="url" :label="t('common.url')" />
+      <el-table-column prop="url" :label="t('common.url')" min-width="260" show-overflow-tooltip />
       <el-table-column :label="t('common.status')" width="90" align="center">
         <template #default="{ row }">
           <el-tag :type="row.enabled ? 'success' : 'info'" size="small">
@@ -59,6 +67,32 @@
         </template>
       </el-table-column>
     </el-table>
+    <div class="mobile-tool-list">
+      <article v-for="tool in httpTools" :key="tool.id" class="mobile-tool-card">
+        <div class="mobile-tool-header">
+          <div class="mobile-tool-title">{{ tool.name }}</div>
+          <el-tag :type="tool.enabled ? 'success' : 'info'" size="small">
+            {{ tool.enabled ? t("common.on") : t("common.off") }}
+          </el-tag>
+        </div>
+        <div class="mobile-tool-meta">
+          <el-tag v-if="tool.category" size="small">{{ tool.category }}</el-tag>
+          <span v-else>{{ t("common.uncategorized") }}</span>
+          <span>{{ tool.method }}</span>
+        </div>
+        <p class="mobile-tool-description">{{ tool.url }}</p>
+        <div class="mobile-tool-actions">
+          <el-button link type="success" @click="openTest(tool)">{{ t("tools.test") }}</el-button>
+          <el-button link type="primary" @click="openEdit(tool)">{{ t("common.edit") }}</el-button>
+          <el-popconfirm :title="t('tools.deleteConfirm')" @confirm="handleDelete(tool.id)">
+            <template #reference>
+              <el-button link type="danger">{{ t("common.delete") }}</el-button>
+            </template>
+          </el-popconfirm>
+        </div>
+      </article>
+      <el-empty v-if="!httpLoading && httpTools.length === 0" :description="t('dashboard.noData')" />
+    </div>
 
     <!-- HTTP Tool test dialog -->
     <el-dialog v-model="testVisible" :title="t('tools.testTitle', { name: testTool?.name || '' })" width="600px">
@@ -358,3 +392,65 @@ onMounted(() => {
   loadHttpTools();
 });
 </script>
+
+<style scoped>
+.mobile-tool-list {
+  display: none;
+}
+
+.mobile-tool-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #fff;
+  padding: 12px;
+}
+
+.mobile-tool-header,
+.mobile-tool-actions,
+.mobile-tool-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.mobile-tool-header {
+  justify-content: space-between;
+}
+
+.mobile-tool-title {
+  min-width: 0;
+  font-weight: 600;
+  color: #1e293b;
+  overflow-wrap: anywhere;
+}
+
+.mobile-tool-description {
+  margin: 8px 0 0;
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.mobile-tool-meta {
+  margin-top: 8px;
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.mobile-tool-actions {
+  margin-top: 8px;
+}
+
+@media (max-width: 720px) {
+  .desktop-table {
+    display: none;
+  }
+
+  .mobile-tool-list {
+    display: grid;
+    gap: 10px;
+  }
+}
+</style>

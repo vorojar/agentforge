@@ -564,6 +564,8 @@ function formatDateTime(value: string): string {
 .tenant-page {
   display: grid;
   gap: 16px;
+  min-width: 0;
+  width: 100%;
 }
 .tenant-toolbar,
 .section-actions {
@@ -579,6 +581,8 @@ function formatDateTime(value: string): string {
   background: #fff;
   border: 1px solid #e2e8f0;
   border-radius: 8px;
+  min-width: 0;
+  overflow-x: auto;
   padding: 14px 16px 18px;
 }
 .section-actions {
@@ -592,5 +596,24 @@ function formatDateTime(value: string): string {
   padding: 12px;
   font-size: 12px;
   line-height: 1.5;
+}
+
+@media (max-width: 720px) {
+  .tenant-toolbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: stretch;
+    justify-content: flex-start;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .tenant-toolbar :deep(.el-select) {
+    width: 100% !important;
+  }
+
+  .tenant-toolbar :deep(.el-button) {
+    justify-self: start;
+  }
 }
 </style>
