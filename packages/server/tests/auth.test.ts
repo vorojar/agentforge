@@ -3,6 +3,7 @@ import { createTestApp } from "./helpers.js";
 import type { FastifyInstance } from "fastify";
 import type { AppContext } from "../src/bootstrap.js";
 import type { IdentityProviderConfig, TenantBootstrapResult } from "@agentforge/types";
+import { hashPassword } from "../src/local-auth.js";
 
 describe("Auth", () => {
   let app: FastifyInstance;
@@ -242,6 +243,70 @@ describe("Auth", () => {
     });
   });
 
+  describe("RBAC", () => {
+    it("should allow viewers to read but not mutate workspace resources", async () => {
+      const cookie = await loginAsRole("viewer");
+
+      const read = await app.inject({
+        method: "GET",
+        url: "/api/agents",
+        headers: { cookie },
+      });
+      expect(read.statusCode).toBe(200);
+
+      const write = await app.inject({
+        method: "POST",
+        url: "/api/agents",
+        headers: { cookie },
+        payload: { name: "Viewer Agent", systemPrompt: "test" },
+      });
+      expect(write.statusCode).toBe(403);
+    });
+
+    it("should allow builders to mutate workspace resources", async () => {
+      const cookie = await loginAsRole("builder");
+
+      const res = await app.inject({
+        method: "POST",
+        url: "/api/agents",
+        headers: { cookie },
+        payload: { name: "Builder Agent", systemPrompt: "test" },
+      });
+
+      expect(res.statusCode).toBe(201);
+    });
+
+    it("should reject access outside the user's workspace membership", async () => {
+      const otherWorkspace = await ctx.db.createWorkspace({
+        organizationId: tenant.organization.id,
+        name: "Other Workspace",
+        slug: "other",
+      });
+      const cookie = await loginAsRole("viewer");
+
+      const res = await app.inject({
+        method: "GET",
+        url: "/api/agents",
+        headers: { cookie, "x-workspace-id": otherWorkspace.id },
+      });
+
+      expect(res.statusCode).toBe(403);
+    });
+
+    it("should require admin role for tenant-level mutations", async () => {
+      const cookie = await loginAsRole("builder");
+
+      const res = await app.inject({
+        method: "POST",
+        url: "/api/users",
+        headers: { cookie },
+        payload: { email: "new-user@example.com", displayName: "New User" },
+      });
+
+      expect(res.statusCode).toBe(403);
+    });
+  });
+
   async function createOidcProvider(): Promise<IdentityProviderConfig> {
     return await ctx.db.createIdentityProvider({
       organizationId: tenant.organization.id,
@@ -287,5 +352,22 @@ describe("Auth", () => {
       status: 200,
       headers: { "content-type": "application/json" },
     });
+  }
+
+  async function loginAsRole(role: "viewer" | "builder" | "admin" | "owner"): Promise<string> {
+    const email = `${role}@example.com`;
+    const userPassword = `${role}-pass`;
+    const user = await ctx.db.createUser({ email, displayName: role });
+    await ctx.db.setUserPassword(user.id, hashPassword(userPassword));
+    await ctx.db.upsertMembership({ organizationId: tenant.organization.id, userId: user.id, workspaceId: null, role });
+    await ctx.db.upsertMembership({ organizationId: tenant.organization.id, userId: user.id, workspaceId: tenant.workspace.id, role });
+
+    const login = await app.inject({
+      method: "POST",
+      url: "/api/auth/login",
+      payload: { email, password: userPassword },
+    });
+    expect(login.statusCode).toBe(200);
+    return String(login.headers["set-cookie"]);
   }
 });

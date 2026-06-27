@@ -4,5 +4,6 @@ declare module "fastify" {
   interface FastifyRequest {
     agentConfig?: AgentConfig;
     currentUser?: AuthenticatedUser;
+    adminBypass?: boolean;
   }
 }

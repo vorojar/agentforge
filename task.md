@@ -27,7 +27,7 @@ Ship AgentForge as a private-cloud enterprise edition that a company can deploy,
 2. Done: OIDC generic SSO for Google Workspace, Microsoft Entra ID, Okta/Auth0/Keycloak, and GitHub Enterprise-style providers.
 3. Pending: Feishu, WeCom, and DingTalk enterprise login connectors on the same identity-provider model.
 4. Pending: tenant administration UI for organizations, workspaces, users, memberships, IdPs, and audit logs.
-5. Pending: RBAC middleware and route tests for owner/admin/builder/viewer.
+5. Done: RBAC middleware and route tests for owner/admin/builder/viewer.
 6. Pending: audit coverage for auth, membership, provider, API key, model, tool, and knowledge-base changes.
 7. Pending: MySQL production factory, migration verification, backup/restore, and upgrade runbook.
 8. Pending: final release smoke, screenshots, README launch guide, and sales demo checklist.
@@ -37,4 +37,6 @@ Ship AgentForge as a private-cloud enterprise edition that a company can deploy,
 - Done: tenant data model, workspace scoping, local admin login, session cookies, demo credentials, i18n, warning cleanup.
 - Done in this target: `pnpm preflight:prod` production gate with fail/pass tests, Docker env hardening, README launch preflight docs.
 - Done in this target: generic OIDC start/callback, state cookie validation, token/userinfo flow, user provisioning, session creation, login-page SSO buttons, audit log, and browser redirect smoke to Google OAuth.
-- Latest verification: `./scripts/verify.sh` passed.
+- Done in this target: admin API RBAC for logged-in users, with Admin Secret emergency bypass preserved; route tests cover viewer read-only access, builder workspace writes, cross-workspace denial, and admin-only user mutations.
+- Latest verification: `./scripts/verify.sh` passed without Vite chunk size warnings or punycode deprecation warnings.
+- Latest browser smoke: `http://localhost:5173/login` -> demo login -> dashboard -> left-bottom user menu -> logout -> login page, with no console error/warn entries.

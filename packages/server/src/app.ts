@@ -21,6 +21,7 @@ import { proxyRoutes } from "./routes/proxy.js";
 import { tenantRoutes } from "./routes/tenants.js";
 import { authRoutes } from "./routes/auth.js";
 import { resolveCurrentUser } from "./local-auth.js";
+import { canAccessAdminRoute } from "./rbac.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 
@@ -101,11 +102,21 @@ export function createApp(ctx: AppContext) {
   fastify.register(async (scope) => {
     scope.addHook("onRequest", async (request, reply) => {
       const secret = request.headers["x-admin-secret"];
-      if (secret === ctx.config.adminSecret) return;
+      if (secret === ctx.config.adminSecret) {
+        request.adminBypass = true;
+        return;
+      }
 
       const user = await resolveCurrentUser(request, ctx);
       if (!user) return reply.code(401).send({ error: "Unauthorized: login required" });
       request.currentUser = user;
+    });
+    scope.addHook("preHandler", async (request, reply) => {
+      if (request.adminBypass) return;
+      if (!request.currentUser) return reply.code(401).send({ error: "Unauthorized: login required" });
+      if (!await canAccessAdminRoute(request, ctx.db, request.currentUser)) {
+        return reply.code(403).send({ error: "Forbidden: insufficient role" });
+      }
     });
 
     scope.register(agentRoutes, { ctx });
