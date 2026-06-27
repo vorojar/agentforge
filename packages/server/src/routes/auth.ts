@@ -9,6 +9,7 @@ import {
   setSessionCookie,
 } from "../local-auth.js";
 import { finishOidcLogin, listOidcLoginProviders, startOidcLogin } from "../oidc-auth.js";
+import { finishEnterpriseOAuthLogin, listEnterpriseOAuthLoginProviders, startEnterpriseOAuthLogin } from "../enterprise-oauth.js";
 
 export async function authRoutes(fastify: FastifyInstance, opts: { ctx: AppContext }) {
   const { ctx } = opts;
@@ -19,6 +20,7 @@ export async function authRoutes(fastify: FastifyInstance, opts: { ctx: AppConte
       loginEnabled: true,
       defaultWorkspaceId: user.memberships.find((membership) => membership.workspaceId)?.workspaceId ?? null,
       oidcProviders: await listOidcLoginProviders(ctx),
+      oauthProviders: await listEnterpriseOAuthLoginProviders(ctx),
     };
   });
 
@@ -58,5 +60,16 @@ export async function authRoutes(fastify: FastifyInstance, opts: { ctx: AppConte
   fastify.get("/api/auth/oidc/:providerId/callback", async (request, reply) => {
     const { providerId } = request.params as { providerId: string };
     await finishOidcLogin(request, reply, ctx, providerId);
+  });
+
+  fastify.get("/api/auth/oauth/:providerId/start", async (request, reply) => {
+    const { providerId } = request.params as { providerId: string };
+    const { redirect } = request.query as { redirect?: string };
+    await startEnterpriseOAuthLogin(request, reply, ctx, providerId, redirect);
+  });
+
+  fastify.get("/api/auth/oauth/:providerId/callback", async (request, reply) => {
+    const { providerId } = request.params as { providerId: string };
+    await finishEnterpriseOAuthLogin(request, reply, ctx, providerId);
   });
 }

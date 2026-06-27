@@ -35,17 +35,17 @@
         </el-button>
       </el-form>
 
-      <template v-if="oidcProviders.length > 0">
+      <template v-if="ssoProviders.length > 0">
         <div class="login-divider">
           <span>{{ t("auth.or") }}</span>
         </div>
         <div class="sso-list">
           <el-button
-            v-for="provider in oidcProviders"
+            v-for="provider in ssoProviders"
             :key="provider.id"
             size="large"
             class="sso-button"
-            @click="startSso(provider.id)"
+            @click="startSso(provider)"
           >
             {{ t("auth.signInWith", { name: provider.name }) }}
           </el-button>
@@ -56,11 +56,11 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { ElMessage } from "element-plus";
 import { login } from "@/auth";
-import { bootstrapAuth, oidcStartUrl } from "@/api";
+import { bootstrapAuth, oauthStartUrl, oidcStartUrl } from "@/api";
 import { t } from "@/i18n";
 
 interface OidcProvider {
@@ -69,16 +69,26 @@ interface OidcProvider {
   provider: string;
 }
 
+interface SsoProvider extends OidcProvider {
+  kind: "oidc" | "oauth";
+}
+
 const route = useRoute();
 const router = useRouter();
 const email = ref("");
 const password = ref("");
 const loading = ref(false);
 const oidcProviders = ref<OidcProvider[]>([]);
+const oauthProviders = ref<OidcProvider[]>([]);
+const ssoProviders = computed<SsoProvider[]>(() => [
+  ...oidcProviders.value.map((provider) => ({ ...provider, kind: "oidc" as const })),
+  ...oauthProviders.value.map((provider) => ({ ...provider, kind: "oauth" as const })),
+]);
 
 onMounted(async () => {
   const { data } = await bootstrapAuth();
   oidcProviders.value = data.oidcProviders ?? [];
+  oauthProviders.value = data.oauthProviders ?? [];
 });
 
 async function submit() {
@@ -99,9 +109,9 @@ async function submit() {
   }
 }
 
-function startSso(providerId: string) {
+function startSso(provider: SsoProvider) {
   const redirect = typeof route.query.redirect === "string" ? route.query.redirect : "/dashboard";
-  window.location.href = oidcStartUrl(providerId, redirect);
+  window.location.href = provider.kind === "oauth" ? oauthStartUrl(provider.id, redirect) : oidcStartUrl(provider.id, redirect);
 }
 </script>
 

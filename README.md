@@ -11,7 +11,7 @@
 - **知识库（RAG）** — 上传文档，自动分块（中英文句子感知） + 向量化（火山引擎 Embedding），混合搜索（向量 60% + BM25 40%），支持原始内容在线编辑与重切片
 - **HTTP API Tools** — 无需写代码，通过管理界面配置外部 API 为 Agent 工具，热加载无需重启
 - **OpenAI 兼容渠道** — 每个 Model 可创建独立 Channel API Key，兼容 `/v1/chat/completions`，并统计渠道用量
-- **企业租户地基** — 支持 Organization / Workspace / User / Membership / Identity Provider 配置 / Audit Log，为私有云企业部署和后续 OIDC/SAML/飞书等身份接入打基础
+- **企业租户与登录** — 支持 Organization / Workspace / User / Membership / Identity Provider / Audit Log，本地管理员登录、通用 OIDC，以及飞书、企业微信、钉钉企业 OAuth 登录
 - **多语言后台** — 管理后台支持中文、日语、英文，右上角可切换，默认跟随浏览器语言
 - **上下文压缩** — 长对话自动截断旧 tool 结果 + 超出 token 预算时裁剪历史
 - **流式输出** — SSE 实时流式返回，Test Chat 支持流式展示
@@ -68,7 +68,7 @@ NODE_ENV=production pnpm preflight:prod
 | `ADMIN_PASSWORD` | `password` | 本地开发默认演示密码；生产环境必须替换，且会拒绝 `password` / `admin` / `change-me-in-production` |
 | `AUTH_SESSION_DAYS` | `7` | 登录会话有效天数 |
 | `AUTH_COOKIE_SECURE` | `false` | 生产 HTTPS 部署必须设为 `true` |
-| `PUBLIC_URL` | — | 生产外部访问地址，用于 OIDC callback URL，例如 `https://agentforge.example.com` |
+| `PUBLIC_URL` | — | 生产外部访问地址，用于 OIDC / OAuth callback URL，例如 `https://agentforge.example.com` |
 | `ADMIN_SECRET` | `admin` | 管理 API 兼容兜底密钥；生产环境必须设置或迁移到正式 IdP |
 | `PORT` | `3000` | 服务端口 |
 | `CORS_ORIGIN` | `true` | CORS 允许的域名（生产环境设置具体域名） |
@@ -79,6 +79,21 @@ NODE_ENV=production pnpm preflight:prod
 ## 管理后台
 
 后台使用本地账号登录，首次启动会自动创建 `ADMIN_EMAIL` 指定的管理员并加入默认 Organization / Workspace。开发环境常见演示账号是 `demo@example.com` / `password`，这也是国外 SaaS demo、starter kit、admin template 里最常见的写法之一；生产环境必须在 `.env` 中替换。登录后浏览器使用 HttpOnly session cookie 访问管理 API；`X-Admin-Secret` 只保留给自动化、迁移和紧急维护。
+
+### 企业 SSO
+
+Identity Provider 统一存放在租户模型中。支持两类登录：
+
+- `type: "oidc"`：Google Workspace、Microsoft Entra ID、Okta、Auth0、Keycloak、GitHub Enterprise 等标准 OIDC。回调地址是 `https://your-domain/api/auth/oidc/:providerId/callback`。
+- `type: "oauth"`：飞书、企业微信、钉钉。回调地址是 `https://your-domain/api/auth/oauth/:providerId/callback`。
+
+OAuth provider 配置约定：
+
+- `provider: "feishu"`：`clientId` 填应用 ID，`clientSecretRef` 填 `env:<your env var>`；默认授权地址、token 地址和 user_info 地址已内置，也可用 `ssoUrl` 覆盖授权地址、用 `issuerUrl` 覆盖 token 地址。
+- `provider: "wecom"`：`clientId` 填企业 ID，`clientSecretRef` 填 `env:<your env var>`，并在 `claimMapping.agentId` 填应用 AgentId。
+- `provider: "dingtalk"`：`clientId` 填应用 Client ID，`clientSecretRef` 填 `env:<your env var>`；默认使用 `openid` scope。
+
+飞书、企微、钉钉如果没有返回邮箱，可以在 `claimMapping.emailDomain` 配置企业域名，系统会用 provider 用户 ID 派生内部登录邮箱。OAuth 登录成功后会自动创建用户、赋予默认 Workspace 的 viewer 权限，并写入 `auth.oauth_login` audit log。
 
 | 页面 | 功能 |
 |------|------|
@@ -131,7 +146,7 @@ skills/
 
 ### 管理接口（登录会话 / 兼容 Admin Secret）
 
-管理端浏览器请求使用登录 Cookie。自动化脚本仍可临时使用 `X-Admin-Secret`。P0 企业租户地基提供以下基础资源，后续 OIDC/SAML/飞书/企业微信/钉钉/GitHub 登录都会接入同一套 Organization / Workspace / Membership / Audit Log 模型。
+管理端浏览器请求使用登录 Cookie。自动化脚本仍可临时使用 `X-Admin-Secret`。企业租户地基提供以下基础资源，OIDC、飞书、企业微信、钉钉等登录都会接入同一套 Organization / Workspace / Membership / Audit Log 模型。
 
 工作区选择支持三种方式，优先级从高到低：
 
@@ -153,6 +168,8 @@ curl http://localhost:3000/api/tenant/bootstrap \
 - `POST /api/auth/logout`
 - `GET /api/auth/oidc/:providerId/start`
 - `GET /api/auth/oidc/:providerId/callback`
+- `GET /api/auth/oauth/:providerId/start`
+- `GET /api/auth/oauth/:providerId/callback`
 
 主要租户接口：
 

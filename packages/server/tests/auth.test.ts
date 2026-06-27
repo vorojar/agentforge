@@ -11,6 +11,7 @@ describe("Auth", () => {
   let tenant: TenantBootstrapResult;
   const originalFetch = global.fetch;
   const oidcSecretEnv = "OIDC_" + "CLIENT_SECRET";
+  const oauthSecretEnv = "OAUTH_" + "CLIENT_SECRET";
 
   beforeEach(async () => {
     const t = await createTestApp();
@@ -18,12 +19,14 @@ describe("Auth", () => {
     ctx = t.ctx;
     tenant = await ctx.db.ensureDefaultTenant();
     process.env[oidcSecretEnv] = "client-secret-value";
+    process.env[oauthSecretEnv] = "oauth-secret-value";
     await app.ready();
   });
 
   afterEach(() => {
     global.fetch = originalFetch;
     delete process.env[oidcSecretEnv];
+    delete process.env[oauthSecretEnv];
   });
 
   describe("Admin auth", () => {
@@ -243,6 +246,99 @@ describe("Auth", () => {
     });
   });
 
+  describe("Enterprise OAuth auth", () => {
+    it("should expose enabled Feishu, WeCom, and DingTalk providers in auth bootstrap", async () => {
+      const feishu = await createOAuthProvider("feishu", "Feishu");
+      const wecom = await createOAuthProvider("wecom", "WeCom", { claimMapping: { agentId: "1000002" } });
+      const dingtalk = await createOAuthProvider("dingtalk", "DingTalk");
+
+      const res = await app.inject({ method: "GET", url: "/api/auth/bootstrap" });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json().oauthProviders).toEqual([
+        { id: feishu.id, name: "Feishu", provider: "feishu" },
+        { id: wecom.id, name: "WeCom", provider: "wecom" },
+        { id: dingtalk.id, name: "DingTalk", provider: "dingtalk" },
+      ]);
+    });
+
+    it("should create a user session from Feishu callback", async () => {
+      const provider = await createOAuthProvider("feishu", "Feishu");
+      mockFeishuFetch();
+      const start = await app.inject({ method: "GET", url: `/api/auth/oauth/${provider.id}/start?redirect=/dashboard` });
+      const location = new URL(String(start.headers.location));
+      expect(location.origin).toBe("https://accounts.feishu.cn");
+      expect(location.searchParams.get("client_id")).toBe("enterprise-client");
+      expect(location.searchParams.get("redirect_uri")).toBe(`http://localhost/api/auth/oauth/${provider.id}/callback`);
+      expect(String(start.headers["set-cookie"])).toContain("agentforge_oauth_state=");
+
+      const callback = await app.inject({
+        method: "GET",
+        url: `/api/auth/oauth/${provider.id}/callback?code=feishu-code&state=${location.searchParams.get("state")}`,
+        headers: { cookie: String(start.headers["set-cookie"]) },
+      });
+
+      expect(callback.statusCode).toBe(302);
+      expect(callback.headers.location).toBe("/dashboard");
+      expect(String(callback.headers["set-cookie"])).toContain("agentforge_session=");
+      expect((await ctx.db.getUserByEmail("feishu@example.com"))?.displayName).toBe("Feishu User");
+      const logs = await ctx.db.listAuditLogs(tenant.organization.id);
+      expect(logs.map((log) => log.action)).toContain("auth.oauth_login");
+    });
+
+    it("should create a user session from DingTalk callback", async () => {
+      const provider = await createOAuthProvider("dingtalk", "DingTalk");
+      mockDingTalkFetch();
+      const start = await app.inject({ method: "GET", url: `/api/auth/oauth/${provider.id}/start` });
+      const location = new URL(String(start.headers.location));
+      expect(location.origin).toBe("https://login.dingtalk.com");
+      expect(location.searchParams.get("scope")).toBe("openid");
+
+      const callback = await app.inject({
+        method: "GET",
+        url: `/api/auth/oauth/${provider.id}/callback?auth_code=dingtalk-code&state=${location.searchParams.get("state")}`,
+        headers: { cookie: String(start.headers["set-cookie"]) },
+      });
+
+      expect(callback.statusCode).toBe(302);
+      expect((await ctx.db.getUserByEmail("dingtalk@example.com"))?.displayName).toBe("DingTalk User");
+    });
+
+    it("should create a user session from WeCom callback", async () => {
+      const provider = await createOAuthProvider("wecom", "WeCom", { claimMapping: { agentId: "1000002" } });
+      mockWeComFetch();
+      const start = await app.inject({ method: "GET", url: `/api/auth/oauth/${provider.id}/start` });
+      const location = new URL(String(start.headers.location));
+      expect(location.origin).toBe("https://open.work.weixin.qq.com");
+      expect(location.searchParams.get("appid")).toBe("enterprise-client");
+      expect(location.searchParams.get("agentid")).toBe("1000002");
+
+      const callback = await app.inject({
+        method: "GET",
+        url: `/api/auth/oauth/${provider.id}/callback?code=wecom-code&state=${location.searchParams.get("state")}`,
+        headers: { cookie: String(start.headers["set-cookie"]) },
+      });
+
+      expect(callback.statusCode).toBe(302);
+      expect((await ctx.db.getUserByEmail("wecom@example.com"))?.displayName).toBe("WeCom User");
+    });
+
+    it("should reject an invalid OAuth state", async () => {
+      const provider = await createOAuthProvider("feishu", "Feishu");
+      mockFeishuFetch();
+      const start = await app.inject({ method: "GET", url: `/api/auth/oauth/${provider.id}/start` });
+
+      const callback = await app.inject({
+        method: "GET",
+        url: `/api/auth/oauth/${provider.id}/callback?code=feishu-code&state=wrong-state`,
+        headers: { cookie: String(start.headers["set-cookie"]) },
+      });
+
+      expect(callback.statusCode).toBe(401);
+      expect(await ctx.db.getUserByEmail("feishu@example.com")).toBeNull();
+    });
+  });
+
   describe("RBAC", () => {
     it("should allow viewers to read but not mutate workspace resources", async () => {
       const cookie = await loginAsRole("viewer");
@@ -320,6 +416,19 @@ describe("Auth", () => {
     });
   }
 
+  async function createOAuthProvider(provider: "feishu" | "wecom" | "dingtalk", name: string, extra: Partial<IdentityProviderConfig> = {}): Promise<IdentityProviderConfig> {
+    return await ctx.db.createIdentityProvider({
+      organizationId: tenant.organization.id,
+      type: "oauth",
+      provider,
+      name,
+      clientId: "enterprise-client",
+      clientSecretRef: `env:${oauthSecretEnv}`,
+      claimMapping: extra.claimMapping,
+      enabled: true,
+    });
+  }
+
   function mockOidcFetch() {
     global.fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input);
@@ -342,6 +451,59 @@ describe("Auth", () => {
           email_verified: true,
           name: "SSO User",
         });
+      }
+      return new Response("not found", { status: 404 });
+    }) as typeof fetch;
+  }
+
+  function mockFeishuFetch() {
+    global.fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "https://open.feishu.cn/open-apis/authen/v2/oauth/token") {
+        expect(init?.method).toBe("POST");
+        expect(JSON.parse(String(init?.body)).code).toBe("feishu-code");
+        return jsonResponse({ data: { access_token: "feishu-access-token" } });
+      }
+      if (url === "https://open.feishu.cn/open-apis/authen/v1/user_info") {
+        expect(init?.headers).toEqual({ authorization: "Bearer feishu-access-token" });
+        return jsonResponse({ data: { open_id: "ou_123", email: "feishu@example.com", name: "Feishu User" } });
+      }
+      return new Response("not found", { status: 404 });
+    }) as typeof fetch;
+  }
+
+  function mockDingTalkFetch() {
+    global.fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "https://api.dingtalk.com/v1.0/oauth2/userAccessToken") {
+        expect(init?.method).toBe("POST");
+        expect(JSON.parse(String(init?.body)).code).toBe("dingtalk-code");
+        return jsonResponse({ accessToken: "dingtalk-access-token" });
+      }
+      if (url === "https://api.dingtalk.com/v1.0/contact/users/me") {
+        expect(init?.headers).toEqual({ "x-acs-dingtalk-access-token": "dingtalk-access-token" });
+        return jsonResponse({ unionId: "ding-union-id", email: "dingtalk@example.com", nick: "DingTalk User" });
+      }
+      return new Response("not found", { status: 404 });
+    }) as typeof fetch;
+  }
+
+  function mockWeComFetch() {
+    global.fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = new URL(String(input));
+      if (url.origin === "https://qyapi.weixin.qq.com" && url.pathname === "/cgi-bin/gettoken") {
+        expect(url.searchParams.get("corpid")).toBe("enterprise-client");
+        expect(url.searchParams.get("corpsecret")).toBe("oauth-secret-value");
+        return jsonResponse({ errcode: 0, access_token: "wecom-access-token" });
+      }
+      if (url.origin === "https://qyapi.weixin.qq.com" && url.pathname === "/cgi-bin/auth/getuserinfo") {
+        expect(url.searchParams.get("code")).toBe("wecom-code");
+        return jsonResponse({ errcode: 0, UserId: "wecom-user-id", user_ticket: "wecom-ticket" });
+      }
+      if (url.origin === "https://qyapi.weixin.qq.com" && url.pathname === "/cgi-bin/auth/getuserdetail") {
+        expect(init?.method).toBe("POST");
+        expect(JSON.parse(String(init?.body)).user_ticket).toBe("wecom-ticket");
+        return jsonResponse({ errcode: 0, userid: "wecom-user-id", biz_mail: "wecom@example.com", name: "WeCom User" });
       }
       return new Response("not found", { status: 404 });
     }) as typeof fetch;
