@@ -30,6 +30,10 @@
           <el-icon><Connection /></el-icon>
           <span>{{ t("nav.models") }}</span>
         </el-menu-item>
+        <el-menu-item index="/tenants">
+          <el-icon><OfficeBuilding /></el-icon>
+          <span>{{ t("nav.tenants") }}</span>
+        </el-menu-item>
         <el-menu-item index="/tools">
           <el-icon><SetUp /></el-icon>
           <span>{{ t("nav.tools") }}</span>
@@ -99,6 +103,7 @@ import {
   User,
   Connection,
   Collection,
+  OfficeBuilding,
   SetUp,
   MagicStick,
   ChatDotSquare,
@@ -115,6 +120,7 @@ const activeMenu = computed(() => {
   const path = route.path;
   if (path.startsWith("/agents")) return "/agents";
   if (path.startsWith("/knowledge-bases")) return "/knowledge-bases";
+  if (path.startsWith("/tenants")) return "/tenants";
   if (path.startsWith("/sessions")) return "/sessions";
   return path;
 });
@@ -124,6 +130,7 @@ const pageTitles = {
   "/agents": "page.agentManagement",
   "/knowledge-bases": "page.knowledgeManagement",
   "/providers": "page.modelManagement",
+  "/tenants": "page.tenantManagement",
   "/tools": "page.toolRegistry",
   "/skills": "page.skillManagement",
   "/sessions": "page.conversationHistory",

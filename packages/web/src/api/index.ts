@@ -14,6 +14,26 @@ export const oauthStartUrl = (providerId: string, redirect = "/dashboard") => `/
 export const getCurrentUser = () => api.get("/auth/me");
 export const logoutApi = () => api.post("/auth/logout");
 
+// --- Tenant Administration ---
+export const getTenantBootstrap = () => api.get("/tenant/bootstrap");
+export const getOrganizations = () => api.get("/organizations");
+export const createOrganizationApi = (data: { name: string; slug?: string }) => api.post("/organizations", data);
+export const getWorkspaces = (organizationId: string) => api.get(`/organizations/${organizationId}/workspaces`);
+export const createWorkspaceApi = (organizationId: string, data: { name: string; slug?: string }) => api.post(`/organizations/${organizationId}/workspaces`, data);
+export const getUsersApi = () => api.get("/users");
+export const createUserApi = (data: { email: string; displayName: string; avatarUrl?: string }) => api.post("/users", data);
+export const getMemberships = (organizationId: string, workspaceId?: string) =>
+  api.get(`/organizations/${organizationId}/memberships`, { params: workspaceId ? { workspaceId } : {} });
+export const upsertMembershipApi = (
+  organizationId: string,
+  data: { userId: string; workspaceId?: string | null; role: string; status?: string },
+) => api.post(`/organizations/${organizationId}/memberships`, data);
+export const getIdentityProviders = (organizationId: string) => api.get(`/organizations/${organizationId}/identity-providers`);
+export const createIdentityProviderApi = (organizationId: string, data: Record<string, unknown>) =>
+  api.post(`/organizations/${organizationId}/identity-providers`, data);
+export const getAuditLogs = (organizationId: string, workspaceId?: string, limit = 100) =>
+  api.get(`/organizations/${organizationId}/audit-logs`, { params: { ...(workspaceId ? { workspaceId } : {}), limit } });
+
 // --- Agents ---
 export const getAgents = () => api.get("/agents");
 export const getAgent = (id: string) => api.get(`/agents/${id}`);

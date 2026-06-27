@@ -104,6 +104,7 @@ OAuth provider 配置约定：
 | **Skills** | 卡片列表 / 文件编辑器（创建/删除/重命名 Skill 及其文件和文件夹） |
 | **Sessions** | 会话列表（首条消息预览、token 统计），Session Detail 紧凑展示工具调用 |
 | **Knowledge** | Agent 编辑页 → Knowledge Tab：上传文档、查看/编辑原始内容（自动重切片）、重命名/删除 |
+| **Tenants** | 管理 Organization、Workspace、User、Membership、Identity Provider 和 Audit Log，用于私有云客户接入企业身份系统与权限治理 |
 | **Test Chat** | Agent 编辑页 → Test Chat Tab：全屏聊天窗口、工具栏固定底部，支持流式 + 图片，显示 token 用量 + 思考过程 |
 
 ## Skill 系统

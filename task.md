@@ -26,7 +26,7 @@ Ship AgentForge as a private-cloud enterprise edition that a company can deploy,
 1. Done: production deployment preflight and Docker env hardening.
 2. Done: OIDC generic SSO for Google Workspace, Microsoft Entra ID, Okta/Auth0/Keycloak, and GitHub Enterprise-style providers.
 3. Done: Feishu, WeCom, and DingTalk enterprise login connectors on the same identity-provider model.
-4. Pending: tenant administration UI for organizations, workspaces, users, memberships, IdPs, and audit logs.
+4. Done: tenant administration UI for organizations, workspaces, users, memberships, IdPs, and audit logs.
 5. Done: RBAC middleware and route tests for owner/admin/builder/viewer.
 6. Pending: audit coverage for auth, membership, provider, API key, model, tool, and knowledge-base changes.
 7. Pending: MySQL production factory, migration verification, backup/restore, and upgrade runbook.
@@ -38,6 +38,7 @@ Ship AgentForge as a private-cloud enterprise edition that a company can deploy,
 - Done in this target: `pnpm preflight:prod` production gate with fail/pass tests, Docker env hardening, README launch preflight docs.
 - Done in this target: generic OIDC start/callback, state cookie validation, token/userinfo flow, user provisioning, session creation, login-page SSO buttons, audit log, and browser redirect smoke to Google OAuth.
 - Done in this target: Feishu, WeCom, and DingTalk OAuth start/callback flows, provider-specific token/userinfo adapters, state cookie validation, user provisioning, session creation, login-page SSO buttons, audit log, and README setup docs.
+- Done in this target: Tenants UI route/nav/API wrappers/page for Organization, Workspace, User, Membership, Identity Provider, and Audit Log administration.
 - Done in this target: admin API RBAC for logged-in users, with Admin Secret emergency bypass preserved; route tests cover viewer read-only access, builder workspace writes, cross-workspace denial, and admin-only user mutations.
 - Latest verification: `./scripts/verify.sh` passed without Vite chunk size warnings or punycode deprecation warnings.
-- Latest browser smoke: `http://localhost:5173/login` -> demo login -> dashboard -> left-bottom user menu -> logout -> login page; login page shows Google Workspace + Feishu SSO, Feishu button redirects to `/api/auth/oauth/:providerId/start` and then the Feishu authorization URL, with no console error/warn entries.
+- Latest browser smoke: `http://localhost:5173/tenants` -> login -> tenant page -> create workspace -> create user -> assign member -> create IdP -> audit logs; login page also shows Google Workspace + Feishu SSO, Feishu button redirects to `/api/auth/oauth/:providerId/start` and then the Feishu authorization URL, with no console error/warn entries.

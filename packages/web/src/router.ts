@@ -43,6 +43,11 @@ const routes = [
     component: () => import("./views/Providers.vue"),
   },
   {
+    path: "/tenants",
+    name: "TenantManagement",
+    component: () => import("./views/TenantManagement.vue"),
+  },
+  {
     path: "/tools",
     name: "ToolList",
     component: () => import("./views/ToolList.vue"),
