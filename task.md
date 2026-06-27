@@ -1,32 +1,39 @@
-# P0 Enterprise Tenant Foundation
+# AgentForge Private-Cloud Launch Target
 
 ## Goal
 
-Build the first SaaS/private-cloud foundation for AgentForge: organizations, workspaces, users, memberships, identity provider configuration, and audit logs.
-Scope core runtime data to workspaces so private-cloud deployments do not mix tenant data.
+Ship AgentForge as a private-cloud enterprise edition that a company can deploy, secure, connect to its identity system, operate, upgrade, and evaluate without engineering help from us on every step.
 
 ## Non-Goals
 
-- Do not implement OIDC, SAML, Feishu, WeCom, DingTalk, Google, Microsoft, or GitHub login flows in this pass.
-- Do not change the current `X-Admin-Secret` admin path until the tenant foundation is proven.
+- Do not build a hosted multi-tenant cloud in this pass.
+- Do not add billing, payments, or public signup.
+- Do not remove `X-Admin-Secret` until automation and emergency-maintenance alternatives are proven.
 
-## Acceptance
+## Launch Acceptance
 
-- SQLite and MySQL schemas contain tenant foundation tables and indexes.
-- `DatabaseAdapter` exposes typed methods for organizations, workspaces, users, memberships, identity providers, and audit logs.
-- Agent, Provider/Channel, HTTP Tool, Skill Category, Knowledge Base, Session, Usage, and Proxy Usage operations are scoped by workspace.
-- SQLite tests prove default tenant bootstrapping is idempotent, membership roles persist, identity provider config is stored without raw secrets, and audit logs are queryable.
-- SQLite tests prove workspace isolation for core runtime data.
-- Admin API supports `X-Workspace-Id`, `workspaceId` query, or `workspaceId` body selection, with default workspace fallback.
-- Admin route tests prove cross-workspace resource access returns 404.
-- Admin API exposes tenant foundation read/create endpoints for the next UI/auth work.
-- `./scripts/verify.sh` passes.
+- Production deployment preflight blocks unsafe env defaults before a customer goes live.
+- Browser admin login works with local bootstrap credentials and at least one enterprise SSO path.
+- Organization, workspace, member, role, identity provider, and audit log administration is available in the UI.
+- RBAC is enforced on admin APIs, not just displayed in the UI.
+- Sensitive operations create audit logs with actor, target, and metadata without raw secrets.
+- Deployment, backup, restore, upgrade, and rollback docs are explicit enough for private-cloud operators.
+- `./scripts/verify.sh` passes without Vite chunk warnings or Node deprecation warnings.
+- Real browser smoke covers login, user menu, tenant/member admin, and logout.
 
-## P0 Backlog
+## P0 Tasks
 
-1. Done: tenant data model, identity provider config abstraction, admin API, audit log base.
-2. Done: workspace scoping migration for Agents, Tools, Skill Categories, Providers, Channels, Knowledge Bases, Sessions, Usage, and Proxy Usage.
-3. Auth runtime: local admin, OIDC, SAML.
-4. China connectors: Feishu first, then WeCom and DingTalk.
-5. Global connectors: Microsoft Entra ID, Google Workspace, Okta/Auth0/Keycloak via OIDC/SAML; GitHub as optional developer login.
-6. Frontend workspace switcher and tenant administration screens.
+1. Done: production deployment preflight and Docker env hardening.
+2. Pending: OIDC generic SSO for Google Workspace, Microsoft Entra ID, Okta/Auth0/Keycloak, and GitHub Enterprise.
+3. Pending: Feishu, WeCom, and DingTalk enterprise login connectors on the same identity-provider model.
+4. Pending: tenant administration UI for organizations, workspaces, users, memberships, IdPs, and audit logs.
+5. Pending: RBAC middleware and route tests for owner/admin/builder/viewer.
+6. Pending: audit coverage for auth, membership, provider, API key, model, tool, and knowledge-base changes.
+7. Pending: MySQL production factory, migration verification, backup/restore, and upgrade runbook.
+8. Pending: final release smoke, screenshots, README launch guide, and sales demo checklist.
+
+## Current Evidence
+
+- Done: tenant data model, workspace scoping, local admin login, session cookies, demo credentials, i18n, warning cleanup.
+- Done in this target: `pnpm preflight:prod` production gate with fail/pass tests, Docker env hardening, README launch preflight docs.
+- Latest verification: `./scripts/verify.sh` passed.

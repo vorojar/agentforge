@@ -11,6 +11,7 @@
     "dev": "turbo run dev --parallel",
     "dev:server": "pnpm --filter @agentforge/server dev",
     "dev:web": "pnpm --filter @agentforge/web dev",
+    "preflight:prod": "tsx scripts/preflight-prod.ts",
     "start": "node packages/server/dist/index.js",
     "clean": "turbo run clean"
   },
