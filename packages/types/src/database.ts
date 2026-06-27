@@ -15,6 +15,7 @@ import type { ProviderChannel, ProxyUsageLog, ChannelStats } from "./provider-ch
 import type {
   AuditLog,
   AuditLogInput,
+  AuthSession,
   IdentityProviderConfig,
   IdentityProviderCreateInput,
   Membership,
@@ -24,6 +25,7 @@ import type {
   TenantBootstrapResult,
   UserAccount,
   UserCreateInput,
+  UserPassword,
   Workspace,
   WorkspaceCreateInput,
 } from "./tenant.js";
@@ -77,6 +79,13 @@ export interface DatabaseAdapter {
   getUser(id: string): Promise<UserAccount | null>;
   getUserByEmail(email: string): Promise<UserAccount | null>;
   listUsers(): Promise<UserAccount[]>;
+  setUserPassword(userId: string, passwordHash: string): Promise<UserPassword>;
+  getUserPassword(userId: string): Promise<UserPassword | null>;
+  updateUserLastLogin(userId: string): Promise<void>;
+  createAuthSession(userId: string, tokenHash: string, expiresAt: string): Promise<AuthSession>;
+  getAuthSessionByHash(tokenHash: string): Promise<AuthSession | null>;
+  deleteAuthSessionByHash(tokenHash: string): Promise<boolean>;
+  deleteExpiredAuthSessions(): Promise<void>;
   upsertMembership(input: MembershipInput): Promise<Membership>;
   listMemberships(organizationId: string, workspaceId?: string | null): Promise<Membership[]>;
   createIdentityProvider(input: IdentityProviderCreateInput): Promise<IdentityProviderConfig>;

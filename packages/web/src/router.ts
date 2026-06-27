@@ -1,6 +1,13 @@
 import { createRouter, createWebHistory } from "vue-router";
+import { ensureCurrentUser } from "./auth";
 
 const routes = [
+  {
+    path: "/login",
+    name: "Login",
+    meta: { public: true },
+    component: () => import("./views/Login.vue"),
+  },
   {
     path: "/",
     redirect: "/dashboard",
@@ -60,4 +67,11 @@ const routes = [
 export const router = createRouter({
   history: createWebHistory(),
   routes,
+});
+
+router.beforeEach(async (to) => {
+  if (to.meta.public) return true;
+  const user = await ensureCurrentUser();
+  if (!user) return { path: "/login", query: { redirect: to.fullPath } };
+  return true;
 });

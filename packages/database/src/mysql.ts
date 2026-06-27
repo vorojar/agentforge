@@ -41,6 +41,7 @@ import type {
   ModelCapabilities,
   AuditLog,
   AuditLogInput,
+  AuthSession,
   IdentityProviderConfig,
   IdentityProviderCreateInput,
   Membership,
@@ -50,6 +51,7 @@ import type {
   TenantBootstrapResult,
   UserAccount,
   UserCreateInput,
+  UserPassword,
   Workspace,
   WorkspaceCreateInput,
 } from "@agentforge/types";
@@ -262,6 +264,60 @@ export class MySQLAdapter implements DatabaseAdapter {
     return rows.map((row) => this.mapUser(row));
   }
 
+  async setUserPassword(userId: string, passwordHash: string): Promise<UserPassword> {
+    const now = this.nowStr();
+    await this.pool.execute(
+      `INSERT INTO user_passwords (user_id, password_hash, created_at, updated_at)
+       VALUES (?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE password_hash = VALUES(password_hash), updated_at = VALUES(updated_at)`,
+      [userId, passwordHash, now, now],
+    );
+    return (await this.getUserPassword(userId))!;
+  }
+
+  async getUserPassword(userId: string): Promise<UserPassword | null> {
+    const [rows] = await this.pool.execute<RowDataPacket[]>("SELECT * FROM user_passwords WHERE user_id = ?", [userId]);
+    return rows.length > 0 ? this.mapUserPassword(rows[0]) : null;
+  }
+
+  async updateUserLastLogin(userId: string): Promise<void> {
+    const now = this.nowStr();
+    await this.pool.execute("UPDATE users SET last_login_at = ?, updated_at = ? WHERE id = ?", [now, now, userId]);
+  }
+
+  async createAuthSession(userId: string, tokenHash: string, expiresAt: string): Promise<AuthSession> {
+    const id = uuidv4();
+    const now = this.nowStr();
+    const expires = this.dateTimeStr(expiresAt);
+    await this.pool.execute(
+      "INSERT INTO auth_sessions (id, user_id, token_hash, expires_at, created_at, last_seen_at) VALUES (?, ?, ?, ?, ?, ?)",
+      [id, userId, tokenHash, expires, now, now],
+    );
+    const [rows] = await this.pool.execute<RowDataPacket[]>("SELECT * FROM auth_sessions WHERE id = ?", [id]);
+    return this.mapAuthSession(rows[0]);
+  }
+
+  async getAuthSessionByHash(tokenHash: string): Promise<AuthSession | null> {
+    const [rows] = await this.pool.execute<RowDataPacket[]>("SELECT * FROM auth_sessions WHERE token_hash = ?", [tokenHash]);
+    if (rows.length === 0) return null;
+    const session = this.mapAuthSession(rows[0]);
+    if (Date.parse(session.expiresAt) <= Date.now()) {
+      await this.deleteAuthSessionByHash(tokenHash);
+      return null;
+    }
+    await this.pool.execute("UPDATE auth_sessions SET last_seen_at = ? WHERE id = ?", [this.nowStr(), session.id]);
+    return session;
+  }
+
+  async deleteAuthSessionByHash(tokenHash: string): Promise<boolean> {
+    const [res] = await this.pool.execute<ResultSetHeader>("DELETE FROM auth_sessions WHERE token_hash = ?", [tokenHash]);
+    return res.affectedRows > 0;
+  }
+
+  async deleteExpiredAuthSessions(): Promise<void> {
+    await this.pool.execute("DELETE FROM auth_sessions WHERE expires_at <= ?", [this.nowStr()]);
+  }
+
   async upsertMembership(input: MembershipInput): Promise<Membership> {
     const workspaceId = input.workspaceId ?? null;
     const [rows] = await this.pool.execute<RowDataPacket[]>(
@@ -394,6 +450,26 @@ export class MySQLAdapter implements DatabaseAdapter {
       lastLoginAt: row.last_login_at ? String(row.last_login_at) : null,
       createdAt: String(row.created_at),
       updatedAt: String(row.updated_at),
+    };
+  }
+
+  private mapUserPassword(row: RowDataPacket): UserPassword {
+    return {
+      userId: row.user_id,
+      passwordHash: row.password_hash,
+      createdAt: String(row.created_at),
+      updatedAt: String(row.updated_at),
+    };
+  }
+
+  private mapAuthSession(row: RowDataPacket): AuthSession {
+    return {
+      id: row.id,
+      userId: row.user_id,
+      tokenHash: row.token_hash,
+      expiresAt: String(row.expires_at),
+      createdAt: String(row.created_at),
+      lastSeenAt: String(row.last_seen_at),
     };
   }
 
@@ -1341,7 +1417,11 @@ export class MySQLAdapter implements DatabaseAdapter {
   }
 
   private nowStr(): string {
-    const d = new Date();
+    return this.dateTimeStr(new Date().toISOString());
+  }
+
+  private dateTimeStr(value: string): string {
+    const d = new Date(value);
     const offset = 8 * 60;
     const local = new Date(d.getTime() + offset * 60000);
     return local.toISOString().slice(0, 19).replace("T", " ");

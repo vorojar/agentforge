@@ -35,6 +35,24 @@ CREATE TABLE IF NOT EXISTS users (
   updated_at TEXT DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS user_passwords (
+  user_id TEXT PRIMARY KEY,
+  password_hash TEXT NOT NULL,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS auth_sessions (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  token_hash TEXT NOT NULL UNIQUE,
+  expires_at TEXT NOT NULL,
+  created_at TEXT DEFAULT (datetime('now')),
+  last_seen_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS memberships (
   id TEXT PRIMARY KEY,
   organization_id TEXT NOT NULL,
@@ -272,6 +290,9 @@ export const SQLITE_INDEXES = [
   "CREATE INDEX IF NOT EXISTS idx_memberships_org ON memberships(organization_id)",
   "CREATE INDEX IF NOT EXISTS idx_memberships_workspace ON memberships(workspace_id)",
   "CREATE INDEX IF NOT EXISTS idx_memberships_user ON memberships(user_id)",
+  "CREATE INDEX IF NOT EXISTS idx_auth_sessions_user ON auth_sessions(user_id)",
+  "CREATE INDEX IF NOT EXISTS idx_auth_sessions_hash ON auth_sessions(token_hash)",
+  "CREATE INDEX IF NOT EXISTS idx_auth_sessions_expires ON auth_sessions(expires_at)",
   "CREATE INDEX IF NOT EXISTS idx_identity_providers_org ON identity_providers(organization_id)",
   "CREATE INDEX IF NOT EXISTS idx_audit_logs_org_created ON audit_logs(organization_id, created_at)",
   "CREATE INDEX IF NOT EXISTS idx_audit_logs_workspace_created ON audit_logs(workspace_id, created_at)",
@@ -387,6 +408,13 @@ export const SQLITE_INCREMENTAL_MIGRATIONS = [
       `CREATE TABLE IF NOT EXISTS workspace_skill_categories (workspace_id TEXT NOT NULL, skill_name TEXT NOT NULL, category TEXT NOT NULL DEFAULT '', updated_at TEXT DEFAULT (datetime('now')), PRIMARY KEY (workspace_id, skill_name))`,
     ],
   },
+  {
+    name: "add_local_auth_tables",
+    up: [
+      `CREATE TABLE IF NOT EXISTS user_passwords (user_id TEXT PRIMARY KEY, password_hash TEXT NOT NULL, created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')))`,
+      `CREATE TABLE IF NOT EXISTS auth_sessions (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, token_hash TEXT NOT NULL UNIQUE, expires_at TEXT NOT NULL, created_at TEXT DEFAULT (datetime('now')), last_seen_at TEXT DEFAULT (datetime('now')))`,
+    ],
+  },
 ];
 
 // ==================== MySQL ====================
@@ -419,6 +447,24 @@ CREATE TABLE IF NOT EXISTS users (
   last_login_at DATETIME,
   created_at DATETIME DEFAULT NOW(),
   updated_at DATETIME DEFAULT NOW()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS user_passwords (
+  user_id VARCHAR(36) PRIMARY KEY,
+  password_hash TEXT NOT NULL,
+  created_at DATETIME DEFAULT NOW(),
+  updated_at DATETIME DEFAULT NOW(),
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS auth_sessions (
+  id VARCHAR(36) PRIMARY KEY,
+  user_id VARCHAR(36) NOT NULL,
+  token_hash VARCHAR(64) NOT NULL UNIQUE,
+  expires_at DATETIME NOT NULL,
+  created_at DATETIME DEFAULT NOW(),
+  last_seen_at DATETIME DEFAULT NOW(),
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS memberships (
@@ -658,6 +704,9 @@ export const MYSQL_INDEXES = [
   "CREATE INDEX idx_memberships_org ON memberships(organization_id)",
   "CREATE INDEX idx_memberships_workspace ON memberships(workspace_id)",
   "CREATE INDEX idx_memberships_user ON memberships(user_id)",
+  "CREATE INDEX idx_auth_sessions_user ON auth_sessions(user_id)",
+  "CREATE INDEX idx_auth_sessions_hash ON auth_sessions(token_hash)",
+  "CREATE INDEX idx_auth_sessions_expires ON auth_sessions(expires_at)",
   "CREATE INDEX idx_identity_providers_org ON identity_providers(organization_id)",
   "CREATE INDEX idx_audit_logs_org_created ON audit_logs(organization_id, created_at)",
   "CREATE INDEX idx_audit_logs_workspace_created ON audit_logs(workspace_id, created_at)",
@@ -714,4 +763,6 @@ export const MYSQL_ALTERS = [
   "ALTER TABLE provider_channels ADD COLUMN workspace_id VARCHAR(36)",
   "ALTER TABLE proxy_usage_logs ADD COLUMN workspace_id VARCHAR(36)",
   "CREATE TABLE IF NOT EXISTS workspace_skill_categories (workspace_id VARCHAR(36) NOT NULL, skill_name VARCHAR(255) NOT NULL, category VARCHAR(100) NOT NULL DEFAULT '', updated_at DATETIME DEFAULT NOW(), PRIMARY KEY (workspace_id, skill_name)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+  "CREATE TABLE IF NOT EXISTS user_passwords (user_id VARCHAR(36) PRIMARY KEY, password_hash TEXT NOT NULL, created_at DATETIME DEFAULT NOW(), updated_at DATETIME DEFAULT NOW()) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+  "CREATE TABLE IF NOT EXISTS auth_sessions (id VARCHAR(36) PRIMARY KEY, user_id VARCHAR(36) NOT NULL, token_hash VARCHAR(64) NOT NULL UNIQUE, expires_at DATETIME NOT NULL, created_at DATETIME DEFAULT NOW(), last_seen_at DATETIME DEFAULT NOW()) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
 ];

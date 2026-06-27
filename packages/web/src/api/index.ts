@@ -3,16 +3,14 @@ import axios from "axios";
 const api = axios.create({
   baseURL: "/api",
   headers: { "Content-Type": "application/json" },
+  withCredentials: true,
 });
 
-// Admin auth interceptor
-api.interceptors.request.use((config) => {
-  const secret = localStorage.getItem("adminSecret");
-  if (secret) {
-    config.headers["X-Admin-Secret"] = secret;
-  }
-  return config;
-});
+// --- Auth ---
+export const bootstrapAuth = () => api.get("/auth/bootstrap");
+export const loginApi = (data: { email: string; password: string }) => api.post("/auth/login", data);
+export const getCurrentUser = () => api.get("/auth/me");
+export const logoutApi = () => api.post("/auth/logout");
 
 // --- Agents ---
 export const getAgents = () => api.get("/agents");

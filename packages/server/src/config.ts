@@ -6,6 +6,9 @@ export interface AppConfig {
   llmBaseUrl?: string;
   defaultModel: string;
   adminSecret: string;
+  adminEmail: string;
+  adminPassword: string;
+  sessionTtlDays: number;
 }
 
 export function loadConfig(): AppConfig {
@@ -13,6 +16,11 @@ export function loadConfig(): AppConfig {
   if (!llmApiKey) {
     throw new Error("LLM_API_KEY environment variable is required");
   }
+
+  const adminPassword = process.env.ADMIN_PASSWORD || (() => {
+    if (process.env.NODE_ENV === "production") throw new Error("ADMIN_PASSWORD is required in production");
+    return "admin";
+  })();
 
   return {
     port: parseInt(process.env.PORT ?? "3000", 10),
@@ -25,5 +33,8 @@ export function loadConfig(): AppConfig {
       if (process.env.NODE_ENV === 'production') throw new Error('ADMIN_SECRET is required in production');
       return 'admin';
     })(),
+    adminEmail: process.env.ADMIN_EMAIL ?? "admin@example.com",
+    adminPassword,
+    sessionTtlDays: parseInt(process.env.AUTH_SESSION_DAYS ?? "7", 10),
   };
 }

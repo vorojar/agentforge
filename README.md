@@ -26,7 +26,7 @@
 
 ```bash
 cp .env.example .env
-# 编辑 .env，填入 LLM API Key 和 ADMIN_SECRET
+# 编辑 .env，填入 LLM API Key，并在生产环境设置 ADMIN_EMAIL / ADMIN_PASSWORD
 
 cd docker
 docker compose up --build -d
@@ -54,7 +54,10 @@ pnpm dev
 | `LLM_BASE_URL` | — | OpenAI 兼容 API 地址（豆包、DeepSeek 等） |
 | `DEFAULT_MODEL` | `claude-sonnet-4-20250514` | 默认模型 |
 | `DB_PATH` | `data/agentforge.db` | SQLite 数据库文件路径；兼容读取旧变量 `DATABASE_URL` |
-| `ADMIN_SECRET` | `admin` | 管理后台密钥（生产环境必须修改） |
+| `ADMIN_EMAIL` | `admin@example.com` | 首个本地管理员账号 |
+| `ADMIN_PASSWORD` | `admin` | 首个本地管理员密码；生产环境必须设置 |
+| `AUTH_SESSION_DAYS` | `7` | 登录会话有效天数 |
+| `ADMIN_SECRET` | `admin` | 管理 API 兼容兜底密钥；生产环境必须设置或迁移到正式 IdP |
 | `PORT` | `3000` | 服务端口 |
 | `CORS_ORIGIN` | `true` | CORS 允许的域名（生产环境设置具体域名） |
 | `LOG_LEVEL` | `info` | 日志级别 |
@@ -62,6 +65,8 @@ pnpm dev
 | `VOLCANO_EMBEDDING_MODEL` | `doubao-embedding-vision-250615` | Embedding 模型 |
 
 ## 管理后台
+
+后台使用本地账号登录，首次启动会自动创建 `ADMIN_EMAIL` 指定的管理员并加入默认 Organization / Workspace。登录后浏览器使用 HttpOnly session cookie 访问管理 API；`X-Admin-Secret` 只保留给自动化、迁移和紧急维护。
 
 | 页面 | 功能 |
 |------|------|
@@ -112,9 +117,9 @@ skills/
 
 ## API
 
-### 管理接口（Admin Secret 认证）
+### 管理接口（登录会话 / 兼容 Admin Secret）
 
-管理端请求使用 `X-Admin-Secret`。P0 企业租户地基提供以下基础资源，后续 OIDC/SAML/飞书/企业微信/钉钉/GitHub 登录都会接入同一套 Organization / Workspace / Membership / Audit Log 模型。
+管理端浏览器请求使用登录 Cookie。自动化脚本仍可临时使用 `X-Admin-Secret`。P0 企业租户地基提供以下基础资源，后续 OIDC/SAML/飞书/企业微信/钉钉/GitHub 登录都会接入同一套 Organization / Workspace / Membership / Audit Log 模型。
 
 工作区选择支持三种方式，优先级从高到低：
 
@@ -128,6 +133,12 @@ skills/
 curl http://localhost:3000/api/tenant/bootstrap \
   -H "X-Admin-Secret: your-admin-secret"
 ```
+
+本地账号接口：
+
+- `POST /api/auth/login`
+- `GET /api/auth/me`
+- `POST /api/auth/logout`
 
 主要租户接口：
 
@@ -161,7 +172,7 @@ curl -X POST http://localhost:3000/api/chat \
   -d '{"message": "描述这张图", "images": [{"type": "base64", "mediaType": "image/jpeg", "data": "..."}]}'
 ```
 
-### 管理接口（X-Admin-Secret 认证）
+### 管理接口（登录会话或 X-Admin-Secret）
 
 | 方法 | 路径 | 说明 |
 |------|------|------|

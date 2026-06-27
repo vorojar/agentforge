@@ -82,8 +82,9 @@ Review matches manually. Some English text is intentional, such as `AgentForge`,
 
 ## API And Runtime Rules
 
-- Admin routes use `X-Admin-Secret`; public chat routes use API key auth.
+- Admin routes should authenticate with local/IdP login sessions; `X-Admin-Secret` is only a compatibility and emergency-maintenance fallback. Public chat routes use API key auth.
 - Do not log API keys, admin secrets, bearer tokens, or raw provider credentials.
+- Local passwords and session tokens must never be stored raw. Store password hashes and session token hashes only.
 - Validate tenant membership roles and IdP types at the API boundary before writing them.
 - Admin API detail/update/delete routes must verify the resource belongs to the resolved workspace (`X-Workspace-Id`, `workspaceId` query/body, then default workspace).
 - Sensitive tenant/admin changes should create audit logs.

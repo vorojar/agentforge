@@ -33,6 +33,9 @@ export function createTestConfig(): AppConfig {
     llmApiKey: "test-key",
     defaultModel: "mock-model",
     adminSecret: "test-secret",
+    adminEmail: "admin@example.com",
+    adminPassword: "admin-pass",
+    sessionTtlDays: 7,
   };
 }
 

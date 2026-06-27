@@ -46,6 +46,26 @@ export interface UserCreateInput {
   avatarUrl?: string;
 }
 
+export interface UserPassword {
+  userId: string;
+  passwordHash: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AuthSession {
+  id: string;
+  userId: string;
+  tokenHash: string;
+  expiresAt: string;
+  createdAt: string;
+  lastSeenAt: string;
+}
+
+export interface AuthenticatedUser extends UserAccount {
+  memberships: Membership[];
+}
+
 export interface Membership {
   id: string;
   organizationId: string;

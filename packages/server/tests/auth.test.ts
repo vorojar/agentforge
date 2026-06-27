@@ -44,6 +44,71 @@ describe("Auth", () => {
 
       expect(res.statusCode).toBe(401);
     });
+
+    it("should pass admin routes with a logged-in session cookie", async () => {
+      const login = await app.inject({
+        method: "POST",
+        url: "/api/auth/login",
+        payload: { email: "admin@example.com", password: "admin-pass" },
+      });
+
+      expect(login.statusCode).toBe(200);
+      expect(login.json().user.email).toBe("admin@example.com");
+      const cookie = login.headers["set-cookie"];
+      expect(cookie).toContain("agentforge_session=");
+
+      const res = await app.inject({
+        method: "GET",
+        url: "/api/agents",
+        headers: { cookie: String(cookie) },
+      });
+
+      expect(res.statusCode).toBe(200);
+    });
+
+    it("should reject wrong local login password", async () => {
+      const res = await app.inject({
+        method: "POST",
+        url: "/api/auth/login",
+        payload: { email: "admin@example.com", password: "bad-pass" },
+      });
+
+      expect(res.statusCode).toBe(401);
+    });
+
+    it("should normalize local login email", async () => {
+      const res = await app.inject({
+        method: "POST",
+        url: "/api/auth/login",
+        payload: { email: " Admin@Example.COM ", password: "admin-pass" },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json().user.email).toBe("admin@example.com");
+    });
+
+    it("should clear a session on logout", async () => {
+      const login = await app.inject({
+        method: "POST",
+        url: "/api/auth/login",
+        payload: { email: "admin@example.com", password: "admin-pass" },
+      });
+      const cookie = String(login.headers["set-cookie"]);
+
+      const logout = await app.inject({
+        method: "POST",
+        url: "/api/auth/logout",
+        headers: { cookie },
+      });
+      expect(logout.statusCode).toBe(200);
+
+      const res = await app.inject({
+        method: "GET",
+        url: "/api/agents",
+        headers: { cookie },
+      });
+      expect(res.statusCode).toBe(401);
+    });
   });
 
   describe("API key auth", () => {

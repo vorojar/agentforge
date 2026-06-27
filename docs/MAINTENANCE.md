@@ -76,6 +76,17 @@ When adding SaaS/private-cloud capabilities:
 8. Admin APIs should resolve workspace from `X-Workspace-Id`, `workspaceId` query, or body `workspaceId`; if omitted, use the default workspace.
 9. Detail/update/delete routes must verify the resource belongs to the resolved workspace before returning data or mutating state.
 
+## Auth Checklist
+
+When changing admin authentication:
+
+1. Keep browser admin access on login sessions, not user-entered Admin Secret.
+2. Keep `X-Admin-Secret` only as a documented compatibility/emergency path.
+3. Store local passwords with salted hashes only; store session token hashes only.
+4. Verify `/api/auth/login`, `/api/auth/me`, `/api/auth/logout`, and at least one protected admin route.
+5. Browser-test logout: protected routes should redirect to `/login` after logout.
+6. Make user identity visible in the UI and keep it out of logs.
+
 ## Warning Regression Checklist
 
 These warnings were intentionally cleaned up and should stay gone:

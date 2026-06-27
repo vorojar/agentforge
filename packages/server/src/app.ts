@@ -19,6 +19,8 @@ import { providerRoutes } from "./routes/providers.js";
 import { knowledgeRoutes } from "./routes/knowledge.js";
 import { proxyRoutes } from "./routes/proxy.js";
 import { tenantRoutes } from "./routes/tenants.js";
+import { authRoutes } from "./routes/auth.js";
+import { resolveCurrentUser } from "./local-auth.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 
@@ -27,7 +29,7 @@ export function createApp(ctx: AppContext) {
     logger: {
       level: process.env.LOG_LEVEL || "info",
       redact: {
-        paths: ["req.headers.authorization", "req.headers['x-admin-secret']"],
+        paths: ["req.headers.authorization", "req.headers.cookie", "req.headers['x-admin-secret']"],
         remove: true,
       },
     },
@@ -63,6 +65,7 @@ export function createApp(ctx: AppContext) {
 
   // Provider proxy routes (no admin auth, uses channel key auth)
   fastify.register(proxyRoutes, { ctx });
+  fastify.register(authRoutes, { ctx });
 
   // Chat routes — API key auth applied directly on scope
   fastify.register(async (scope) => {
@@ -98,9 +101,11 @@ export function createApp(ctx: AppContext) {
   fastify.register(async (scope) => {
     scope.addHook("onRequest", async (request, reply) => {
       const secret = request.headers["x-admin-secret"];
-      if (secret !== ctx.config.adminSecret) {
-        return reply.code(401).send({ error: "Unauthorized: invalid admin secret" });
-      }
+      if (secret === ctx.config.adminSecret) return;
+
+      const user = await resolveCurrentUser(request, ctx);
+      if (!user) return reply.code(401).send({ error: "Unauthorized: login required" });
+      request.currentUser = user;
     });
 
     scope.register(agentRoutes, { ctx });

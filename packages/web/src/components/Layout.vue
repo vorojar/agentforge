@@ -6,6 +6,7 @@
         <span class="logo-text">AgentForge</span>
       </div>
       <el-menu
+        class="side-menu"
         :default-active="activeMenu"
         background-color="#0f172a"
         text-color="#94a3b8"
@@ -42,6 +43,25 @@
           <span>{{ t("nav.sessions") }}</span>
         </el-menu-item>
       </el-menu>
+      <el-dropdown trigger="click" placement="top-start" @command="handleUserCommand">
+        <button class="user-card">
+          <span class="user-avatar">{{ userInitials }}</span>
+          <span class="user-meta">
+            <span class="user-name">{{ currentUser?.displayName || currentUser?.email }}</span>
+            <span class="user-role">{{ primaryRole }}</span>
+          </span>
+          <el-icon class="user-more"><MoreFilled /></el-icon>
+        </button>
+        <template #dropdown>
+          <el-dropdown-menu>
+            <el-dropdown-item disabled>{{ currentUser?.email }}</el-dropdown-item>
+            <el-dropdown-item divided command="logout">
+              <el-icon><SwitchButton /></el-icon>
+              {{ t("auth.logout") }}
+            </el-dropdown-item>
+          </el-dropdown-menu>
+        </template>
+      </el-dropdown>
     </el-aside>
     <el-container>
       <el-header class="app-header">
@@ -61,9 +81,6 @@
               :value="option.value"
             />
           </el-select>
-          <el-button size="small" @click="showSettings = true">
-            <el-icon><Setting /></el-icon>
-          </el-button>
         </div>
       </el-header>
       <el-main class="app-main">
@@ -71,28 +88,12 @@
       </el-main>
     </el-container>
 
-    <el-dialog v-model="showSettings" :title="t('settings.title')" width="400px">
-      <el-form label-width="120px">
-        <el-form-item :label="t('settings.adminSecret')">
-          <el-input
-            v-model="adminSecret"
-            type="password"
-            show-password
-            :placeholder="t('settings.adminSecretPlaceholder')"
-          />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button type="danger" @click="clearSecret">{{ t("settings.logout") }}</el-button>
-        <el-button @click="showSettings = false">{{ t("common.close") }}</el-button>
-      </template>
-    </el-dialog>
   </el-container>
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
-import { useRoute } from "vue-router";
+import { computed } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import {
   DataAnalysis,
   User,
@@ -101,13 +102,14 @@ import {
   SetUp,
   MagicStick,
   ChatDotSquare,
-  Setting,
+  MoreFilled,
+  SwitchButton,
 } from "@element-plus/icons-vue";
+import { currentUser, logout } from "@/auth";
 import { locale, localeOptions, setLocale, t } from "@/i18n";
 
 const route = useRoute();
-const showSettings = ref(false);
-const adminSecret = ref(localStorage.getItem("adminSecret") || "");
+const router = useRouter();
 
 const activeMenu = computed(() => {
   const path = route.path;
@@ -134,18 +136,27 @@ const pageTitle = computed(() => {
   return "AgentForge";
 });
 
-watch(adminSecret, (value) => {
-  if (value) {
-    localStorage.setItem("adminSecret", value);
-  } else {
-    localStorage.removeItem("adminSecret");
-  }
+const userInitials = computed(() => {
+  const value = currentUser.value?.displayName || currentUser.value?.email || "AF";
+  return value.trim().slice(0, 2).toUpperCase();
 });
 
-function clearSecret() {
-  localStorage.removeItem("adminSecret");
-  showSettings.value = false;
-  window.location.reload();
+const primaryRole = computed(() => {
+  const role = currentUser.value?.memberships.find((membership) => membership.status === "active")?.role;
+  const labels = {
+    owner: "roles.owner",
+    admin: "roles.admin",
+    builder: "roles.builder",
+    viewer: "roles.viewer",
+  } as const;
+  return role && role in labels ? t(labels[role as keyof typeof labels]) : t("roles.viewer");
+});
+
+async function handleUserCommand(command: string) {
+  if (command === "logout") {
+    await logout();
+    await router.replace("/login");
+  }
 }
 </script>
 
@@ -155,6 +166,8 @@ function clearSecret() {
 }
 .app-sidebar {
   background: #0f172a;
+  display: flex;
+  flex-direction: column;
 }
 .app-header {
   background: #fff;
@@ -195,6 +208,59 @@ function clearSecret() {
   color: #f1f5f9;
   letter-spacing: 0.5px;
 }
+.side-menu {
+  flex: 1;
+}
+.user-card {
+  width: calc(100% - 24px);
+  margin: 12px;
+  padding: 10px;
+  border: 0;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #e2e8f0;
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) 18px;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  text-align: left;
+}
+.user-card:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+.user-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: #fb8d7f;
+  color: #fff;
+  font-weight: 600;
+}
+.user-meta {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+.user-name,
+.user-role {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.user-name {
+  font-size: 14px;
+  font-weight: 600;
+}
+.user-role {
+  font-size: 12px;
+  color: #94a3b8;
+}
+.user-more {
+  color: #94a3b8;
+}
 .header-actions {
   display: flex;
   align-items: center;
@@ -224,6 +290,9 @@ function clearSecret() {
     flex: 0 0 auto;
     height: 44px;
     line-height: 44px;
+  }
+  .user-card {
+    display: none;
   }
   .app-header {
     min-height: 56px;

@@ -33,6 +33,7 @@ import type {
   ModelCapabilities,
   AuditLog,
   AuditLogInput,
+  AuthSession,
   IdentityProviderConfig,
   IdentityProviderCreateInput,
   Membership,
@@ -42,6 +43,7 @@ import type {
   TenantBootstrapResult,
   UserAccount,
   UserCreateInput,
+  UserPassword,
   Workspace,
   WorkspaceCreateInput,
 } from "@agentforge/types";
@@ -246,6 +248,57 @@ export class SQLiteAdapter implements DatabaseAdapter {
     return rows.map((row) => this.mapUser(row));
   }
 
+  async setUserPassword(userId: string, passwordHash: string): Promise<UserPassword> {
+    const now = new Date().toISOString();
+    this.db.prepare(`
+      INSERT INTO user_passwords (user_id, password_hash, created_at, updated_at)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(user_id) DO UPDATE SET password_hash = excluded.password_hash, updated_at = excluded.updated_at
+    `).run(userId, passwordHash, now, now);
+    return (await this.getUserPassword(userId))!;
+  }
+
+  async getUserPassword(userId: string): Promise<UserPassword | null> {
+    const row = this.db.prepare("SELECT * FROM user_passwords WHERE user_id = ?").get(userId) as Record<string, unknown> | undefined;
+    return row ? this.mapUserPassword(row) : null;
+  }
+
+  async updateUserLastLogin(userId: string): Promise<void> {
+    const now = new Date().toISOString();
+    this.db.prepare("UPDATE users SET last_login_at = ?, updated_at = ? WHERE id = ?").run(now, now, userId);
+  }
+
+  async createAuthSession(userId: string, tokenHash: string, expiresAt: string): Promise<AuthSession> {
+    const id = uuidv4();
+    const now = new Date().toISOString();
+    this.db.prepare(`
+      INSERT INTO auth_sessions (id, user_id, token_hash, expires_at, created_at, last_seen_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(id, userId, tokenHash, expiresAt, now, now);
+    const row = this.db.prepare("SELECT * FROM auth_sessions WHERE id = ?").get(id) as Record<string, unknown>;
+    return this.mapAuthSession(row);
+  }
+
+  async getAuthSessionByHash(tokenHash: string): Promise<AuthSession | null> {
+    const row = this.db.prepare("SELECT * FROM auth_sessions WHERE token_hash = ?").get(tokenHash) as Record<string, unknown> | undefined;
+    if (!row) return null;
+    if (Date.parse(row.expires_at as string) <= Date.now()) {
+      await this.deleteAuthSessionByHash(tokenHash);
+      return null;
+    }
+    this.db.prepare("UPDATE auth_sessions SET last_seen_at = ? WHERE id = ?").run(new Date().toISOString(), row.id);
+    return this.mapAuthSession(row);
+  }
+
+  async deleteAuthSessionByHash(tokenHash: string): Promise<boolean> {
+    const res = this.db.prepare("DELETE FROM auth_sessions WHERE token_hash = ?").run(tokenHash);
+    return res.changes > 0;
+  }
+
+  async deleteExpiredAuthSessions(): Promise<void> {
+    this.db.prepare("DELETE FROM auth_sessions WHERE expires_at <= ?").run(new Date().toISOString());
+  }
+
   async upsertMembership(input: MembershipInput): Promise<Membership> {
     const now = new Date().toISOString();
     const workspaceId = input.workspaceId ?? null;
@@ -367,6 +420,26 @@ export class SQLiteAdapter implements DatabaseAdapter {
       lastLoginAt: (row.last_login_at as string) ?? null,
       createdAt: row.created_at as string,
       updatedAt: row.updated_at as string,
+    };
+  }
+
+  private mapUserPassword(row: Record<string, unknown>): UserPassword {
+    return {
+      userId: row.user_id as string,
+      passwordHash: row.password_hash as string,
+      createdAt: row.created_at as string,
+      updatedAt: row.updated_at as string,
+    };
+  }
+
+  private mapAuthSession(row: Record<string, unknown>): AuthSession {
+    return {
+      id: row.id as string,
+      userId: row.user_id as string,
+      tokenHash: row.token_hash as string,
+      expiresAt: row.expires_at as string,
+      createdAt: row.created_at as string,
+      lastSeenAt: row.last_seen_at as string,
     };
   }
 
