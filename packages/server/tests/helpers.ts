@@ -1,4 +1,4 @@
-import type { AppContext } from "../src/bootstrap.js";
+import { ProviderRegistry, type AppContext } from "../src/bootstrap.js";
 import type { LLMProvider, LLMRequest, LLMResponse, LLMStreamChunk } from "@agentforge/types";
 import { SQLiteAdapter } from "@agentforge/database";
 import { ToolRegistryImpl, createBuiltinTools } from "@agentforge/tools";
@@ -41,6 +41,8 @@ export async function createTestContext(): Promise<AppContext> {
   const db = new SQLiteAdapter(":memory:");
   await db.initialize();
   const provider = new MockProvider();
+  const providerRegistry = new ProviderRegistry();
+  providerRegistry.register("mock-provider", provider, true, "mock-model");
   const toolRegistry = new ToolRegistryImpl();
   for (const tool of createBuiltinTools()) {
     toolRegistry.register(tool);
@@ -48,7 +50,7 @@ export async function createTestContext(): Promise<AppContext> {
   const skillRegistry = new SkillRegistryImpl();
   const agentLoop = new AgentLoop({ provider, toolRegistry, skillRegistry, db });
 
-  return { db, provider, toolRegistry, skillRegistry, agentLoop, config };
+  return { db, providerRegistry, toolRegistry, skillRegistry, agentLoop, config };
 }
 
 export async function createTestApp() {

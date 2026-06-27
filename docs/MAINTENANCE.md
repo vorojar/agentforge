@@ -62,6 +62,20 @@ When adding persisted fields:
 6. Add or update database tests.
 7. Verify existing rows receive sane migration defaults without hiding invalid business data.
 
+## Enterprise Tenant Checklist
+
+When adding SaaS/private-cloud capabilities:
+
+1. Route all enterprise identity integrations through the tenant foundation: Organization, Workspace, User, Membership, Identity Provider, Audit Log.
+2. Keep local admin/emergency access available until external IdP login is proven.
+3. Store identity provider secrets as references such as `env:NAME` or KMS paths, not raw secret values in normal API payloads, docs, logs, or audit metadata.
+4. Validate roles and membership status at the API boundary.
+5. Write audit logs for sensitive organization, workspace, membership, provider, model, key, and auth configuration changes.
+6. Keep SQLite and MySQL behavior aligned; MySQL is the expected production path for many private-cloud deployments.
+7. Do not add a provider-specific login path that bypasses workspace scoping or audit logging.
+8. Admin APIs should resolve workspace from `X-Workspace-Id`, `workspaceId` query, or body `workspaceId`; if omitted, use the default workspace.
+9. Detail/update/delete routes must verify the resource belongs to the resolved workspace before returning data or mutating state.
+
 ## Warning Regression Checklist
 
 These warnings were intentionally cleaned up and should stay gone:

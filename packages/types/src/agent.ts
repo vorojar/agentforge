@@ -5,6 +5,7 @@ export interface AgentFallbackModel {
 
 export interface AgentConfig {
   id: string;
+  workspaceId: string;
   name: string;
   description: string;
   systemPrompt: string;
@@ -27,6 +28,7 @@ export interface AgentConfig {
 }
 
 export interface AgentCreateInput {
+  workspaceId?: string;
   name: string;
   description?: string;
   systemPrompt: string;
@@ -45,6 +47,7 @@ export interface AgentCreateInput {
 }
 
 export interface AgentUpdateInput {
+  workspaceId?: string;
   name?: string;
   description?: string;
   systemPrompt?: string;

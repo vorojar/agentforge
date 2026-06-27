@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import type { AppContext } from "../bootstrap.js";
 import { createHttpTools, escapeJsonStringValue, isPlaceholderInJsonString } from "@agentforge/tools";
+import { resolveWorkspaceId } from "../workspace.js";
 
 export async function httpToolRoutes(fastify: FastifyInstance, opts: { ctx: AppContext }) {
   const { db, toolRegistry } = opts.ctx;
@@ -31,19 +32,22 @@ export async function httpToolRoutes(fastify: FastifyInstance, opts: { ctx: AppC
       return reply.code(400).send({ error: "name and url are required" });
     }
 
-    const httpTool = await db.createHttpTool(body);
+    const workspaceId = await resolveWorkspaceId(request, db);
+    const httpTool = await db.createHttpTool({ ...body, workspaceId });
     await syncToRegistry(httpTool.id);
     return reply.code(201).send(httpTool);
   });
 
-  fastify.get("/api/http-tools", async () => {
-    return await db.listHttpTools();
+  fastify.get("/api/http-tools", async (request) => {
+    const workspaceId = await resolveWorkspaceId(request, db);
+    return await db.listHttpTools(workspaceId);
   });
 
   fastify.get("/api/http-tools/:id", async (request, reply) => {
     const { id } = request.params as { id: string };
+    const workspaceId = await resolveWorkspaceId(request, db);
     const httpTool = await db.getHttpTool(id);
-    if (!httpTool) {
+    if (!httpTool || httpTool.workspaceId !== workspaceId) {
       return reply.code(404).send({ error: "HTTP tool not found" });
     }
     return httpTool;
@@ -52,8 +56,10 @@ export async function httpToolRoutes(fastify: FastifyInstance, opts: { ctx: AppC
   fastify.put("/api/http-tools/:id", async (request, reply) => {
     const { id } = request.params as { id: string };
     const body = request.body as Record<string, unknown>;
+    const workspaceId = await resolveWorkspaceId(request, db);
 
     const oldTool = await db.getHttpTool(id);
+    if (!oldTool || oldTool.workspaceId !== workspaceId) return reply.code(404).send({ error: "HTTP tool not found" });
     if (oldTool) toolRegistry.unregister(oldTool.name);
 
     const updated = await db.updateHttpTool(id, body);
@@ -71,8 +77,10 @@ export async function httpToolRoutes(fastify: FastifyInstance, opts: { ctx: AppC
 
   fastify.delete("/api/http-tools/:id", async (request, reply) => {
     const { id } = request.params as { id: string };
+    const workspaceId = await resolveWorkspaceId(request, db);
 
     const httpTool = await db.getHttpTool(id);
+    if (!httpTool || httpTool.workspaceId !== workspaceId) return reply.code(404).send({ error: "HTTP tool not found" });
     if (httpTool) toolRegistry.unregister(httpTool.name);
 
     const deleted = await db.deleteHttpTool(id);
@@ -84,8 +92,9 @@ export async function httpToolRoutes(fastify: FastifyInstance, opts: { ctx: AppC
 
   fastify.post("/api/http-tools/:id/test", async (request, reply) => {
     const { id } = request.params as { id: string };
+    const workspaceId = await resolveWorkspaceId(request, db);
     const ht = await db.getHttpTool(id);
-    if (!ht) return reply.code(404).send({ error: "HTTP tool not found" });
+    if (!ht || ht.workspaceId !== workspaceId) return reply.code(404).send({ error: "HTTP tool not found" });
 
     const params = (request.body as Record<string, string>) ?? {};
 

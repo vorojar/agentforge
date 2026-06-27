@@ -18,6 +18,7 @@ import { httpToolRoutes } from "./routes/http-tools.js";
 import { providerRoutes } from "./routes/providers.js";
 import { knowledgeRoutes } from "./routes/knowledge.js";
 import { proxyRoutes } from "./routes/proxy.js";
+import { tenantRoutes } from "./routes/tenants.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 
@@ -110,6 +111,7 @@ export function createApp(ctx: AppContext) {
     scope.register(httpToolRoutes, { ctx });
     scope.register(providerRoutes, { ctx });
     scope.register(knowledgeRoutes, { ctx });
+    scope.register(tenantRoutes, { ctx });
   });
 
   return fastify;

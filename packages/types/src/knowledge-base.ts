@@ -7,6 +7,7 @@
 
 export interface KnowledgeBase {
   id: string;
+  workspaceId: string;
   name: string;
   description: string;
   createdAt: string;
@@ -14,11 +15,13 @@ export interface KnowledgeBase {
 }
 
 export interface KnowledgeBaseCreateInput {
+  workspaceId?: string;
   name: string;
   description?: string;
 }
 
 export interface KnowledgeBaseUpdateInput {
+  workspaceId?: string;
   name?: string;
   description?: string;
 }

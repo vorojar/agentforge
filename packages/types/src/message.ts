@@ -53,6 +53,7 @@ export interface Message {
 
 export interface Session {
   id: string;
+  workspaceId: string;
   agentId: string;
   rootSessionId?: string;
   sourceSessionId?: string | null;

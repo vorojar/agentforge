@@ -39,6 +39,19 @@ import type {
   ContentBlock,
   ModelTrace,
   ModelCapabilities,
+  AuditLog,
+  AuditLogInput,
+  IdentityProviderConfig,
+  IdentityProviderCreateInput,
+  Membership,
+  MembershipInput,
+  Organization,
+  OrganizationCreateInput,
+  TenantBootstrapResult,
+  UserAccount,
+  UserCreateInput,
+  Workspace,
+  WorkspaceCreateInput,
 } from "@agentforge/types";
 import { MYSQL_MIGRATIONS, MYSQL_INDEXES, MYSQL_ALTERS } from "./migrations.js";
 
@@ -72,6 +85,11 @@ function parseJsonObject<T>(value: unknown): T | undefined {
 
 function normalizeCategory(category?: string): string {
   return category?.trim() ?? "";
+}
+
+function normalizeSlug(value: string): string {
+  const slug = value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  return slug || "default";
 }
 
 function defaultModelCapabilities(type?: string): ModelCapabilities {
@@ -123,6 +141,309 @@ export class MySQLAdapter implements DatabaseAdapter {
     for (const idx of MYSQL_INDEXES) {
       try { await this.pool.execute(idx); } catch { /* index may already exist */ }
     }
+    await this.backfillDefaultWorkspace();
+  }
+
+  private async getDefaultWorkspaceId(): Promise<string> {
+    return (await this.ensureDefaultTenant()).workspace.id;
+  }
+
+  private async resolveWorkspaceId(workspaceId?: string | null): Promise<string> {
+    return workspaceId || await this.getDefaultWorkspaceId();
+  }
+
+  private async backfillDefaultWorkspace(): Promise<void> {
+    const workspaceId = await this.getDefaultWorkspaceId();
+    const tables = ["providers", "agents", "sessions", "usage_logs", "http_tools", "knowledge_bases", "provider_channels", "proxy_usage_logs"];
+    for (const table of tables) {
+      try {
+        await this.pool.execute(`UPDATE ${table} SET workspace_id = ? WHERE workspace_id IS NULL OR workspace_id = ''`, [workspaceId]);
+      } catch {
+        // Table or column may not exist in partial schemas during upgrades.
+      }
+    }
+    try {
+      await this.pool.execute(
+        `INSERT IGNORE INTO workspace_skill_categories (workspace_id, skill_name, category, updated_at)
+         SELECT ?, skill_name, category, updated_at FROM skill_categories`,
+        [workspaceId],
+      );
+    } catch {
+      // Legacy table may not exist in partial databases.
+    }
+  }
+
+  // --- Tenant foundation ---
+
+  async ensureDefaultTenant(): Promise<TenantBootstrapResult> {
+    const [orgRows] = await this.pool.execute<RowDataPacket[]>("SELECT * FROM organizations WHERE slug = ?", ["default"]);
+    const organization = orgRows.length > 0
+      ? this.mapOrganization(orgRows[0])
+      : await this.createOrganization({ name: "Default Organization", slug: "default" });
+
+    const [workspaceRows] = await this.pool.execute<RowDataPacket[]>(
+      "SELECT * FROM workspaces WHERE organization_id = ? AND slug = ?",
+      [organization.id, "default"],
+    );
+    const workspace = workspaceRows.length > 0
+      ? this.mapWorkspace(workspaceRows[0])
+      : await this.createWorkspace({ organizationId: organization.id, name: "Default Workspace", slug: "default" });
+
+    return { organization, workspace };
+  }
+
+  async createOrganization(input: OrganizationCreateInput): Promise<Organization> {
+    const id = uuidv4();
+    const now = this.nowStr();
+    const slug = normalizeSlug(input.slug ?? input.name);
+    await this.pool.execute(
+      "INSERT INTO organizations (id, name, slug, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+      [id, input.name.trim(), slug, now, now],
+    );
+    return (await this.getOrganization(id))!;
+  }
+
+  async getOrganization(id: string): Promise<Organization | null> {
+    const [rows] = await this.pool.execute<RowDataPacket[]>("SELECT * FROM organizations WHERE id = ?", [id]);
+    return rows.length > 0 ? this.mapOrganization(rows[0]) : null;
+  }
+
+  async listOrganizations(): Promise<Organization[]> {
+    const [rows] = await this.pool.execute<RowDataPacket[]>("SELECT * FROM organizations ORDER BY created_at ASC");
+    return rows.map((row) => this.mapOrganization(row));
+  }
+
+  async createWorkspace(input: WorkspaceCreateInput): Promise<Workspace> {
+    const id = uuidv4();
+    const now = this.nowStr();
+    const slug = normalizeSlug(input.slug ?? input.name);
+    await this.pool.execute(
+      "INSERT INTO workspaces (id, organization_id, name, slug, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+      [id, input.organizationId, input.name.trim(), slug, now, now],
+    );
+    return (await this.getWorkspace(id))!;
+  }
+
+  async getWorkspace(id: string): Promise<Workspace | null> {
+    const [rows] = await this.pool.execute<RowDataPacket[]>("SELECT * FROM workspaces WHERE id = ?", [id]);
+    return rows.length > 0 ? this.mapWorkspace(rows[0]) : null;
+  }
+
+  async listWorkspaces(organizationId?: string): Promise<Workspace[]> {
+    const [rows] = organizationId
+      ? await this.pool.execute<RowDataPacket[]>("SELECT * FROM workspaces WHERE organization_id = ? ORDER BY created_at ASC", [organizationId])
+      : await this.pool.execute<RowDataPacket[]>("SELECT * FROM workspaces ORDER BY created_at ASC");
+    return rows.map((row) => this.mapWorkspace(row));
+  }
+
+  async createUser(input: UserCreateInput): Promise<UserAccount> {
+    const id = uuidv4();
+    const now = this.nowStr();
+    const email = input.email.trim().toLowerCase();
+    await this.pool.execute(
+      "INSERT INTO users (id, email, display_name, avatar_url, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+      [id, email, input.displayName.trim(), input.avatarUrl ?? null, now, now],
+    );
+    return (await this.getUser(id))!;
+  }
+
+  async getUser(id: string): Promise<UserAccount | null> {
+    const [rows] = await this.pool.execute<RowDataPacket[]>("SELECT * FROM users WHERE id = ?", [id]);
+    return rows.length > 0 ? this.mapUser(rows[0]) : null;
+  }
+
+  async getUserByEmail(email: string): Promise<UserAccount | null> {
+    const [rows] = await this.pool.execute<RowDataPacket[]>("SELECT * FROM users WHERE email = ?", [email.trim().toLowerCase()]);
+    return rows.length > 0 ? this.mapUser(rows[0]) : null;
+  }
+
+  async listUsers(): Promise<UserAccount[]> {
+    const [rows] = await this.pool.execute<RowDataPacket[]>("SELECT * FROM users ORDER BY created_at ASC");
+    return rows.map((row) => this.mapUser(row));
+  }
+
+  async upsertMembership(input: MembershipInput): Promise<Membership> {
+    const workspaceId = input.workspaceId ?? null;
+    const [rows] = await this.pool.execute<RowDataPacket[]>(
+      `SELECT * FROM memberships
+       WHERE organization_id = ? AND user_id = ? AND ((workspace_id IS NULL AND ? IS NULL) OR workspace_id = ?)`,
+      [input.organizationId, input.userId, workspaceId, workspaceId],
+    );
+    const now = this.nowStr();
+    if (rows.length > 0) {
+      await this.pool.execute(
+        "UPDATE memberships SET role = ?, status = ?, updated_at = ? WHERE id = ?",
+        [input.role, input.status ?? "active", now, rows[0].id],
+      );
+      return (await this.getMembership(rows[0].id))!;
+    }
+
+    const id = uuidv4();
+    await this.pool.execute(
+      `INSERT INTO memberships (id, organization_id, workspace_id, user_id, role, status, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id, input.organizationId, workspaceId, input.userId, input.role, input.status ?? "active", now, now],
+    );
+    return (await this.getMembership(id))!;
+  }
+
+  async listMemberships(organizationId: string, workspaceId?: string | null): Promise<Membership[]> {
+    const [rows] = workspaceId === undefined
+      ? await this.pool.execute<RowDataPacket[]>("SELECT * FROM memberships WHERE organization_id = ? ORDER BY created_at ASC", [organizationId])
+      : await this.pool.execute<RowDataPacket[]>(
+          `SELECT * FROM memberships
+           WHERE organization_id = ? AND ((workspace_id IS NULL AND ? IS NULL) OR workspace_id = ?)
+           ORDER BY created_at ASC`,
+          [organizationId, workspaceId, workspaceId],
+        );
+    return rows.map((row) => this.mapMembership(row));
+  }
+
+  async createIdentityProvider(input: IdentityProviderCreateInput): Promise<IdentityProviderConfig> {
+    const id = uuidv4();
+    const now = this.nowStr();
+    await this.pool.execute(
+      `INSERT INTO identity_providers
+        (id, organization_id, type, provider, name, issuer_url, client_id, client_secret_ref, sso_url, certificate, claim_mapping, group_mapping, enabled, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        id, input.organizationId, input.type, input.provider.trim(), input.name.trim(),
+        input.issuerUrl ?? null, input.clientId ?? null, input.clientSecretRef ?? null,
+        input.ssoUrl ?? null, input.certificate ?? null,
+        JSON.stringify(input.claimMapping ?? {}), JSON.stringify(input.groupMapping ?? {}),
+        input.enabled !== false ? 1 : 0, now, now,
+      ],
+    );
+    const providers = await this.listIdentityProviders(input.organizationId);
+    return providers.find((provider) => provider.id === id)!;
+  }
+
+  async listIdentityProviders(organizationId: string): Promise<IdentityProviderConfig[]> {
+    const [rows] = await this.pool.execute<RowDataPacket[]>(
+      "SELECT * FROM identity_providers WHERE organization_id = ? ORDER BY created_at ASC",
+      [organizationId],
+    );
+    return rows.map((row) => this.mapIdentityProvider(row));
+  }
+
+  async createAuditLog(input: AuditLogInput): Promise<AuditLog> {
+    const id = uuidv4();
+    const now = this.nowStr();
+    await this.pool.execute(
+      `INSERT INTO audit_logs
+        (id, organization_id, workspace_id, actor_user_id, action, resource_type, resource_id, metadata, ip_address, user_agent, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        id, input.organizationId, input.workspaceId ?? null, input.actorUserId ?? null,
+        input.action, input.resourceType, input.resourceId ?? null,
+        JSON.stringify(input.metadata ?? {}), input.ipAddress ?? null, input.userAgent ?? null, now,
+      ],
+    );
+    const [rows] = await this.pool.execute<RowDataPacket[]>("SELECT * FROM audit_logs WHERE id = ?", [id]);
+    return this.mapAuditLog(rows[0]);
+  }
+
+  async listAuditLogs(organizationId: string, options?: { workspaceId?: string; limit?: number }): Promise<AuditLog[]> {
+    const limit = Math.min(Math.max(options?.limit ?? 100, 1), 500);
+    const [rows] = options?.workspaceId
+      ? await this.pool.execute<RowDataPacket[]>(
+          `SELECT * FROM audit_logs
+           WHERE organization_id = ? AND workspace_id = ?
+           ORDER BY created_at DESC LIMIT ?`,
+          [organizationId, options.workspaceId, limit],
+        )
+      : await this.pool.execute<RowDataPacket[]>(
+          "SELECT * FROM audit_logs WHERE organization_id = ? ORDER BY created_at DESC LIMIT ?",
+          [organizationId, limit],
+        );
+    return rows.map((row) => this.mapAuditLog(row));
+  }
+
+  private async getMembership(id: string): Promise<Membership | null> {
+    const [rows] = await this.pool.execute<RowDataPacket[]>("SELECT * FROM memberships WHERE id = ?", [id]);
+    return rows.length > 0 ? this.mapMembership(rows[0]) : null;
+  }
+
+  private mapOrganization(row: RowDataPacket): Organization {
+    return {
+      id: row.id,
+      name: row.name,
+      slug: row.slug,
+      createdAt: String(row.created_at),
+      updatedAt: String(row.updated_at),
+    };
+  }
+
+  private mapWorkspace(row: RowDataPacket): Workspace {
+    return {
+      id: row.id,
+      organizationId: row.organization_id,
+      name: row.name,
+      slug: row.slug,
+      createdAt: String(row.created_at),
+      updatedAt: String(row.updated_at),
+    };
+  }
+
+  private mapUser(row: RowDataPacket): UserAccount {
+    return {
+      id: row.id,
+      email: row.email,
+      displayName: row.display_name,
+      avatarUrl: row.avatar_url ?? undefined,
+      lastLoginAt: row.last_login_at ? String(row.last_login_at) : null,
+      createdAt: String(row.created_at),
+      updatedAt: String(row.updated_at),
+    };
+  }
+
+  private mapMembership(row: RowDataPacket): Membership {
+    return {
+      id: row.id,
+      organizationId: row.organization_id,
+      workspaceId: row.workspace_id ?? null,
+      userId: row.user_id,
+      role: row.role,
+      status: row.status,
+      createdAt: String(row.created_at),
+      updatedAt: String(row.updated_at),
+    };
+  }
+
+  private mapIdentityProvider(row: RowDataPacket): IdentityProviderConfig {
+    return {
+      id: row.id,
+      organizationId: row.organization_id,
+      type: row.type,
+      provider: row.provider,
+      name: row.name,
+      issuerUrl: row.issuer_url ?? undefined,
+      clientId: row.client_id ?? undefined,
+      clientSecretRef: row.client_secret_ref ?? undefined,
+      ssoUrl: row.sso_url ?? undefined,
+      certificate: row.certificate ?? undefined,
+      claimMapping: parseJsonObject<Record<string, string>>(row.claim_mapping) ?? {},
+      groupMapping: parseJsonObject<Record<string, string>>(row.group_mapping) ?? {},
+      enabled: row.enabled === 1,
+      createdAt: String(row.created_at),
+      updatedAt: String(row.updated_at),
+    };
+  }
+
+  private mapAuditLog(row: RowDataPacket): AuditLog {
+    return {
+      id: row.id,
+      organizationId: row.organization_id,
+      workspaceId: row.workspace_id ?? null,
+      actorUserId: row.actor_user_id ?? null,
+      action: row.action,
+      resourceType: row.resource_type,
+      resourceId: row.resource_id ?? null,
+      metadata: parseJsonObject<Record<string, unknown>>(row.metadata) ?? {},
+      ipAddress: row.ip_address ?? undefined,
+      userAgent: row.user_agent ?? undefined,
+      createdAt: String(row.created_at),
+    };
   }
 
   // --- Agents ---
@@ -130,10 +451,11 @@ export class MySQLAdapter implements DatabaseAdapter {
   async createAgent(input: AgentCreateInput): Promise<AgentConfig> {
     const id = uuidv4();
     const now = this.nowStr();
+    const workspaceId = await this.resolveWorkspaceId(input.workspaceId);
     await this.pool.execute(
-      `INSERT INTO agents (id, name, description, system_prompt, provider_id, model, fallback_models, fallback_cooldown_seconds, temperature, max_tokens, max_iterations, streaming, thinking, tools, skills, category, enabled, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
-      [id, input.name, input.description ?? "", input.systemPrompt, input.providerId ?? null,
+      `INSERT INTO agents (id, workspace_id, name, description, system_prompt, provider_id, model, fallback_models, fallback_cooldown_seconds, temperature, max_tokens, max_iterations, streaming, thinking, tools, skills, category, enabled, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
+      [id, workspaceId, input.name, input.description ?? "", input.systemPrompt, input.providerId ?? null,
        input.model ?? "claude-sonnet-4-20250514", JSON.stringify(input.fallbackModels ?? []), input.fallbackCooldownSeconds ?? 900,
        input.temperature ?? 0.7, input.maxTokens ?? 4096,
        input.maxIterations ?? 15, input.streaming ? 1 : 0, input.thinking ? 1 : 0,
@@ -148,8 +470,10 @@ export class MySQLAdapter implements DatabaseAdapter {
     return this.mapAgent(rows[0]);
   }
 
-  async listAgents(): Promise<AgentConfig[]> {
-    const [rows] = await this.pool.execute<RowDataPacket[]>("SELECT * FROM agents ORDER BY created_at DESC");
+  async listAgents(workspaceId?: string): Promise<AgentConfig[]> {
+    const [rows] = workspaceId
+      ? await this.pool.execute<RowDataPacket[]>("SELECT * FROM agents WHERE workspace_id = ? ORDER BY created_at DESC", [workspaceId])
+      : await this.pool.execute<RowDataPacket[]>("SELECT * FROM agents ORDER BY created_at DESC");
     return rows.map(r => this.mapAgent(r));
   }
 
@@ -158,6 +482,7 @@ export class MySQLAdapter implements DatabaseAdapter {
     if (!existing) return null;
     const fields: string[] = [];
     const values: SqlParams = [];
+    if (input.workspaceId !== undefined) { fields.push("workspace_id = ?"); values.push(input.workspaceId); }
     if (input.name !== undefined) { fields.push("name = ?"); values.push(input.name); }
     if (input.description !== undefined) { fields.push("description = ?"); values.push(input.description); }
     if (input.systemPrompt !== undefined) { fields.push("system_prompt = ?"); values.push(input.systemPrompt); }
@@ -190,6 +515,7 @@ export class MySQLAdapter implements DatabaseAdapter {
   private mapAgent(row: RowDataPacket): AgentConfig {
     return {
       id: row.id, name: row.name, description: row.description ?? "",
+      workspaceId: row.workspace_id ?? "",
       systemPrompt: row.system_prompt, providerId: row.provider_id ?? undefined,
       model: row.model,
       fallbackModels: parseJsonArray(row.fallback_models).filter((item): item is { providerId?: string; model: string } => {
@@ -256,9 +582,11 @@ export class MySQLAdapter implements DatabaseAdapter {
 
   // --- Sessions ---
 
-  async createSession(agentId: string, options?: { sourceSessionId?: string }): Promise<Session> {
+  async createSession(agentId: string, options?: { sourceSessionId?: string; workspaceId?: string }): Promise<Session> {
     const id = uuidv4();
     const now = this.nowStr();
+    const agent = await this.getAgent(agentId);
+    const workspaceId = await this.resolveWorkspaceId(options?.workspaceId ?? agent?.workspaceId);
     let rootSessionId = id;
     if (options?.sourceSessionId) {
       const [rows] = await this.pool.execute<RowDataPacket[]>(
@@ -270,10 +598,10 @@ export class MySQLAdapter implements DatabaseAdapter {
       }
     }
     await this.pool.execute(
-      "INSERT INTO sessions (id, agent_id, root_session_id, source_session_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
-      [id, agentId, rootSessionId, options?.sourceSessionId ?? null, now, now],
+      "INSERT INTO sessions (id, workspace_id, agent_id, root_session_id, source_session_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      [id, workspaceId, agentId, rootSessionId, options?.sourceSessionId ?? null, now, now],
     );
-    return { id, agentId, rootSessionId, sourceSessionId: options?.sourceSessionId ?? null, createdAt: now, updatedAt: now };
+    return { id, workspaceId, agentId, rootSessionId, sourceSessionId: options?.sourceSessionId ?? null, createdAt: now, updatedAt: now };
   }
 
   async getSession(id: string): Promise<Session | null> {
@@ -282,13 +610,14 @@ export class MySQLAdapter implements DatabaseAdapter {
     return this.mapSession(rows[0]);
   }
 
-  async listSessions(agentId?: string): Promise<Session[]> {
+  async listSessions(agentId?: string, workspaceId?: string): Promise<Session[]> {
+    const resolvedWorkspaceId = workspaceId ?? await this.getDefaultWorkspaceId();
     const sessionSql = agentId
-      ? "SELECT * FROM sessions WHERE agent_id = ? ORDER BY updated_at DESC LIMIT 200"
-      : "SELECT * FROM sessions ORDER BY updated_at DESC LIMIT 200";
+      ? "SELECT * FROM sessions WHERE workspace_id = ? AND agent_id = ? ORDER BY updated_at DESC LIMIT 200"
+      : "SELECT * FROM sessions WHERE workspace_id = ? ORDER BY updated_at DESC LIMIT 200";
     const [sessionRows] = agentId
-      ? await this.pool.execute<RowDataPacket[]>(sessionSql, [agentId])
-      : await this.pool.execute<RowDataPacket[]>(sessionSql);
+      ? await this.pool.execute<RowDataPacket[]>(sessionSql, [resolvedWorkspaceId, agentId])
+      : await this.pool.execute<RowDataPacket[]>(sessionSql, [resolvedWorkspaceId]);
     if (sessionRows.length === 0) return [];
 
     const ids = sessionRows.map(r => r.id);
@@ -329,7 +658,7 @@ export class MySQLAdapter implements DatabaseAdapter {
     return sessionRows.map(r => {
       const st = statMap.get(r.id);
       return {
-        id: r.id, agentId: r.agent_id,
+        id: r.id, workspaceId: r.workspace_id ?? "", agentId: r.agent_id,
         rootSessionId: r.root_session_id ?? r.id,
         sourceSessionId: r.source_session_id ?? null,
         messageCount: st ? Number(st.cnt) : 0,
@@ -359,7 +688,7 @@ export class MySQLAdapter implements DatabaseAdapter {
 
   private mapSession(row: RowDataPacket): Session {
     const session: Session = {
-      id: row.id, agentId: row.agent_id,
+      id: row.id, workspaceId: row.workspace_id ?? "", agentId: row.agent_id,
       rootSessionId: row.root_session_id ?? row.id,
       sourceSessionId: row.source_session_id ?? null,
       createdAt: String(row.created_at), updatedAt: String(row.updated_at),
@@ -425,29 +754,31 @@ export class MySQLAdapter implements DatabaseAdapter {
   async logUsage(log: Omit<UsageLog, "id" | "createdAt">): Promise<void> {
     const id = uuidv4();
     const now = this.nowStr();
+    const agent = await this.getAgent(log.agentId);
+    const workspaceId = log.workspaceId || agent?.workspaceId || await this.getDefaultWorkspaceId();
     await this.pool.execute(
-      `INSERT INTO usage_logs (id, agent_id, session_id, tokens_in, tokens_out, model, duration_ms, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [id, log.agentId, log.sessionId, log.tokensIn, log.tokensOut, log.model, log.durationMs, now]
+      `INSERT INTO usage_logs (id, workspace_id, agent_id, session_id, tokens_in, tokens_out, model, duration_ms, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id, workspaceId, log.agentId, log.sessionId, log.tokensIn, log.tokensOut, log.model, log.durationMs, now]
     );
   }
 
-  async getUsageStats(agentId?: string): Promise<UsageStats> {
-    let sql = "SELECT COALESCE(SUM(tokens_in), 0) as total_in, COALESCE(SUM(tokens_out), 0) as total_out, COUNT(*) as total_requests FROM usage_logs";
-    const params: SqlParams = [];
-    if (agentId) { sql += " WHERE agent_id = ?"; params.push(agentId); }
+  async getUsageStats(agentId?: string, workspaceId?: string): Promise<UsageStats> {
+    let sql = "SELECT COALESCE(SUM(tokens_in), 0) as total_in, COALESCE(SUM(tokens_out), 0) as total_out, COUNT(*) as total_requests FROM usage_logs WHERE workspace_id = ?";
+    const params: SqlParams = [workspaceId ?? await this.getDefaultWorkspaceId()];
+    if (agentId) { sql += " AND agent_id = ?"; params.push(agentId); }
     const [rows] = await this.pool.execute<RowDataPacket[]>(sql, params);
     const row = rows[0];
     return { totalTokensIn: Number(row.total_in), totalTokensOut: Number(row.total_out), totalRequests: Number(row.total_requests) };
   }
 
-  async getDailyStats(agentId?: string, days: number = 30, startDate?: string, endDate?: string, granularity?: string): Promise<DailyStats[]> {
+  async getDailyStats(agentId?: string, days: number = 30, startDate?: string, endDate?: string, granularity?: string, workspaceId?: string): Promise<DailyStats[]> {
     const useHourly = granularity === "hour" || (startDate && endDate && startDate === endDate);
     const groupExpr = useHourly
       ? "DATE_FORMAT(created_at, '%Y-%m-%d %H:00')"
       : "DATE(created_at)";
     let sql = `SELECT ${groupExpr} as date, SUM(tokens_in) as tokens_in, SUM(tokens_out) as tokens_out, COUNT(*) as requests
-      FROM usage_logs WHERE 1=1`;
-    const params: SqlParams = [];
+      FROM usage_logs WHERE workspace_id = ?`;
+    const params: SqlParams = [workspaceId ?? await this.getDefaultWorkspaceId()];
     if (startDate && endDate) {
       sql += " AND DATE(created_at) >= ? AND DATE(created_at) <= ?";
       params.push(startDate, endDate);
@@ -461,18 +792,20 @@ export class MySQLAdapter implements DatabaseAdapter {
     return rows.map(r => ({ date: String(r.date), tokensIn: Number(r.tokens_in), tokensOut: Number(r.tokens_out), requests: Number(r.requests) }));
   }
 
-  async getSessionCounts(): Promise<{ total: number; today: number }> {
+  async getSessionCounts(workspaceId?: string): Promise<{ total: number; today: number }> {
+    const resolvedWorkspaceId = workspaceId ?? await this.getDefaultWorkspaceId();
     const [rows] = await this.pool.execute<RowDataPacket[]>(
       `SELECT COUNT(*) as total,
               SUM(CASE WHEN created_at >= CURDATE() THEN 1 ELSE 0 END) as today
-       FROM sessions`
+       FROM sessions WHERE workspace_id = ?`,
+      [resolvedWorkspaceId],
     );
     return { total: Number(rows[0].total), today: Number(rows[0].today) };
   }
 
-  async getAgentUsageStats(startDate?: string, endDate?: string): Promise<Array<{ agentId: string; totalRequests: number; totalTokensIn: number; totalTokensOut: number }>> {
-    let sql = `SELECT agent_id, COUNT(*) as requests, COALESCE(SUM(tokens_in), 0) as tokens_in, COALESCE(SUM(tokens_out), 0) as tokens_out FROM usage_logs WHERE 1=1`;
-    const params: SqlParams = [];
+  async getAgentUsageStats(startDate?: string, endDate?: string, workspaceId?: string): Promise<Array<{ agentId: string; totalRequests: number; totalTokensIn: number; totalTokensOut: number }>> {
+    let sql = `SELECT agent_id, COUNT(*) as requests, COALESCE(SUM(tokens_in), 0) as tokens_in, COALESCE(SUM(tokens_out), 0) as tokens_out FROM usage_logs WHERE workspace_id = ?`;
+    const params: SqlParams = [workspaceId ?? await this.getDefaultWorkspaceId()];
     if (startDate && endDate) {
       sql += " AND DATE(created_at) >= ? AND DATE(created_at) <= ?";
       params.push(startDate, endDate);
@@ -482,9 +815,9 @@ export class MySQLAdapter implements DatabaseAdapter {
     return rows.map(r => ({ agentId: r.agent_id, totalRequests: Number(r.requests), totalTokensIn: Number(r.tokens_in), totalTokensOut: Number(r.tokens_out) }));
   }
 
-  async getModelStats(startDate?: string, endDate?: string): Promise<Array<{ model: string; requests: number; tokensIn: number; tokensOut: number }>> {
-    let sql = `SELECT model, COUNT(*) as requests, SUM(tokens_in) as tokens_in, SUM(tokens_out) as tokens_out FROM usage_logs WHERE 1=1`;
-    const params: SqlParams = [];
+  async getModelStats(startDate?: string, endDate?: string, workspaceId?: string): Promise<Array<{ model: string; requests: number; tokensIn: number; tokensOut: number }>> {
+    let sql = `SELECT model, COUNT(*) as requests, SUM(tokens_in) as tokens_in, SUM(tokens_out) as tokens_out FROM usage_logs WHERE workspace_id = ?`;
+    const params: SqlParams = [workspaceId ?? await this.getDefaultWorkspaceId()];
     if (startDate && endDate) {
       sql += " AND DATE(created_at) >= ? AND DATE(created_at) <= ?";
       params.push(startDate, endDate);
@@ -499,9 +832,10 @@ export class MySQLAdapter implements DatabaseAdapter {
   async createHttpTool(input: HttpToolCreateInput): Promise<HttpTool> {
     const id = uuidv4();
     const now = this.nowStr();
+    const workspaceId = await this.resolveWorkspaceId(input.workspaceId);
     await this.pool.execute(
-      `INSERT INTO http_tools (id, name, description, method, url, headers, parameters, body_template, enabled, category, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`,
-      [id, input.name, input.description ?? "", input.method ?? "GET", input.url,
+      `INSERT INTO http_tools (id, workspace_id, name, description, method, url, headers, parameters, body_template, enabled, category, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`,
+      [id, workspaceId, input.name, input.description ?? "", input.method ?? "GET", input.url,
        JSON.stringify(input.headers ?? {}), JSON.stringify(input.parameters ?? { type: "object", properties: {} }),
        input.bodyTemplate ?? "", normalizeCategory(input.category), now, now]
     );
@@ -514,8 +848,10 @@ export class MySQLAdapter implements DatabaseAdapter {
     return this.mapHttpTool(rows[0]);
   }
 
-  async listHttpTools(): Promise<HttpTool[]> {
-    const [rows] = await this.pool.execute<RowDataPacket[]>("SELECT * FROM http_tools ORDER BY created_at DESC");
+  async listHttpTools(workspaceId?: string): Promise<HttpTool[]> {
+    const [rows] = workspaceId
+      ? await this.pool.execute<RowDataPacket[]>("SELECT * FROM http_tools WHERE workspace_id = ? ORDER BY created_at DESC", [workspaceId])
+      : await this.pool.execute<RowDataPacket[]>("SELECT * FROM http_tools ORDER BY created_at DESC");
     return rows.map(r => this.mapHttpTool(r));
   }
 
@@ -524,6 +860,7 @@ export class MySQLAdapter implements DatabaseAdapter {
     if (!existing) return null;
     const fields: string[] = [];
     const values: SqlParams = [];
+    if (input.workspaceId !== undefined) { fields.push("workspace_id = ?"); values.push(input.workspaceId); }
     if (input.name !== undefined) { fields.push("name = ?"); values.push(input.name); }
     if (input.description !== undefined) { fields.push("description = ?"); values.push(input.description); }
     if (input.method !== undefined) { fields.push("method = ?"); values.push(input.method); }
@@ -546,7 +883,7 @@ export class MySQLAdapter implements DatabaseAdapter {
 
   private mapHttpTool(row: RowDataPacket): HttpTool {
     return {
-      id: row.id, name: row.name, description: row.description ?? "",
+      id: row.id, workspaceId: row.workspace_id ?? "", name: row.name, description: row.description ?? "",
       method: row.method, url: row.url,
       headers: typeof row.headers === "string" ? JSON.parse(row.headers) : (row.headers ?? {}),
       parameters: typeof row.parameters === "string" ? JSON.parse(row.parameters) : (row.parameters ?? {}),
@@ -556,22 +893,24 @@ export class MySQLAdapter implements DatabaseAdapter {
     };
   }
 
-  async listSkillCategories(): Promise<Record<string, string>> {
-    const [rows] = await this.pool.execute<RowDataPacket[]>("SELECT skill_name, category FROM skill_categories");
+  async listSkillCategories(workspaceId?: string): Promise<Record<string, string>> {
+    const resolvedWorkspaceId = workspaceId ?? await this.getDefaultWorkspaceId();
+    const [rows] = await this.pool.execute<RowDataPacket[]>("SELECT skill_name, category FROM workspace_skill_categories WHERE workspace_id = ?", [resolvedWorkspaceId]);
     return Object.fromEntries(rows.map(row => [row.skill_name as string, row.category as string]));
   }
 
-  async setSkillCategory(skillName: string, category: string): Promise<void> {
+  async setSkillCategory(skillName: string, category: string, workspaceId?: string): Promise<void> {
+    const resolvedWorkspaceId = workspaceId ?? await this.getDefaultWorkspaceId();
     const normalized = category.trim();
     if (!normalized) {
-      await this.pool.execute("DELETE FROM skill_categories WHERE skill_name = ?", [skillName]);
+      await this.pool.execute("DELETE FROM workspace_skill_categories WHERE workspace_id = ? AND skill_name = ?", [resolvedWorkspaceId, skillName]);
       return;
     }
     await this.pool.execute(
-      `INSERT INTO skill_categories (skill_name, category, updated_at)
-       VALUES (?, ?, NOW())
+      `INSERT INTO workspace_skill_categories (workspace_id, skill_name, category, updated_at)
+       VALUES (?, ?, ?, NOW())
        ON DUPLICATE KEY UPDATE category = VALUES(category), updated_at = NOW()`,
-      [skillName, normalized],
+      [resolvedWorkspaceId, skillName, normalized],
     );
   }
 
@@ -580,12 +919,13 @@ export class MySQLAdapter implements DatabaseAdapter {
   async createProvider(input: ProviderCreateInput): Promise<ProviderConfig> {
     const id = uuidv4();
     const now = this.nowStr();
+    const workspaceId = await this.resolveWorkspaceId(input.workspaceId);
     if (input.isPrimary) {
-      await this.pool.execute("UPDATE providers SET is_primary = 0");
+      await this.pool.execute("UPDATE providers SET is_primary = 0 WHERE workspace_id = ?", [workspaceId]);
     }
     await this.pool.execute(
-      `INSERT INTO providers (id, name, type, api_key, base_url, default_model, capabilities, enabled, is_primary, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [id, input.name, input.type, input.apiKey, input.baseUrl ?? null, input.defaultModel,
+      `INSERT INTO providers (id, workspace_id, name, type, api_key, base_url, default_model, capabilities, enabled, is_primary, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id, workspaceId, input.name, input.type, input.apiKey, input.baseUrl ?? null, input.defaultModel,
        JSON.stringify(normalizeModelCapabilities(input.type, input.capabilities)),
        input.enabled !== false ? 1 : 0, input.isPrimary ? 1 : 0, now, now]
     );
@@ -598,8 +938,10 @@ export class MySQLAdapter implements DatabaseAdapter {
     return this.mapProvider(rows[0]);
   }
 
-  async listProviders(): Promise<ProviderConfig[]> {
-    const [rows] = await this.pool.execute<RowDataPacket[]>("SELECT * FROM providers ORDER BY is_primary DESC, created_at ASC");
+  async listProviders(workspaceId?: string): Promise<ProviderConfig[]> {
+    const [rows] = workspaceId
+      ? await this.pool.execute<RowDataPacket[]>("SELECT * FROM providers WHERE workspace_id = ? ORDER BY is_primary DESC, created_at ASC", [workspaceId])
+      : await this.pool.execute<RowDataPacket[]>("SELECT * FROM providers ORDER BY is_primary DESC, created_at ASC");
     return rows.map(r => this.mapProvider(r));
   }
 
@@ -607,10 +949,11 @@ export class MySQLAdapter implements DatabaseAdapter {
     const existing = await this.getProvider(id);
     if (!existing) return null;
     if (input.isPrimary) {
-      await this.pool.execute("UPDATE providers SET is_primary = 0");
+      await this.pool.execute("UPDATE providers SET is_primary = 0 WHERE workspace_id = ?", [input.workspaceId ?? existing.workspaceId]);
     }
     const fields: string[] = [];
     const values: SqlParams = [];
+    if (input.workspaceId !== undefined) { fields.push("workspace_id = ?"); values.push(input.workspaceId); }
     if (input.name !== undefined) { fields.push("name = ?"); values.push(input.name); }
     if (input.type !== undefined) { fields.push("type = ?"); values.push(input.type); }
     if (input.apiKey !== undefined) { fields.push("api_key = ?"); values.push(input.apiKey); }
@@ -630,16 +973,17 @@ export class MySQLAdapter implements DatabaseAdapter {
     return result.affectedRows > 0;
   }
 
-  async getPrimaryProvider(): Promise<ProviderConfig | null> {
-    const [rows] = await this.pool.execute<RowDataPacket[]>("SELECT * FROM providers WHERE is_primary = 1 AND enabled = 1 LIMIT 1");
+  async getPrimaryProvider(workspaceId?: string): Promise<ProviderConfig | null> {
+    const resolvedWorkspaceId = workspaceId ?? await this.getDefaultWorkspaceId();
+    const [rows] = await this.pool.execute<RowDataPacket[]>("SELECT * FROM providers WHERE workspace_id = ? AND is_primary = 1 AND enabled = 1 LIMIT 1", [resolvedWorkspaceId]);
     if (rows.length > 0) return this.mapProvider(rows[0]);
-    const [fallback] = await this.pool.execute<RowDataPacket[]>("SELECT * FROM providers WHERE enabled = 1 LIMIT 1");
+    const [fallback] = await this.pool.execute<RowDataPacket[]>("SELECT * FROM providers WHERE workspace_id = ? AND enabled = 1 LIMIT 1", [resolvedWorkspaceId]);
     return fallback.length > 0 ? this.mapProvider(fallback[0]) : null;
   }
 
   private mapProvider(row: RowDataPacket): ProviderConfig {
     return {
-      id: row.id, name: row.name, type: row.type, apiKey: row.api_key,
+      id: row.id, workspaceId: row.workspace_id ?? "", name: row.name, type: row.type, apiKey: row.api_key,
       baseUrl: row.base_url ?? undefined, defaultModel: row.default_model,
       capabilities: normalizeModelCapabilities(row.type, parseJsonObject<Partial<ModelCapabilities>>(row.capabilities)),
       enabled: row.enabled === 1, isPrimary: row.is_primary === 1,
@@ -652,23 +996,25 @@ export class MySQLAdapter implements DatabaseAdapter {
   async createKnowledgeBase(input: KnowledgeBaseCreateInput): Promise<KnowledgeBase> {
     const id = uuidv4();
     const now = this.nowStr();
+    const workspaceId = await this.resolveWorkspaceId(input.workspaceId);
     await this.pool.execute(
-      "INSERT INTO knowledge_bases (id, name, description, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-      [id, input.name, input.description ?? "", now, now]
+      "INSERT INTO knowledge_bases (id, workspace_id, name, description, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+      [id, workspaceId, input.name, input.description ?? "", now, now]
     );
-    return { id, name: input.name, description: input.description ?? "", createdAt: now, updatedAt: now };
+    return { id, workspaceId, name: input.name, description: input.description ?? "", createdAt: now, updatedAt: now };
   }
 
   async getKnowledgeBase(id: string): Promise<KnowledgeBase | null> {
     const [rows] = await this.pool.execute<RowDataPacket[]>("SELECT * FROM knowledge_bases WHERE id = ?", [id]);
     if (rows.length === 0) return null;
     const r = rows[0];
-    return { id: r.id, name: r.name, description: r.description ?? "", createdAt: String(r.created_at), updatedAt: String(r.updated_at) };
+    return { id: r.id, workspaceId: r.workspace_id ?? "", name: r.name, description: r.description ?? "", createdAt: String(r.created_at), updatedAt: String(r.updated_at) };
   }
 
-  async listKnowledgeBases(): Promise<KnowledgeBase[]> {
-    const [rows] = await this.pool.execute<RowDataPacket[]>("SELECT * FROM knowledge_bases ORDER BY created_at DESC");
-    return rows.map(r => ({ id: r.id, name: r.name, description: r.description ?? "", createdAt: String(r.created_at), updatedAt: String(r.updated_at) }));
+  async listKnowledgeBases(workspaceId?: string): Promise<KnowledgeBase[]> {
+    const resolvedWorkspaceId = workspaceId ?? await this.getDefaultWorkspaceId();
+    const [rows] = await this.pool.execute<RowDataPacket[]>("SELECT * FROM knowledge_bases WHERE workspace_id = ? ORDER BY created_at DESC", [resolvedWorkspaceId]);
+    return rows.map(r => ({ id: r.id, workspaceId: r.workspace_id ?? "", name: r.name, description: r.description ?? "", createdAt: String(r.created_at), updatedAt: String(r.updated_at) }));
   }
 
   async updateKnowledgeBase(id: string, input: KnowledgeBaseUpdateInput): Promise<KnowledgeBase | null> {
@@ -676,6 +1022,7 @@ export class MySQLAdapter implements DatabaseAdapter {
     if (!existing) return null;
     const fields: string[] = [];
     const values: SqlParams = [];
+    if (input.workspaceId !== undefined) { fields.push("workspace_id = ?"); values.push(input.workspaceId); }
     if (input.name !== undefined) { fields.push("name = ?"); values.push(input.name); }
     if (input.description !== undefined) { fields.push("description = ?"); values.push(input.description); }
     if (fields.length === 0) return existing;
@@ -841,24 +1188,26 @@ export class MySQLAdapter implements DatabaseAdapter {
 
   async createChannel(providerId: string, name: string): Promise<{ channel: ProviderChannel; rawKey: string }> {
     const id = uuidv4();
+    const provider = await this.getProvider(providerId);
+    const workspaceId = provider?.workspaceId ?? await this.getDefaultWorkspaceId();
     const raw = randomBytes(16).toString("hex");
     const rawKey = `af-ch-${raw}`;
     const keyHash = hashKey(rawKey);
     const keyPrefix = rawKey.slice(0, 10);
     const now = this.nowStr();
     await this.pool.execute(
-      `INSERT INTO provider_channels (id, provider_id, name, key_hash, key_prefix, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, ?, ?)`,
-      [id, providerId, name, keyHash, keyPrefix, now, now]
+      `INSERT INTO provider_channels (id, workspace_id, provider_id, name, key_hash, key_prefix, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)`,
+      [id, workspaceId, providerId, name, keyHash, keyPrefix, now, now]
     );
     return {
-      channel: { id, providerId, name, keyHash, keyPrefix, enabled: true, createdAt: now, updatedAt: now },
+      channel: { id, workspaceId, providerId, name, keyHash, keyPrefix, enabled: true, createdAt: now, updatedAt: now },
       rawKey,
     };
   }
 
   async getChannelByHash(keyHash: string): Promise<(ProviderChannel & { providerConfig: ProviderConfig }) | null> {
     const [rows] = await this.pool.execute<RowDataPacket[]>(
-      `SELECT pc.*, p.id as p_id, p.name as p_name, p.type as p_type, p.api_key as p_api_key,
+      `SELECT pc.*, p.id as p_id, p.workspace_id as p_workspace_id, p.name as p_name, p.type as p_type, p.api_key as p_api_key,
               p.base_url as p_base_url, p.default_model as p_default_model, p.enabled as p_enabled,
               p.capabilities as p_capabilities, p.is_primary as p_is_primary,
               p.created_at as p_created_at, p.updated_at as p_updated_at
@@ -869,10 +1218,10 @@ export class MySQLAdapter implements DatabaseAdapter {
     const r = rows[0];
     return {
       id: r.id, providerId: r.provider_id, name: r.name, keyHash: r.key_hash,
-      keyPrefix: r.key_prefix, enabled: r.enabled === 1,
+      workspaceId: r.workspace_id ?? "", keyPrefix: r.key_prefix, enabled: r.enabled === 1,
       createdAt: String(r.created_at), updatedAt: String(r.updated_at),
       providerConfig: {
-        id: r.p_id, name: r.p_name, type: r.p_type, apiKey: r.p_api_key,
+        id: r.p_id, workspaceId: r.p_workspace_id ?? "", name: r.p_name, type: r.p_type, apiKey: r.p_api_key,
         baseUrl: r.p_base_url ?? undefined, defaultModel: r.p_default_model,
         capabilities: normalizeModelCapabilities(r.p_type, parseJsonObject<Partial<ModelCapabilities>>(r.p_capabilities)),
         enabled: r.p_enabled === 1, isPrimary: r.p_is_primary === 1,
@@ -887,7 +1236,7 @@ export class MySQLAdapter implements DatabaseAdapter {
     );
     return rows.map(r => ({
       id: r.id, providerId: r.provider_id, name: r.name, keyHash: r.key_hash,
-      keyPrefix: r.key_prefix, enabled: r.enabled === 1,
+      workspaceId: r.workspace_id ?? "", keyPrefix: r.key_prefix, enabled: r.enabled === 1,
       createdAt: String(r.created_at), updatedAt: String(r.updated_at),
     }));
   }
@@ -902,9 +1251,11 @@ export class MySQLAdapter implements DatabaseAdapter {
   async logProxyUsage(log: ProxyUsageLog): Promise<void> {
     const id = uuidv4();
     const now = this.nowStr();
+    const provider = await this.getProvider(log.providerId);
+    const workspaceId = log.workspaceId || provider?.workspaceId || await this.getDefaultWorkspaceId();
     await this.pool.execute(
-      `INSERT INTO proxy_usage_logs (id, channel_id, provider_id, model, tokens_in, tokens_out, duration_ms, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [id, log.channelId, log.providerId, log.model, log.tokensIn, log.tokensOut, log.durationMs, now]
+      `INSERT INTO proxy_usage_logs (id, workspace_id, channel_id, provider_id, model, tokens_in, tokens_out, duration_ms, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id, workspaceId, log.channelId, log.providerId, log.model, log.tokensIn, log.tokensOut, log.durationMs, now]
     );
   }
 
@@ -926,12 +1277,16 @@ export class MySQLAdapter implements DatabaseAdapter {
     };
   }
 
-  async getProviderChannelStats(providerId: string, startDate?: string, endDate?: string): Promise<Array<{ channelId: string; channelName: string; totalRequests: number; totalTokensIn: number; totalTokensOut: number }>> {
+  async getProviderChannelStats(providerId: string, startDate?: string, endDate?: string, workspaceId?: string): Promise<Array<{ channelId: string; channelName: string; totalRequests: number; totalTokensIn: number; totalTokensOut: number }>> {
     let joinCondition = "pu.channel_id = pc.id";
     const params: SqlParams = [];
     if (startDate && endDate) {
       joinCondition += " AND DATE(pu.created_at) >= ? AND DATE(pu.created_at) <= ?";
       params.push(startDate, endDate);
+    }
+    if (workspaceId) {
+      joinCondition += " AND pu.workspace_id = ?";
+      params.push(workspaceId);
     }
     params.push(providerId);
     const sql = `SELECT pc.id as channel_id, pc.name as channel_name, COUNT(pu.id) as requests,
@@ -945,14 +1300,14 @@ export class MySQLAdapter implements DatabaseAdapter {
     }));
   }
 
-  async getProxyDailyStats(days: number = 30, startDate?: string, endDate?: string, granularity?: string): Promise<DailyStats[]> {
+  async getProxyDailyStats(days: number = 30, startDate?: string, endDate?: string, granularity?: string, workspaceId?: string): Promise<DailyStats[]> {
     const useHourly = granularity === "hour" || (startDate && endDate && startDate === endDate);
     const groupExpr = useHourly
       ? "DATE_FORMAT(created_at, '%Y-%m-%d %H:00')"
       : "DATE(created_at)";
     let sql = `SELECT ${groupExpr} as date, SUM(tokens_in) as tokens_in, SUM(tokens_out) as tokens_out, COUNT(*) as requests
-       FROM proxy_usage_logs WHERE 1=1`;
-    const params: SqlParams = [];
+       FROM proxy_usage_logs WHERE workspace_id = ?`;
+    const params: SqlParams = [workspaceId ?? await this.getDefaultWorkspaceId()];
     if (startDate && endDate) {
       sql += " AND DATE(created_at) >= ? AND DATE(created_at) <= ?";
       params.push(startDate, endDate);
@@ -965,10 +1320,11 @@ export class MySQLAdapter implements DatabaseAdapter {
     return rows.map(r => ({ date: String(r.date), tokensIn: Number(r.tokens_in), tokensOut: Number(r.tokens_out), requests: Number(r.requests) }));
   }
 
-  async getProxyOverview(): Promise<{ totalRequests: number; totalTokensIn: number; totalTokensOut: number; totalChannels: number }> {
+  async getProxyOverview(workspaceId?: string): Promise<{ totalRequests: number; totalTokensIn: number; totalTokensOut: number; totalChannels: number }> {
+    const resolvedWorkspaceId = workspaceId ?? await this.getDefaultWorkspaceId();
     const [[usageRows], [channelRows]] = await Promise.all([
-      this.pool.execute<RowDataPacket[]>("SELECT COUNT(*) as cnt, COALESCE(SUM(tokens_in),0) as ti, COALESCE(SUM(tokens_out),0) as to2 FROM proxy_usage_logs"),
-      this.pool.execute<RowDataPacket[]>("SELECT COUNT(*) as cnt FROM provider_channels"),
+      this.pool.execute<RowDataPacket[]>("SELECT COUNT(*) as cnt, COALESCE(SUM(tokens_in),0) as ti, COALESCE(SUM(tokens_out),0) as to2 FROM proxy_usage_logs WHERE workspace_id = ?", [resolvedWorkspaceId]),
+      this.pool.execute<RowDataPacket[]>("SELECT COUNT(*) as cnt FROM provider_channels WHERE workspace_id = ?", [resolvedWorkspaceId]),
     ]);
     return {
       totalRequests: Number(usageRows[0].cnt),

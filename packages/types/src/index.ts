@@ -8,3 +8,4 @@ export * from "./http-tool.js";
 export * from "./provider-config.js";
 export * from "./knowledge-base.js";
 export * from "./provider-channel.js";
+export * from "./tenant.js";

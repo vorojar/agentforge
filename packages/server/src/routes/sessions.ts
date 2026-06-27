@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import type { AppContext } from "../bootstrap.js";
 import type { ContentBlock, ImageBlock, Message } from "@agentforge/types";
+import { resolveWorkspaceId } from "../workspace.js";
 
 function extractFirstUserInput(messages: Message[]): { text: string; images: ImageBlock[] } | null {
   const first = messages.find((message) => message.role === "user");
@@ -21,13 +22,14 @@ export async function sessionRoutes(fastify: FastifyInstance, opts: { ctx: AppCo
 
   fastify.get("/api/sessions", async (request) => {
     const { agentId } = request.query as { agentId?: string };
-    return await db.listSessions(agentId);
+    return await db.listSessions(agentId, await resolveWorkspaceId(request, db));
   });
 
   fastify.get("/api/sessions/:id", async (request, reply) => {
     const { id } = request.params as { id: string };
+    const workspaceId = await resolveWorkspaceId(request, db);
     const session = await db.getSession(id);
-    if (!session) {
+    if (!session || session.workspaceId !== workspaceId) {
       return reply.code(404).send({ error: "Session not found" });
     }
     return session;
@@ -35,8 +37,9 @@ export async function sessionRoutes(fastify: FastifyInstance, opts: { ctx: AppCo
 
   fastify.get("/api/sessions/:id/messages", async (request, reply) => {
     const { id } = request.params as { id: string };
+    const workspaceId = await resolveWorkspaceId(request, db);
     const session = await db.getSession(id);
-    if (!session) {
+    if (!session || session.workspaceId !== workspaceId) {
       return reply.code(404).send({ error: "Session not found" });
     }
     return await db.getMessages(id);
@@ -44,8 +47,9 @@ export async function sessionRoutes(fastify: FastifyInstance, opts: { ctx: AppCo
 
   fastify.get("/api/sessions/:id/family", async (request, reply) => {
     const { id } = request.params as { id: string };
+    const workspaceId = await resolveWorkspaceId(request, db);
     const session = await db.getSession(id);
-    if (!session) {
+    if (!session || session.workspaceId !== workspaceId) {
       return reply.code(404).send({ error: "Session not found" });
     }
     return await db.listSessionFamily(session.rootSessionId ?? session.id);
@@ -54,8 +58,9 @@ export async function sessionRoutes(fastify: FastifyInstance, opts: { ctx: AppCo
   fastify.post("/api/sessions/:id/rerun", async (request, reply) => {
     const { id } = request.params as { id: string };
     const body = (request.body ?? {}) as { providerId?: string; model?: string };
+    const workspaceId = await resolveWorkspaceId(request, db);
     const session = await db.getSession(id);
-    if (!session) return reply.code(404).send({ error: "Session not found" });
+    if (!session || session.workspaceId !== workspaceId) return reply.code(404).send({ error: "Session not found" });
 
     const rootId = session.rootSessionId ?? session.id;
     const input = extractFirstUserInput(await db.getMessages(rootId));
@@ -70,7 +75,7 @@ export async function sessionRoutes(fastify: FastifyInstance, opts: { ctx: AppCo
         return reply.code(400).send({ error: "providerId is required when selecting a rerun model" });
       }
       const provider = await db.getProvider(body.providerId);
-      if (!provider) return reply.code(404).send({ error: "Selected model not found" });
+      if (!provider || provider.workspaceId !== workspaceId) return reply.code(404).send({ error: "Selected model not found" });
       if (!provider.enabled) return reply.code(400).send({ error: "Selected model is disabled" });
       if (body.model && body.model !== provider.defaultModel) {
         return reply.code(400).send({ error: "Selected model does not match provider library" });
@@ -83,7 +88,7 @@ export async function sessionRoutes(fastify: FastifyInstance, opts: { ctx: AppCo
       };
     }
 
-    const newSession = await db.createSession(agent.id, { sourceSessionId: session.id });
+    const newSession = await db.createSession(agent.id, { sourceSessionId: session.id, workspaceId: session.workspaceId });
     try {
       const result = await agentLoop.run(
         rerunAgent,
@@ -100,6 +105,9 @@ export async function sessionRoutes(fastify: FastifyInstance, opts: { ctx: AppCo
 
   fastify.delete("/api/sessions/:id", async (request, reply) => {
     const { id } = request.params as { id: string };
+    const workspaceId = await resolveWorkspaceId(request, db);
+    const session = await db.getSession(id);
+    if (!session || session.workspaceId !== workspaceId) return reply.code(404).send({ error: "Session not found" });
     const deleted = await db.deleteSession(id);
     if (!deleted) {
       return reply.code(404).send({ error: "Session not found" });

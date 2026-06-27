@@ -6,8 +6,89 @@
 // ==================== SQLite ====================
 
 export const SQLITE_MIGRATIONS = `
+CREATE TABLE IF NOT EXISTS organizations (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  slug TEXT NOT NULL UNIQUE,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS workspaces (
+  id TEXT PRIMARY KEY,
+  organization_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  slug TEXT NOT NULL,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE,
+  UNIQUE (organization_id, slug)
+);
+
+CREATE TABLE IF NOT EXISTS users (
+  id TEXT PRIMARY KEY,
+  email TEXT NOT NULL UNIQUE,
+  display_name TEXT NOT NULL,
+  avatar_url TEXT,
+  last_login_at TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS memberships (
+  id TEXT PRIMARY KEY,
+  organization_id TEXT NOT NULL,
+  workspace_id TEXT,
+  user_id TEXT NOT NULL,
+  role TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'active',
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE,
+  FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  UNIQUE (organization_id, workspace_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS identity_providers (
+  id TEXT PRIMARY KEY,
+  organization_id TEXT NOT NULL,
+  type TEXT NOT NULL,
+  provider TEXT NOT NULL,
+  name TEXT NOT NULL,
+  issuer_url TEXT,
+  client_id TEXT,
+  client_secret_ref TEXT,
+  sso_url TEXT,
+  certificate TEXT,
+  claim_mapping TEXT,
+  group_mapping TEXT,
+  enabled INTEGER DEFAULT 1,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS audit_logs (
+  id TEXT PRIMARY KEY,
+  organization_id TEXT NOT NULL,
+  workspace_id TEXT,
+  actor_user_id TEXT,
+  action TEXT NOT NULL,
+  resource_type TEXT NOT NULL,
+  resource_id TEXT,
+  metadata TEXT,
+  ip_address TEXT,
+  user_agent TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE,
+  FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE SET NULL,
+  FOREIGN KEY (actor_user_id) REFERENCES users(id) ON DELETE SET NULL
+);
+
 CREATE TABLE IF NOT EXISTS providers (
   id TEXT PRIMARY KEY,
+  workspace_id TEXT,
   name TEXT NOT NULL,
   type TEXT NOT NULL DEFAULT 'openai',
   api_key TEXT NOT NULL,
@@ -22,6 +103,7 @@ CREATE TABLE IF NOT EXISTS providers (
 
 CREATE TABLE IF NOT EXISTS agents (
   id TEXT PRIMARY KEY,
+  workspace_id TEXT,
   name TEXT NOT NULL,
   description TEXT,
   system_prompt TEXT NOT NULL,
@@ -56,6 +138,7 @@ CREATE TABLE IF NOT EXISTS api_keys (
 
 CREATE TABLE IF NOT EXISTS sessions (
   id TEXT PRIMARY KEY,
+  workspace_id TEXT,
   agent_id TEXT NOT NULL,
   root_session_id TEXT,
   source_session_id TEXT,
@@ -83,6 +166,7 @@ CREATE TABLE IF NOT EXISTS messages (
 
 CREATE TABLE IF NOT EXISTS usage_logs (
   id TEXT PRIMARY KEY,
+  workspace_id TEXT,
   agent_id TEXT NOT NULL,
   session_id TEXT NOT NULL,
   tokens_in INTEGER NOT NULL,
@@ -95,6 +179,7 @@ CREATE TABLE IF NOT EXISTS usage_logs (
 
 CREATE TABLE IF NOT EXISTS http_tools (
   id TEXT PRIMARY KEY,
+  workspace_id TEXT,
   name TEXT NOT NULL UNIQUE,
   description TEXT,
   method TEXT NOT NULL DEFAULT 'GET',
@@ -109,6 +194,7 @@ CREATE TABLE IF NOT EXISTS http_tools (
 );
 
 CREATE TABLE IF NOT EXISTS skill_categories (
+  workspace_id TEXT NOT NULL DEFAULT '',
   skill_name TEXT PRIMARY KEY,
   category TEXT NOT NULL DEFAULT '',
   updated_at TEXT DEFAULT (datetime('now'))
@@ -116,6 +202,7 @@ CREATE TABLE IF NOT EXISTS skill_categories (
 
 CREATE TABLE IF NOT EXISTS knowledge_bases (
   id TEXT PRIMARY KEY,
+  workspace_id TEXT,
   name TEXT NOT NULL,
   description TEXT,
   created_at TEXT DEFAULT (datetime('now')),
@@ -154,6 +241,7 @@ CREATE TABLE IF NOT EXISTS knowledge_chunks (
 
 CREATE TABLE IF NOT EXISTS provider_channels (
   id TEXT PRIMARY KEY,
+  workspace_id TEXT,
   provider_id TEXT NOT NULL,
   name TEXT NOT NULL,
   key_hash TEXT NOT NULL,
@@ -166,6 +254,7 @@ CREATE TABLE IF NOT EXISTS provider_channels (
 
 CREATE TABLE IF NOT EXISTS proxy_usage_logs (
   id TEXT PRIMARY KEY,
+  workspace_id TEXT,
   channel_id TEXT NOT NULL,
   provider_id TEXT NOT NULL,
   model TEXT NOT NULL,
@@ -179,7 +268,22 @@ CREATE TABLE IF NOT EXISTS proxy_usage_logs (
 `;
 
 export const SQLITE_INDEXES = [
+  "CREATE INDEX IF NOT EXISTS idx_workspaces_org ON workspaces(organization_id)",
+  "CREATE INDEX IF NOT EXISTS idx_memberships_org ON memberships(organization_id)",
+  "CREATE INDEX IF NOT EXISTS idx_memberships_workspace ON memberships(workspace_id)",
+  "CREATE INDEX IF NOT EXISTS idx_memberships_user ON memberships(user_id)",
+  "CREATE INDEX IF NOT EXISTS idx_identity_providers_org ON identity_providers(organization_id)",
+  "CREATE INDEX IF NOT EXISTS idx_audit_logs_org_created ON audit_logs(organization_id, created_at)",
+  "CREATE INDEX IF NOT EXISTS idx_audit_logs_workspace_created ON audit_logs(workspace_id, created_at)",
   "CREATE INDEX IF NOT EXISTS idx_api_keys_hash ON api_keys(key_hash)",
+  "CREATE INDEX IF NOT EXISTS idx_providers_workspace ON providers(workspace_id)",
+  "CREATE INDEX IF NOT EXISTS idx_agents_workspace ON agents(workspace_id)",
+  "CREATE INDEX IF NOT EXISTS idx_sessions_workspace ON sessions(workspace_id)",
+  "CREATE INDEX IF NOT EXISTS idx_usage_logs_workspace ON usage_logs(workspace_id, created_at)",
+  "CREATE INDEX IF NOT EXISTS idx_http_tools_workspace ON http_tools(workspace_id)",
+  "CREATE INDEX IF NOT EXISTS idx_knowledge_bases_workspace ON knowledge_bases(workspace_id)",
+  "CREATE INDEX IF NOT EXISTS idx_provider_channels_workspace ON provider_channels(workspace_id)",
+  "CREATE INDEX IF NOT EXISTS idx_proxy_usage_workspace ON proxy_usage_logs(workspace_id, created_at)",
   "CREATE INDEX IF NOT EXISTS idx_sessions_agent ON sessions(agent_id)",
   "CREATE INDEX IF NOT EXISTS idx_sessions_updated ON sessions(updated_at)",
   "CREATE INDEX IF NOT EXISTS idx_sessions_created ON sessions(created_at)",
@@ -258,13 +362,119 @@ export const SQLITE_INCREMENTAL_MIGRATIONS = [
       "ALTER TABLE providers ADD COLUMN capabilities TEXT",
     ],
   },
+  {
+    name: "add_tenant_foundation",
+    up: [
+      `CREATE TABLE IF NOT EXISTS organizations (id TEXT PRIMARY KEY, name TEXT NOT NULL, slug TEXT NOT NULL UNIQUE, created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')))`,
+      `CREATE TABLE IF NOT EXISTS workspaces (id TEXT PRIMARY KEY, organization_id TEXT NOT NULL, name TEXT NOT NULL, slug TEXT NOT NULL, created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')), UNIQUE (organization_id, slug))`,
+      `CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE, display_name TEXT NOT NULL, avatar_url TEXT, last_login_at TEXT, created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')))`,
+      `CREATE TABLE IF NOT EXISTS memberships (id TEXT PRIMARY KEY, organization_id TEXT NOT NULL, workspace_id TEXT, user_id TEXT NOT NULL, role TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'active', created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')), UNIQUE (organization_id, workspace_id, user_id))`,
+      `CREATE TABLE IF NOT EXISTS identity_providers (id TEXT PRIMARY KEY, organization_id TEXT NOT NULL, type TEXT NOT NULL, provider TEXT NOT NULL, name TEXT NOT NULL, issuer_url TEXT, client_id TEXT, client_secret_ref TEXT, sso_url TEXT, certificate TEXT, claim_mapping TEXT, group_mapping TEXT, enabled INTEGER DEFAULT 1, created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')))`,
+      `CREATE TABLE IF NOT EXISTS audit_logs (id TEXT PRIMARY KEY, organization_id TEXT NOT NULL, workspace_id TEXT, actor_user_id TEXT, action TEXT NOT NULL, resource_type TEXT NOT NULL, resource_id TEXT, metadata TEXT, ip_address TEXT, user_agent TEXT, created_at TEXT DEFAULT (datetime('now')))`,
+    ],
+  },
+  {
+    name: "add_workspace_scope",
+    up: [
+      "ALTER TABLE providers ADD COLUMN workspace_id TEXT",
+      "ALTER TABLE agents ADD COLUMN workspace_id TEXT",
+      "ALTER TABLE sessions ADD COLUMN workspace_id TEXT",
+      "ALTER TABLE usage_logs ADD COLUMN workspace_id TEXT",
+      "ALTER TABLE http_tools ADD COLUMN workspace_id TEXT",
+      "ALTER TABLE knowledge_bases ADD COLUMN workspace_id TEXT",
+      "ALTER TABLE provider_channels ADD COLUMN workspace_id TEXT",
+      "ALTER TABLE proxy_usage_logs ADD COLUMN workspace_id TEXT",
+      `CREATE TABLE IF NOT EXISTS workspace_skill_categories (workspace_id TEXT NOT NULL, skill_name TEXT NOT NULL, category TEXT NOT NULL DEFAULT '', updated_at TEXT DEFAULT (datetime('now')), PRIMARY KEY (workspace_id, skill_name))`,
+    ],
+  },
 ];
 
 // ==================== MySQL ====================
 
 export const MYSQL_MIGRATIONS = `
+CREATE TABLE IF NOT EXISTS organizations (
+  id VARCHAR(36) PRIMARY KEY,
+  name VARCHAR(255) NOT NULL,
+  slug VARCHAR(100) NOT NULL UNIQUE,
+  created_at DATETIME DEFAULT NOW(),
+  updated_at DATETIME DEFAULT NOW()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS workspaces (
+  id VARCHAR(36) PRIMARY KEY,
+  organization_id VARCHAR(36) NOT NULL,
+  name VARCHAR(255) NOT NULL,
+  slug VARCHAR(100) NOT NULL,
+  created_at DATETIME DEFAULT NOW(),
+  updated_at DATETIME DEFAULT NOW(),
+  FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE,
+  UNIQUE KEY idx_workspaces_org_slug (organization_id, slug)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS users (
+  id VARCHAR(36) PRIMARY KEY,
+  email VARCHAR(320) NOT NULL UNIQUE,
+  display_name VARCHAR(255) NOT NULL,
+  avatar_url TEXT,
+  last_login_at DATETIME,
+  created_at DATETIME DEFAULT NOW(),
+  updated_at DATETIME DEFAULT NOW()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS memberships (
+  id VARCHAR(36) PRIMARY KEY,
+  organization_id VARCHAR(36) NOT NULL,
+  workspace_id VARCHAR(36),
+  user_id VARCHAR(36) NOT NULL,
+  role VARCHAR(40) NOT NULL,
+  status VARCHAR(40) NOT NULL DEFAULT 'active',
+  created_at DATETIME DEFAULT NOW(),
+  updated_at DATETIME DEFAULT NOW(),
+  FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE,
+  FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  UNIQUE KEY idx_memberships_scope_user (organization_id, workspace_id, user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS identity_providers (
+  id VARCHAR(36) PRIMARY KEY,
+  organization_id VARCHAR(36) NOT NULL,
+  type VARCHAR(40) NOT NULL,
+  provider VARCHAR(80) NOT NULL,
+  name VARCHAR(255) NOT NULL,
+  issuer_url TEXT,
+  client_id TEXT,
+  client_secret_ref TEXT,
+  sso_url TEXT,
+  certificate TEXT,
+  claim_mapping JSON,
+  group_mapping JSON,
+  enabled TINYINT(1) DEFAULT 1,
+  created_at DATETIME DEFAULT NOW(),
+  updated_at DATETIME DEFAULT NOW(),
+  FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS audit_logs (
+  id VARCHAR(36) PRIMARY KEY,
+  organization_id VARCHAR(36) NOT NULL,
+  workspace_id VARCHAR(36),
+  actor_user_id VARCHAR(36),
+  action VARCHAR(120) NOT NULL,
+  resource_type VARCHAR(120) NOT NULL,
+  resource_id VARCHAR(255),
+  metadata JSON,
+  ip_address VARCHAR(80),
+  user_agent TEXT,
+  created_at DATETIME DEFAULT NOW(),
+  FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE,
+  FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE SET NULL,
+  FOREIGN KEY (actor_user_id) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 CREATE TABLE IF NOT EXISTS providers (
   id VARCHAR(36) PRIMARY KEY,
+  workspace_id VARCHAR(36),
   name VARCHAR(255) NOT NULL,
   type VARCHAR(50) NOT NULL DEFAULT 'openai',
   api_key TEXT NOT NULL,
@@ -279,6 +489,7 @@ CREATE TABLE IF NOT EXISTS providers (
 
 CREATE TABLE IF NOT EXISTS agents (
   id VARCHAR(36) PRIMARY KEY,
+  workspace_id VARCHAR(36),
   name VARCHAR(255) NOT NULL,
   description TEXT,
   system_prompt LONGTEXT NOT NULL,
@@ -313,6 +524,7 @@ CREATE TABLE IF NOT EXISTS api_keys (
 
 CREATE TABLE IF NOT EXISTS sessions (
   id VARCHAR(36) PRIMARY KEY,
+  workspace_id VARCHAR(36),
   agent_id VARCHAR(36) NOT NULL,
   root_session_id VARCHAR(36),
   source_session_id VARCHAR(36),
@@ -340,6 +552,7 @@ CREATE TABLE IF NOT EXISTS messages (
 
 CREATE TABLE IF NOT EXISTS usage_logs (
   id VARCHAR(36) PRIMARY KEY,
+  workspace_id VARCHAR(36),
   agent_id VARCHAR(36) NOT NULL,
   session_id VARCHAR(36) NOT NULL,
   tokens_in INT NOT NULL,
@@ -352,6 +565,7 @@ CREATE TABLE IF NOT EXISTS usage_logs (
 
 CREATE TABLE IF NOT EXISTS http_tools (
   id VARCHAR(36) PRIMARY KEY,
+  workspace_id VARCHAR(36),
   name VARCHAR(255) NOT NULL UNIQUE,
   description TEXT,
   method VARCHAR(10) NOT NULL DEFAULT 'GET',
@@ -366,6 +580,7 @@ CREATE TABLE IF NOT EXISTS http_tools (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS skill_categories (
+  workspace_id VARCHAR(36) NOT NULL DEFAULT '',
   skill_name VARCHAR(255) PRIMARY KEY,
   category VARCHAR(100) NOT NULL DEFAULT '',
   updated_at DATETIME DEFAULT NOW()
@@ -373,6 +588,7 @@ CREATE TABLE IF NOT EXISTS skill_categories (
 
 CREATE TABLE IF NOT EXISTS knowledge_bases (
   id VARCHAR(36) PRIMARY KEY,
+  workspace_id VARCHAR(36),
   name VARCHAR(255) NOT NULL,
   description TEXT,
   created_at DATETIME DEFAULT NOW(),
@@ -411,6 +627,7 @@ CREATE TABLE IF NOT EXISTS knowledge_chunks (
 
 CREATE TABLE IF NOT EXISTS provider_channels (
   id VARCHAR(36) PRIMARY KEY,
+  workspace_id VARCHAR(36),
   provider_id VARCHAR(36) NOT NULL,
   name VARCHAR(255) NOT NULL,
   key_hash VARCHAR(64) NOT NULL,
@@ -423,6 +640,7 @@ CREATE TABLE IF NOT EXISTS provider_channels (
 
 CREATE TABLE IF NOT EXISTS proxy_usage_logs (
   id VARCHAR(36) PRIMARY KEY,
+  workspace_id VARCHAR(36),
   channel_id VARCHAR(36) NOT NULL,
   provider_id VARCHAR(36) NOT NULL,
   model VARCHAR(255) NOT NULL,
@@ -436,7 +654,22 @@ CREATE TABLE IF NOT EXISTS proxy_usage_logs (
 `;
 
 export const MYSQL_INDEXES = [
+  "CREATE INDEX idx_workspaces_org ON workspaces(organization_id)",
+  "CREATE INDEX idx_memberships_org ON memberships(organization_id)",
+  "CREATE INDEX idx_memberships_workspace ON memberships(workspace_id)",
+  "CREATE INDEX idx_memberships_user ON memberships(user_id)",
+  "CREATE INDEX idx_identity_providers_org ON identity_providers(organization_id)",
+  "CREATE INDEX idx_audit_logs_org_created ON audit_logs(organization_id, created_at)",
+  "CREATE INDEX idx_audit_logs_workspace_created ON audit_logs(workspace_id, created_at)",
   "CREATE INDEX idx_api_keys_hash ON api_keys(key_hash)",
+  "CREATE INDEX idx_providers_workspace ON providers(workspace_id)",
+  "CREATE INDEX idx_agents_workspace ON agents(workspace_id)",
+  "CREATE INDEX idx_sessions_workspace ON sessions(workspace_id)",
+  "CREATE INDEX idx_usage_logs_workspace ON usage_logs(workspace_id, created_at)",
+  "CREATE INDEX idx_http_tools_workspace ON http_tools(workspace_id)",
+  "CREATE INDEX idx_knowledge_bases_workspace ON knowledge_bases(workspace_id)",
+  "CREATE INDEX idx_provider_channels_workspace ON provider_channels(workspace_id)",
+  "CREATE INDEX idx_proxy_usage_workspace ON proxy_usage_logs(workspace_id, created_at)",
   "CREATE INDEX idx_sessions_agent ON sessions(agent_id)",
   "CREATE INDEX idx_sessions_updated ON sessions(updated_at)",
   "CREATE INDEX idx_sessions_created ON sessions(created_at)",
@@ -466,4 +699,19 @@ export const MYSQL_ALTERS = [
   "ALTER TABLE sessions ADD COLUMN source_session_id VARCHAR(36)",
   "ALTER TABLE messages ADD COLUMN model_trace LONGTEXT",
   "ALTER TABLE providers ADD COLUMN capabilities JSON",
+  "CREATE TABLE IF NOT EXISTS organizations (id VARCHAR(36) PRIMARY KEY, name VARCHAR(255) NOT NULL, slug VARCHAR(100) NOT NULL UNIQUE, created_at DATETIME DEFAULT NOW(), updated_at DATETIME DEFAULT NOW()) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+  "CREATE TABLE IF NOT EXISTS workspaces (id VARCHAR(36) PRIMARY KEY, organization_id VARCHAR(36) NOT NULL, name VARCHAR(255) NOT NULL, slug VARCHAR(100) NOT NULL, created_at DATETIME DEFAULT NOW(), updated_at DATETIME DEFAULT NOW(), UNIQUE KEY idx_workspaces_org_slug (organization_id, slug)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+  "CREATE TABLE IF NOT EXISTS users (id VARCHAR(36) PRIMARY KEY, email VARCHAR(320) NOT NULL UNIQUE, display_name VARCHAR(255) NOT NULL, avatar_url TEXT, last_login_at DATETIME, created_at DATETIME DEFAULT NOW(), updated_at DATETIME DEFAULT NOW()) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+  "CREATE TABLE IF NOT EXISTS memberships (id VARCHAR(36) PRIMARY KEY, organization_id VARCHAR(36) NOT NULL, workspace_id VARCHAR(36), user_id VARCHAR(36) NOT NULL, role VARCHAR(40) NOT NULL, status VARCHAR(40) NOT NULL DEFAULT 'active', created_at DATETIME DEFAULT NOW(), updated_at DATETIME DEFAULT NOW(), UNIQUE KEY idx_memberships_scope_user (organization_id, workspace_id, user_id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+  "CREATE TABLE IF NOT EXISTS identity_providers (id VARCHAR(36) PRIMARY KEY, organization_id VARCHAR(36) NOT NULL, type VARCHAR(40) NOT NULL, provider VARCHAR(80) NOT NULL, name VARCHAR(255) NOT NULL, issuer_url TEXT, client_id TEXT, client_secret_ref TEXT, sso_url TEXT, certificate TEXT, claim_mapping JSON, group_mapping JSON, enabled TINYINT(1) DEFAULT 1, created_at DATETIME DEFAULT NOW(), updated_at DATETIME DEFAULT NOW()) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+  "CREATE TABLE IF NOT EXISTS audit_logs (id VARCHAR(36) PRIMARY KEY, organization_id VARCHAR(36) NOT NULL, workspace_id VARCHAR(36), actor_user_id VARCHAR(36), action VARCHAR(120) NOT NULL, resource_type VARCHAR(120) NOT NULL, resource_id VARCHAR(255), metadata JSON, ip_address VARCHAR(80), user_agent TEXT, created_at DATETIME DEFAULT NOW()) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+  "ALTER TABLE providers ADD COLUMN workspace_id VARCHAR(36)",
+  "ALTER TABLE agents ADD COLUMN workspace_id VARCHAR(36)",
+  "ALTER TABLE sessions ADD COLUMN workspace_id VARCHAR(36)",
+  "ALTER TABLE usage_logs ADD COLUMN workspace_id VARCHAR(36)",
+  "ALTER TABLE http_tools ADD COLUMN workspace_id VARCHAR(36)",
+  "ALTER TABLE knowledge_bases ADD COLUMN workspace_id VARCHAR(36)",
+  "ALTER TABLE provider_channels ADD COLUMN workspace_id VARCHAR(36)",
+  "ALTER TABLE proxy_usage_logs ADD COLUMN workspace_id VARCHAR(36)",
+  "CREATE TABLE IF NOT EXISTS workspace_skill_categories (workspace_id VARCHAR(36) NOT NULL, skill_name VARCHAR(255) NOT NULL, category VARCHAR(100) NOT NULL DEFAULT '', updated_at DATETIME DEFAULT NOW(), PRIMARY KEY (workspace_id, skill_name)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
 ];

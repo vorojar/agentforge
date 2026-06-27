@@ -18,6 +18,124 @@ describe("SQLiteAdapter", () => {
     await db.close();
   });
 
+  // --- Tenant Foundation ---
+
+  describe("Tenant foundation", () => {
+    it("should bootstrap the default tenant idempotently", async () => {
+      const first = await db.ensureDefaultTenant();
+      const second = await db.ensureDefaultTenant();
+
+      expect(second.organization.id).toBe(first.organization.id);
+      expect(second.workspace.id).toBe(first.workspace.id);
+      expect(first.organization.slug).toBe("default");
+      expect(first.workspace.slug).toBe("default");
+      expect(await db.listOrganizations()).toHaveLength(1);
+      expect(await db.listWorkspaces(first.organization.id)).toHaveLength(1);
+    });
+
+    it("should persist users, memberships, identity providers, and audit logs", async () => {
+      const organization = await db.createOrganization({ name: "Acme Corp", slug: "acme" });
+      const workspace = await db.createWorkspace({ organizationId: organization.id, name: "AI Ops", slug: "ai-ops" });
+      const user = await db.createUser({ email: "OWNER@EXAMPLE.COM", displayName: "Owner" });
+
+      const membership = await db.upsertMembership({
+        organizationId: organization.id,
+        workspaceId: workspace.id,
+        userId: user.id,
+        role: "owner",
+      });
+      expect(membership.role).toBe("owner");
+      expect(membership.status).toBe("active");
+      expect((await db.getUserByEmail("owner@example.com"))!.id).toBe(user.id);
+
+      const updated = await db.upsertMembership({
+        organizationId: organization.id,
+        workspaceId: workspace.id,
+        userId: user.id,
+        role: "admin",
+        status: "active",
+      });
+      expect(updated.id).toBe(membership.id);
+      expect(updated.role).toBe("admin");
+      expect(await db.listMemberships(organization.id, workspace.id)).toHaveLength(1);
+
+      const identityProvider = await db.createIdentityProvider({
+        organizationId: organization.id,
+        type: "oidc",
+        provider: "microsoft",
+        name: "Microsoft Entra ID",
+        issuerUrl: "https://login.microsoftonline.com/example/v2.0",
+        clientId: "client-id",
+        clientSecretRef: "env:ENTRA_CLIENT_SECRET",
+        claimMapping: { email: "preferred_username", name: "name" },
+      });
+      expect(identityProvider.clientSecretRef).toBe("env:ENTRA_CLIENT_SECRET");
+      expect(identityProvider.claimMapping.email).toBe("preferred_username");
+      expect(identityProvider).not.toHaveProperty("clientSecret");
+
+      const audit = await db.createAuditLog({
+        organizationId: organization.id,
+        workspaceId: workspace.id,
+        actorUserId: user.id,
+        action: "identity_provider.create",
+        resourceType: "identity_provider",
+        resourceId: identityProvider.id,
+        metadata: { provider: "microsoft" },
+      });
+      expect(audit.metadata.provider).toBe("microsoft");
+      const logs = await db.listAuditLogs(organization.id, { workspaceId: workspace.id });
+      expect(logs.map(log => log.action)).toEqual(["identity_provider.create"]);
+    });
+
+    it("should isolate core runtime data by workspace", async () => {
+      const organization = await db.createOrganization({ name: "Tenant Isolation", slug: "tenant-isolation" });
+      const workspaceA = await db.createWorkspace({ organizationId: organization.id, name: "A", slug: "a" });
+      const workspaceB = await db.createWorkspace({ organizationId: organization.id, name: "B", slug: "b" });
+
+      const agentA = await db.createAgent({ workspaceId: workspaceA.id, name: "Agent A", systemPrompt: "A" });
+      const agentB = await db.createAgent({ workspaceId: workspaceB.id, name: "Agent B", systemPrompt: "B" });
+      expect((await db.listAgents(workspaceA.id)).map(agent => agent.id)).toEqual([agentA.id]);
+      expect((await db.listAgents(workspaceB.id)).map(agent => agent.id)).toEqual([agentB.id]);
+
+      const sessionA = await db.createSession(agentA.id);
+      const sessionB = await db.createSession(agentB.id);
+      expect(sessionA.workspaceId).toBe(workspaceA.id);
+      expect(sessionB.workspaceId).toBe(workspaceB.id);
+      expect((await db.listSessions(undefined, workspaceA.id)).map(session => session.id)).toEqual([sessionA.id]);
+      expect((await db.listSessions(undefined, workspaceB.id)).map(session => session.id)).toEqual([sessionB.id]);
+
+      await db.logUsage({ agentId: agentA.id, sessionId: sessionA.id, tokensIn: 10, tokensOut: 20, model: "model-a", durationMs: 100 });
+      await db.logUsage({ agentId: agentB.id, sessionId: sessionB.id, tokensIn: 30, tokensOut: 40, model: "model-b", durationMs: 100 });
+      expect(await db.getUsageStats(undefined, workspaceA.id)).toMatchObject({ totalRequests: 1, totalTokensIn: 10, totalTokensOut: 20 });
+      expect(await db.getUsageStats(undefined, workspaceB.id)).toMatchObject({ totalRequests: 1, totalTokensIn: 30, totalTokensOut: 40 });
+
+      const providerA = await db.createProvider({ workspaceId: workspaceA.id, name: "Provider A", type: "openai", apiKey: "a", defaultModel: "a", isPrimary: true });
+      const providerB = await db.createProvider({ workspaceId: workspaceB.id, name: "Provider B", type: "openai", apiKey: "b", defaultModel: "b", isPrimary: true });
+      expect((await db.getPrimaryProvider(workspaceA.id))!.id).toBe(providerA.id);
+      expect((await db.getPrimaryProvider(workspaceB.id))!.id).toBe(providerB.id);
+
+      await db.createHttpTool({ workspaceId: workspaceA.id, name: "tool-a", url: "https://a.example.com" });
+      await db.createHttpTool({ workspaceId: workspaceB.id, name: "tool-b", url: "https://b.example.com" });
+      expect((await db.listHttpTools(workspaceA.id)).map(tool => tool.name)).toEqual(["tool-a"]);
+      expect((await db.listHttpTools(workspaceB.id)).map(tool => tool.name)).toEqual(["tool-b"]);
+
+      await db.createKnowledgeBase({ workspaceId: workspaceA.id, name: "KB A" });
+      await db.createKnowledgeBase({ workspaceId: workspaceB.id, name: "KB B" });
+      expect((await db.listKnowledgeBases(workspaceA.id)).map(kb => kb.name)).toEqual(["KB A"]);
+      expect((await db.listKnowledgeBases(workspaceB.id)).map(kb => kb.name)).toEqual(["KB B"]);
+
+      await db.setSkillCategory("code-review", "engineering", workspaceA.id);
+      await db.setSkillCategory("code-review", "support", workspaceB.id);
+      expect(await db.listSkillCategories(workspaceA.id)).toEqual({ "code-review": "engineering" });
+      expect(await db.listSkillCategories(workspaceB.id)).toEqual({ "code-review": "support" });
+
+      const { channel } = await db.createChannel(providerA.id, "channel-a");
+      await db.logProxyUsage({ channelId: channel.id, providerId: providerA.id, model: "a", tokensIn: 1, tokensOut: 2, durationMs: 10 });
+      expect(await db.getProxyOverview(workspaceA.id)).toMatchObject({ totalRequests: 1, totalTokensIn: 1, totalTokensOut: 2, totalChannels: 1 });
+      expect(await db.getProxyOverview(workspaceB.id)).toMatchObject({ totalRequests: 0, totalTokensIn: 0, totalTokensOut: 0, totalChannels: 0 });
+    });
+  });
+
   // --- Agent CRUD ---
 
   describe("Agents", () => {

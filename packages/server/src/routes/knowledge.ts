@@ -8,6 +8,7 @@
 import type { FastifyInstance } from "fastify";
 import type { AppContext } from "../bootstrap.js";
 import { chunkText } from "@agentforge/tools/chunker";
+import { resolveWorkspaceId } from "../workspace.js";
 
 export async function knowledgeRoutes(fastify: FastifyInstance, opts: { ctx: AppContext }) {
   const { db } = opts.ctx;
@@ -35,12 +36,14 @@ export async function knowledgeRoutes(fastify: FastifyInstance, opts: { ctx: App
   fastify.post("/api/knowledge-bases", async (request, reply) => {
     const body = request.body as { name: string; description?: string };
     if (!body.name) return reply.code(400).send({ error: "name is required" });
-    const kb = await db.createKnowledgeBase(body);
+    const workspaceId = await resolveWorkspaceId(request, db);
+    const kb = await db.createKnowledgeBase({ ...body, workspaceId });
     return reply.code(201).send(kb);
   });
 
-  fastify.get("/api/knowledge-bases", async () => {
-    const kbs = await db.listKnowledgeBases();
+  fastify.get("/api/knowledge-bases", async (request) => {
+    const workspaceId = await resolveWorkspaceId(request, db);
+    const kbs = await db.listKnowledgeBases(workspaceId);
     const result = [];
     for (const kb of kbs) {
       const sources = await db.listKnowledgeSources(kb.id);
@@ -51,15 +54,19 @@ export async function knowledgeRoutes(fastify: FastifyInstance, opts: { ctx: App
 
   fastify.get("/api/knowledge-bases/:id", async (request, reply) => {
     const { id } = request.params as { id: string };
+    const workspaceId = await resolveWorkspaceId(request, db);
     const kb = await db.getKnowledgeBase(id);
-    if (!kb) return reply.code(404).send({ error: "Knowledge base not found" });
+    if (!kb || kb.workspaceId !== workspaceId) return reply.code(404).send({ error: "Knowledge base not found" });
     const sources = await db.listKnowledgeSources(kb.id);
     return { ...kb, sources };
   });
 
   fastify.put("/api/knowledge-bases/:id", async (request, reply) => {
     const { id } = request.params as { id: string };
+    const workspaceId = await resolveWorkspaceId(request, db);
     const body = request.body as { name?: string; description?: string };
+    const kb = await db.getKnowledgeBase(id);
+    if (!kb || kb.workspaceId !== workspaceId) return reply.code(404).send({ error: "Knowledge base not found" });
     const updated = await db.updateKnowledgeBase(id, body);
     if (!updated) return reply.code(404).send({ error: "Knowledge base not found" });
     return updated;
@@ -67,6 +74,9 @@ export async function knowledgeRoutes(fastify: FastifyInstance, opts: { ctx: App
 
   fastify.delete("/api/knowledge-bases/:id", async (request, reply) => {
     const { id } = request.params as { id: string };
+    const workspaceId = await resolveWorkspaceId(request, db);
+    const kb = await db.getKnowledgeBase(id);
+    if (!kb || kb.workspaceId !== workspaceId) return reply.code(404).send({ error: "Knowledge base not found" });
     const deleted = await db.deleteKnowledgeBase(id);
     if (!deleted) return reply.code(404).send({ error: "Knowledge base not found" });
     return { success: true };
@@ -76,8 +86,9 @@ export async function knowledgeRoutes(fastify: FastifyInstance, opts: { ctx: App
 
   fastify.post("/api/knowledge-bases/:id/sources", async (request, reply) => {
     const { id } = request.params as { id: string };
+    const workspaceId = await resolveWorkspaceId(request, db);
     const kb = await db.getKnowledgeBase(id);
-    if (!kb) return reply.code(404).send({ error: "Knowledge base not found" });
+    if (!kb || kb.workspaceId !== workspaceId) return reply.code(404).send({ error: "Knowledge base not found" });
 
     const body = request.body as { name: string; content: string };
     if (!body.name || !body.content) return reply.code(400).send({ error: "name and content are required" });
@@ -90,13 +101,17 @@ export async function knowledgeRoutes(fastify: FastifyInstance, opts: { ctx: App
 
   fastify.get("/api/knowledge-bases/:id/sources", async (request, reply) => {
     const { id } = request.params as { id: string };
+    const workspaceId = await resolveWorkspaceId(request, db);
     const kb = await db.getKnowledgeBase(id);
-    if (!kb) return reply.code(404).send({ error: "Knowledge base not found" });
+    if (!kb || kb.workspaceId !== workspaceId) return reply.code(404).send({ error: "Knowledge base not found" });
     return await db.listKnowledgeSources(id);
   });
 
   fastify.get("/api/knowledge-bases/:id/sources/:sourceName/content", async (request, reply) => {
     const { id, sourceName } = request.params as { id: string; sourceName: string };
+    const workspaceId = await resolveWorkspaceId(request, db);
+    const kb = await db.getKnowledgeBase(id);
+    if (!kb || kb.workspaceId !== workspaceId) return reply.code(404).send({ error: "Knowledge base not found" });
     const content = await db.getKnowledgeSourceContent(id, decodeURIComponent(sourceName));
     if (content === null) return reply.code(404).send({ error: "Knowledge source not found" });
     return { sourceName: decodeURIComponent(sourceName), content };
@@ -104,8 +119,9 @@ export async function knowledgeRoutes(fastify: FastifyInstance, opts: { ctx: App
 
   fastify.put("/api/knowledge-bases/:id/sources/:sourceName/content", async (request, reply) => {
     const { id, sourceName } = request.params as { id: string; sourceName: string };
+    const workspaceId = await resolveWorkspaceId(request, db);
     const kb = await db.getKnowledgeBase(id);
-    if (!kb) return reply.code(404).send({ error: "Knowledge base not found" });
+    if (!kb || kb.workspaceId !== workspaceId) return reply.code(404).send({ error: "Knowledge base not found" });
 
     const body = request.body as { content: string };
     if (body.content === undefined) return reply.code(400).send({ error: "content is required" });
@@ -119,6 +135,9 @@ export async function knowledgeRoutes(fastify: FastifyInstance, opts: { ctx: App
 
   fastify.patch("/api/knowledge-bases/:id/sources/:sourceName", async (request, reply) => {
     const { id, sourceName } = request.params as { id: string; sourceName: string };
+    const workspaceId = await resolveWorkspaceId(request, db);
+    const kb = await db.getKnowledgeBase(id);
+    if (!kb || kb.workspaceId !== workspaceId) return reply.code(404).send({ error: "Knowledge base not found" });
     const body = request.body as { newName: string };
     if (!body.newName?.trim()) return reply.code(400).send({ error: "newName is required" });
     const renamed = await db.renameKnowledgeSource(id, decodeURIComponent(sourceName), body.newName.trim());
@@ -128,6 +147,9 @@ export async function knowledgeRoutes(fastify: FastifyInstance, opts: { ctx: App
 
   fastify.delete("/api/knowledge-bases/:id/sources/:sourceName", async (request, reply) => {
     const { id, sourceName } = request.params as { id: string; sourceName: string };
+    const workspaceId = await resolveWorkspaceId(request, db);
+    const kb = await db.getKnowledgeBase(id);
+    if (!kb || kb.workspaceId !== workspaceId) return reply.code(404).send({ error: "Knowledge base not found" });
     const deleted = await db.deleteKnowledgeSource(id, decodeURIComponent(sourceName));
     if (!deleted) return reply.code(404).send({ error: "Knowledge source not found" });
     return { success: true };
@@ -138,6 +160,13 @@ export async function knowledgeRoutes(fastify: FastifyInstance, opts: { ctx: App
   fastify.post("/api/knowledge-bases/search", async (request, reply) => {
     const body = request.body as { kbIds: string[]; query: string; limit?: number };
     if (!body.query || !body.kbIds?.length) return reply.code(400).send({ error: "query and kbIds are required" });
+    const workspaceId = await resolveWorkspaceId(request, db);
+    const allowedKbIds = [];
+    for (const kbId of body.kbIds) {
+      const kb = await db.getKnowledgeBase(kbId);
+      if (kb?.workspaceId === workspaceId) allowedKbIds.push(kbId);
+    }
+    if (allowedKbIds.length === 0) return reply.code(404).send({ error: "Knowledge base not found" });
 
     let queryEmbedding: number[] | undefined;
     if (embedder) {
@@ -147,24 +176,31 @@ export async function knowledgeRoutes(fastify: FastifyInstance, opts: { ctx: App
       } catch { /* fallback to keyword search */ }
     }
 
-    return await db.searchKnowledge(body.kbIds, body.query, body.limit, queryEmbedding);
+    return await db.searchKnowledge(allowedKbIds, body.query, body.limit, queryEmbedding);
   });
 
   // --- Agent-Knowledge Association ---
 
   fastify.put("/api/agents/:agentId/knowledge", async (request, reply) => {
     const { agentId } = request.params as { agentId: string };
+    const workspaceId = await resolveWorkspaceId(request, db);
     const agent = await db.getAgent(agentId);
-    if (!agent) return reply.code(404).send({ error: "Agent not found" });
+    if (!agent || agent.workspaceId !== workspaceId) return reply.code(404).send({ error: "Agent not found" });
     const body = request.body as { kbIds: string[] };
-    await db.setAgentKnowledge(agentId, body.kbIds ?? []);
-    return { success: true, kbIds: body.kbIds };
+    const kbIds = [];
+    for (const kbId of body.kbIds ?? []) {
+      const kb = await db.getKnowledgeBase(kbId);
+      if (kb?.workspaceId === workspaceId) kbIds.push(kbId);
+    }
+    await db.setAgentKnowledge(agentId, kbIds);
+    return { success: true, kbIds };
   });
 
   fastify.get("/api/agents/:agentId/knowledge", async (request, reply) => {
     const { agentId } = request.params as { agentId: string };
+    const workspaceId = await resolveWorkspaceId(request, db);
     const agent = await db.getAgent(agentId);
-    if (!agent) return reply.code(404).send({ error: "Agent not found" });
+    if (!agent || agent.workspaceId !== workspaceId) return reply.code(404).send({ error: "Agent not found" });
     const kbIds = await db.getAgentKnowledge(agentId);
     return { kbIds };
   });
@@ -173,8 +209,9 @@ export async function knowledgeRoutes(fastify: FastifyInstance, opts: { ctx: App
 
   fastify.post("/api/agents/:id/knowledge/upload", async (request, reply) => {
     const { id } = request.params as { id: string };
+    const workspaceId = await resolveWorkspaceId(request, db);
     const agent = await db.getAgent(id);
-    if (!agent) return reply.code(404).send({ error: "Agent not found" });
+    if (!agent || agent.workspaceId !== workspaceId) return reply.code(404).send({ error: "Agent not found" });
 
     const body = request.body as { name: string; content: string };
     if (!body.name || !body.content) return reply.code(400).send({ error: "name and content are required" });
@@ -184,7 +221,7 @@ export async function knowledgeRoutes(fastify: FastifyInstance, opts: { ctx: App
     if (kbIds.length > 0) {
       kbId = kbIds[0];
     } else {
-      const kb = await db.createKnowledgeBase({ name: `${agent.name} - 默认知识库` });
+      const kb = await db.createKnowledgeBase({ name: `${agent.name} - 默认知识库`, workspaceId: agent.workspaceId });
       kbId = kb.id;
       await db.setAgentKnowledge(id, [kbId]);
     }

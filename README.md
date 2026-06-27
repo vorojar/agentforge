@@ -11,6 +11,7 @@
 - **知识库（RAG）** — 上传文档，自动分块（中英文句子感知） + 向量化（火山引擎 Embedding），混合搜索（向量 60% + BM25 40%），支持原始内容在线编辑与重切片
 - **HTTP API Tools** — 无需写代码，通过管理界面配置外部 API 为 Agent 工具，热加载无需重启
 - **OpenAI 兼容渠道** — 每个 Model 可创建独立 Channel API Key，兼容 `/v1/chat/completions`，并统计渠道用量
+- **企业租户地基** — 支持 Organization / Workspace / User / Membership / Identity Provider 配置 / Audit Log，为私有云企业部署和后续 OIDC/SAML/飞书等身份接入打基础
 - **多语言后台** — 管理后台支持中文、日语、英文，右上角可切换，默认跟随浏览器语言
 - **上下文压缩** — 长对话自动截断旧 tool 结果 + 超出 token 预算时裁剪历史
 - **流式输出** — SSE 实时流式返回，Test Chat 支持流式展示
@@ -110,6 +111,33 @@ skills/
 无 Embedding 配置时降级为纯 BM25 关键词搜索。
 
 ## API
+
+### 管理接口（Admin Secret 认证）
+
+管理端请求使用 `X-Admin-Secret`。P0 企业租户地基提供以下基础资源，后续 OIDC/SAML/飞书/企业微信/钉钉/GitHub 登录都会接入同一套 Organization / Workspace / Membership / Audit Log 模型。
+
+工作区选择支持三种方式，优先级从高到低：
+
+1. `X-Workspace-Id` header
+2. `workspaceId` query
+3. JSON body 中的 `workspaceId`
+
+如果都不传，系统会自动使用默认工作区。Agent、Model/Channel、HTTP Tool、Skill Category、Knowledge Base、Session、Usage、Proxy Usage 都按 workspace 隔离。
+
+```bash
+curl http://localhost:3000/api/tenant/bootstrap \
+  -H "X-Admin-Secret: your-admin-secret"
+```
+
+主要租户接口：
+
+- `GET /api/tenant/bootstrap`
+- `GET/POST /api/organizations`
+- `GET/POST /api/organizations/:organizationId/workspaces`
+- `GET/POST /api/users`
+- `GET/POST /api/organizations/:organizationId/memberships`
+- `GET/POST /api/organizations/:organizationId/identity-providers`
+- `GET /api/organizations/:organizationId/audit-logs`
 
 ### 对话接口（API Key 认证）
 

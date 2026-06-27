@@ -74,6 +74,9 @@ Review matches manually. Some English text is intentional, such as `AgentForge`,
 - Schema changes must update migrations and adapters together.
 - SQLite and MySQL must both be considered for new fields.
 - Add or update database tests for persistence changes.
+- Enterprise/private-cloud work must build on the tenant foundation: organizations, workspaces, users, memberships, identity provider configs, and audit logs.
+- Core runtime data must stay workspace-scoped: agents, providers/channels, HTTP tools, skill categories, knowledge bases, sessions, usage, and proxy usage.
+- Identity provider credentials should be stored as secret references, not raw secret values in tenant config rows.
 - Do not hide missing required business data with `?? 0`, `"Unknown"`, or similar fallback values unless the field is genuinely optional.
 - Keep generated/local data out of git: `.env`, local DB files, logs, and `.agent/` artifacts are not deliverables.
 
@@ -81,6 +84,9 @@ Review matches manually. Some English text is intentional, such as `AgentForge`,
 
 - Admin routes use `X-Admin-Secret`; public chat routes use API key auth.
 - Do not log API keys, admin secrets, bearer tokens, or raw provider credentials.
+- Validate tenant membership roles and IdP types at the API boundary before writing them.
+- Admin API detail/update/delete routes must verify the resource belongs to the resolved workspace (`X-Workspace-Id`, `workspaceId` query/body, then default workspace).
+- Sensitive tenant/admin changes should create audit logs.
 - Preserve API compatibility unless the user explicitly asks for a breaking change.
 - Add route tests when changing auth, routing, validation, provider registry behavior, or session/message persistence.
 - SSE and non-streaming chat should stay behaviorally aligned where possible.

@@ -12,6 +12,21 @@ import type { HttpTool, HttpToolCreateInput, HttpToolUpdateInput } from "./http-
 import type { ProviderConfig, ProviderCreateInput, ProviderUpdateInput } from "./provider-config.js";
 import type { KnowledgeBase, KnowledgeBaseCreateInput, KnowledgeBaseUpdateInput, KnowledgeSource, KnowledgeSearchResult } from "./knowledge-base.js";
 import type { ProviderChannel, ProxyUsageLog, ChannelStats } from "./provider-channel.js";
+import type {
+  AuditLog,
+  AuditLogInput,
+  IdentityProviderConfig,
+  IdentityProviderCreateInput,
+  Membership,
+  MembershipInput,
+  Organization,
+  OrganizationCreateInput,
+  TenantBootstrapResult,
+  UserAccount,
+  UserCreateInput,
+  Workspace,
+  WorkspaceCreateInput,
+} from "./tenant.js";
 
 export interface ApiKey {
   id: string;
@@ -26,6 +41,7 @@ export interface ApiKey {
 
 export interface UsageLog {
   id: string;
+  workspaceId?: string;
   agentId: string;
   sessionId: string;
   tokensIn: number;
@@ -49,10 +65,29 @@ export interface DailyStats {
 }
 
 export interface DatabaseAdapter {
+  // Tenant foundation
+  ensureDefaultTenant(): Promise<TenantBootstrapResult>;
+  createOrganization(input: OrganizationCreateInput): Promise<Organization>;
+  getOrganization(id: string): Promise<Organization | null>;
+  listOrganizations(): Promise<Organization[]>;
+  createWorkspace(input: WorkspaceCreateInput): Promise<Workspace>;
+  getWorkspace(id: string): Promise<Workspace | null>;
+  listWorkspaces(organizationId?: string): Promise<Workspace[]>;
+  createUser(input: UserCreateInput): Promise<UserAccount>;
+  getUser(id: string): Promise<UserAccount | null>;
+  getUserByEmail(email: string): Promise<UserAccount | null>;
+  listUsers(): Promise<UserAccount[]>;
+  upsertMembership(input: MembershipInput): Promise<Membership>;
+  listMemberships(organizationId: string, workspaceId?: string | null): Promise<Membership[]>;
+  createIdentityProvider(input: IdentityProviderCreateInput): Promise<IdentityProviderConfig>;
+  listIdentityProviders(organizationId: string): Promise<IdentityProviderConfig[]>;
+  createAuditLog(input: AuditLogInput): Promise<AuditLog>;
+  listAuditLogs(organizationId: string, options?: { workspaceId?: string; limit?: number }): Promise<AuditLog[]>;
+
   // Agents
   createAgent(input: AgentCreateInput): Promise<AgentConfig>;
   getAgent(id: string): Promise<AgentConfig | null>;
-  listAgents(): Promise<AgentConfig[]>;
+  listAgents(workspaceId?: string): Promise<AgentConfig[]>;
   updateAgent(id: string, input: AgentUpdateInput): Promise<AgentConfig | null>;
   deleteAgent(id: string): Promise<boolean>;
 
@@ -64,9 +99,9 @@ export interface DatabaseAdapter {
   touchApiKey(id: string): Promise<void>;
 
   // Sessions
-  createSession(agentId: string, options?: { sourceSessionId?: string }): Promise<Session>;
+  createSession(agentId: string, options?: { sourceSessionId?: string; workspaceId?: string }): Promise<Session>;
   getSession(id: string): Promise<Session | null>;
-  listSessions(agentId?: string): Promise<Session[]>;
+  listSessions(agentId?: string, workspaceId?: string): Promise<Session[]>;
   listSessionFamily(rootSessionId: string): Promise<Session[]>;
   deleteSession(id: string): Promise<boolean>;
 
@@ -76,35 +111,35 @@ export interface DatabaseAdapter {
 
   // Usage
   logUsage(log: Omit<UsageLog, "id" | "createdAt">): Promise<void>;
-  getUsageStats(agentId?: string): Promise<UsageStats>;
-  getDailyStats(agentId?: string, days?: number, startDate?: string, endDate?: string, granularity?: string): Promise<DailyStats[]>;
-  getSessionCounts(): Promise<{ total: number; today: number }>;
-  getModelStats(startDate?: string, endDate?: string): Promise<Array<{ model: string; requests: number; tokensIn: number; tokensOut: number }>>;
-  getAgentUsageStats(startDate?: string, endDate?: string): Promise<Array<{ agentId: string; totalRequests: number; totalTokensIn: number; totalTokensOut: number }>>;
+  getUsageStats(agentId?: string, workspaceId?: string): Promise<UsageStats>;
+  getDailyStats(agentId?: string, days?: number, startDate?: string, endDate?: string, granularity?: string, workspaceId?: string): Promise<DailyStats[]>;
+  getSessionCounts(workspaceId?: string): Promise<{ total: number; today: number }>;
+  getModelStats(startDate?: string, endDate?: string, workspaceId?: string): Promise<Array<{ model: string; requests: number; tokensIn: number; tokensOut: number }>>;
+  getAgentUsageStats(startDate?: string, endDate?: string, workspaceId?: string): Promise<Array<{ agentId: string; totalRequests: number; totalTokensIn: number; totalTokensOut: number }>>;
 
   // HTTP Tools
   createHttpTool(input: HttpToolCreateInput): Promise<HttpTool>;
   getHttpTool(id: string): Promise<HttpTool | null>;
-  listHttpTools(): Promise<HttpTool[]>;
+  listHttpTools(workspaceId?: string): Promise<HttpTool[]>;
   updateHttpTool(id: string, input: HttpToolUpdateInput): Promise<HttpTool | null>;
   deleteHttpTool(id: string): Promise<boolean>;
 
   // Skill Categories
-  listSkillCategories(): Promise<Record<string, string>>;
-  setSkillCategory(skillName: string, category: string): Promise<void>;
+  listSkillCategories(workspaceId?: string): Promise<Record<string, string>>;
+  setSkillCategory(skillName: string, category: string, workspaceId?: string): Promise<void>;
 
   // Providers
   createProvider(input: ProviderCreateInput): Promise<ProviderConfig>;
   getProvider(id: string): Promise<ProviderConfig | null>;
-  listProviders(): Promise<ProviderConfig[]>;
+  listProviders(workspaceId?: string): Promise<ProviderConfig[]>;
   updateProvider(id: string, input: ProviderUpdateInput): Promise<ProviderConfig | null>;
   deleteProvider(id: string): Promise<boolean>;
-  getPrimaryProvider(): Promise<ProviderConfig | null>;
+  getPrimaryProvider(workspaceId?: string): Promise<ProviderConfig | null>;
 
   // Knowledge Bases
   createKnowledgeBase(input: KnowledgeBaseCreateInput): Promise<KnowledgeBase>;
   getKnowledgeBase(id: string): Promise<KnowledgeBase | null>;
-  listKnowledgeBases(): Promise<KnowledgeBase[]>;
+  listKnowledgeBases(workspaceId?: string): Promise<KnowledgeBase[]>;
   updateKnowledgeBase(id: string, input: KnowledgeBaseUpdateInput): Promise<KnowledgeBase | null>;
   deleteKnowledgeBase(id: string): Promise<boolean>;
 
@@ -129,9 +164,9 @@ export interface DatabaseAdapter {
   // Proxy Usage
   logProxyUsage(log: ProxyUsageLog): Promise<void>;
   getChannelStats(channelId: string, days?: number): Promise<ChannelStats>;
-  getProviderChannelStats(providerId: string, startDate?: string, endDate?: string): Promise<Array<{ channelId: string; channelName: string; totalRequests: number; totalTokensIn: number; totalTokensOut: number }>>;
-  getProxyDailyStats(days?: number, startDate?: string, endDate?: string, granularity?: string): Promise<DailyStats[]>;
-  getProxyOverview(): Promise<{ totalRequests: number; totalTokensIn: number; totalTokensOut: number; totalChannels: number }>;
+  getProviderChannelStats(providerId: string, startDate?: string, endDate?: string, workspaceId?: string): Promise<Array<{ channelId: string; channelName: string; totalRequests: number; totalTokensIn: number; totalTokensOut: number }>>;
+  getProxyDailyStats(days?: number, startDate?: string, endDate?: string, granularity?: string, workspaceId?: string): Promise<DailyStats[]>;
+  getProxyOverview(workspaceId?: string): Promise<{ totalRequests: number; totalTokensIn: number; totalTokensOut: number; totalChannels: number }>;
 
   // Lifecycle
   close(): Promise<void>;

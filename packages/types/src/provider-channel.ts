@@ -7,6 +7,7 @@
 
 export interface ProviderChannel {
   id: string;
+  workspaceId: string;
   providerId: string;
   name: string;
   keyHash: string;
@@ -17,6 +18,7 @@ export interface ProviderChannel {
 }
 
 export interface ProxyUsageLog {
+  workspaceId?: string;
   channelId: string;
   providerId: string;
   model: string;

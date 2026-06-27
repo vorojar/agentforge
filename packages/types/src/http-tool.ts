@@ -2,6 +2,7 @@ import type { ToolParameterSchema } from "./tool.js";
 
 export interface HttpTool {
   id: string;
+  workspaceId: string;
   name: string;
   description: string;
   method: string;
@@ -16,6 +17,7 @@ export interface HttpTool {
 }
 
 export interface HttpToolCreateInput {
+  workspaceId?: string;
   name: string;
   description?: string;
   method?: string;
@@ -27,6 +29,7 @@ export interface HttpToolCreateInput {
 }
 
 export interface HttpToolUpdateInput {
+  workspaceId?: string;
   name?: string;
   description?: string;
   method?: string;

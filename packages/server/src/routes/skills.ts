@@ -13,29 +13,30 @@ import type { FastifyInstance } from "fastify";
 import AdmZip from "adm-zip";
 import { loadSkillsFromDirectory } from "@agentforge/skills";
 import type { AppContext } from "../bootstrap.js";
+import { resolveWorkspaceId } from "../workspace.js";
 
 export async function skillRoutes(fastify: FastifyInstance, opts: { ctx: AppContext }) {
   const { db, skillRegistry } = opts.ctx;
   const skillsDir = resolve(process.cwd(), "skills");
 
-  async function listSkillsWithCategories() {
-    const categories = await db.listSkillCategories();
+  async function listSkillsWithCategories(workspaceId: string) {
+    const categories = await db.listSkillCategories(workspaceId);
     return skillRegistry.list().map((skill) => ({
       ...skill,
       category: categories[skill.name] ?? "",
     }));
   }
 
-  async function getSkillWithCategory(name: string) {
+  async function getSkillWithCategory(name: string, workspaceId: string) {
     const skill = skillRegistry.get(name);
     if (!skill) return null;
-    const categories = await db.listSkillCategories();
+    const categories = await db.listSkillCategories(workspaceId);
     return { ...skill, category: categories[skill.name] ?? "" };
   }
 
   // List skills (read-only, loaded from filesystem)
-  fastify.get("/api/skills", async () => {
-    return listSkillsWithCategories();
+  fastify.get("/api/skills", async (request) => {
+    return listSkillsWithCategories(await resolveWorkspaceId(request, db));
   });
 
   fastify.put("/api/skills/:name/category", async (request, reply) => {
@@ -44,14 +45,15 @@ export async function skillRoutes(fastify: FastifyInstance, opts: { ctx: AppCont
       return reply.code(404).send({ error: "Skill not found" });
     }
     const { category } = (request.body ?? {}) as { category?: string };
-    await db.setSkillCategory(name, category ?? "");
-    return await getSkillWithCategory(name);
+    const workspaceId = await resolveWorkspaceId(request, db);
+    await db.setSkillCategory(name, category ?? "", workspaceId);
+    return await getSkillWithCategory(name, workspaceId);
   });
 
   // Get single skill by name
   fastify.get("/api/skills/:name", async (request, reply) => {
     const { name } = request.params as { name: string };
-    const skill = await getSkillWithCategory(name);
+    const skill = await getSkillWithCategory(name, await resolveWorkspaceId(request, db));
     if (!skill) {
       return reply.code(404).send({ error: "Skill not found" });
     }

@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import type { AppContext } from "../bootstrap.js";
 import { pipeStreamToSSE } from "../sse.js";
 import type { ImageBlock } from "@agentforge/types";
+import { resolveWorkspaceId } from "../workspace.js";
 
 export async function agentRoutes(fastify: FastifyInstance, opts: { ctx: AppContext }) {
   const { db, agentLoop } = opts.ctx;
@@ -32,7 +33,8 @@ export async function agentRoutes(fastify: FastifyInstance, opts: { ctx: AppCont
     if (!body.model) {
       body.model = opts.ctx.config.defaultModel;
     }
-    const agent = await db.createAgent(body);
+    const workspaceId = await resolveWorkspaceId(request, db);
+    const agent = await db.createAgent({ ...body, workspaceId });
     const { apiKey, rawKey } = await db.createApiKey(agent.id, "default");
 
     return reply.code(201).send({
@@ -41,8 +43,9 @@ export async function agentRoutes(fastify: FastifyInstance, opts: { ctx: AppCont
     });
   });
 
-  fastify.get("/api/agents", async () => {
-    const agents = await db.listAgents();
+  fastify.get("/api/agents", async (request) => {
+    const workspaceId = await resolveWorkspaceId(request, db);
+    const agents = await db.listAgents(workspaceId);
     const result = [];
     for (const agent of agents) {
       const keys = await db.listApiKeys(agent.id);
@@ -56,8 +59,9 @@ export async function agentRoutes(fastify: FastifyInstance, opts: { ctx: AppCont
 
   fastify.get("/api/agents/:id", async (request, reply) => {
     const { id } = request.params as { id: string };
+    const workspaceId = await resolveWorkspaceId(request, db);
     const agent = await db.getAgent(id);
-    if (!agent) {
+    if (!agent || agent.workspaceId !== workspaceId) {
       return reply.code(404).send({ error: "Agent not found" });
     }
     const keys = await db.listApiKeys(id);
@@ -66,6 +70,9 @@ export async function agentRoutes(fastify: FastifyInstance, opts: { ctx: AppCont
 
   fastify.put("/api/agents/:id", async (request, reply) => {
     const { id } = request.params as { id: string };
+    const workspaceId = await resolveWorkspaceId(request, db);
+    const agent = await db.getAgent(id);
+    if (!agent || agent.workspaceId !== workspaceId) return reply.code(404).send({ error: "Agent not found" });
     const body = request.body as Record<string, unknown>;
     const updated = await db.updateAgent(id, body);
     if (!updated) {
@@ -76,6 +83,9 @@ export async function agentRoutes(fastify: FastifyInstance, opts: { ctx: AppCont
 
   fastify.delete("/api/agents/:id", async (request, reply) => {
     const { id } = request.params as { id: string };
+    const workspaceId = await resolveWorkspaceId(request, db);
+    const agent = await db.getAgent(id);
+    if (!agent || agent.workspaceId !== workspaceId) return reply.code(404).send({ error: "Agent not found" });
     const deleted = await db.deleteAgent(id);
     if (!deleted) {
       return reply.code(404).send({ error: "Agent not found" });
@@ -86,8 +96,9 @@ export async function agentRoutes(fastify: FastifyInstance, opts: { ctx: AppCont
   fastify.post("/api/agents/:id/keys", async (request, reply) => {
     const { id } = request.params as { id: string };
     const body = (request.body as { name?: string }) ?? {};
+    const workspaceId = await resolveWorkspaceId(request, db);
     const agent = await db.getAgent(id);
-    if (!agent) {
+    if (!agent || agent.workspaceId !== workspaceId) {
       return reply.code(404).send({ error: "Agent not found" });
     }
     const { apiKey, rawKey } = await db.createApiKey(id, body.name);
@@ -105,8 +116,9 @@ export async function agentRoutes(fastify: FastifyInstance, opts: { ctx: AppCont
 
   fastify.post("/api/agents/:id/chat", async (request, reply) => {
     const { id } = request.params as { id: string };
+    const workspaceId = await resolveWorkspaceId(request, db);
     const agent = await db.getAgent(id);
-    if (!agent) return reply.code(404).send({ error: "Agent not found" });
+    if (!agent || agent.workspaceId !== workspaceId) return reply.code(404).send({ error: "Agent not found" });
 
     const body = request.body as { message: string; sessionId?: string; images?: Array<{ type: "base64"; data: string; mediaType: string } | { type: "url"; url: string }> };
     if (!body.message && !body.images?.length) return reply.code(400).send({ error: "message or images is required" });
@@ -124,8 +136,9 @@ export async function agentRoutes(fastify: FastifyInstance, opts: { ctx: AppCont
 
   fastify.post("/api/agents/:id/chat/stream", async (request, reply) => {
     const { id } = request.params as { id: string };
+    const workspaceId = await resolveWorkspaceId(request, db);
     const agent = await db.getAgent(id);
-    if (!agent) return reply.code(404).send({ error: "Agent not found" });
+    if (!agent || agent.workspaceId !== workspaceId) return reply.code(404).send({ error: "Agent not found" });
 
     const body = request.body as { message: string; sessionId?: string; images?: Array<{ type: "base64"; data: string; mediaType: string } | { type: "url"; url: string }> };
     if (!body.message && !body.images?.length) return reply.code(400).send({ error: "message or images is required" });

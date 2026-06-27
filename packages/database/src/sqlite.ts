@@ -31,6 +31,19 @@ import type {
   ContentBlock,
   ModelTrace,
   ModelCapabilities,
+  AuditLog,
+  AuditLogInput,
+  IdentityProviderConfig,
+  IdentityProviderCreateInput,
+  Membership,
+  MembershipInput,
+  Organization,
+  OrganizationCreateInput,
+  TenantBootstrapResult,
+  UserAccount,
+  UserCreateInput,
+  Workspace,
+  WorkspaceCreateInput,
 } from "@agentforge/types";
 import { SQLITE_MIGRATIONS, SQLITE_INDEXES, SQLITE_INCREMENTAL_MIGRATIONS } from "./migrations.js";
 
@@ -66,6 +79,11 @@ function normalizeCategory(category?: string): string {
   return category?.trim() ?? "";
 }
 
+function normalizeSlug(value: string): string {
+  const slug = value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  return slug || "default";
+}
+
 function defaultModelCapabilities(type?: string): ModelCapabilities {
   return {
     supportsTools: true,
@@ -99,6 +117,306 @@ export class SQLiteAdapter implements DatabaseAdapter {
         try { this.db.exec(sql); } catch { /* column/table may already exist */ }
       }
     }
+    await this.backfillDefaultWorkspace();
+  }
+
+  private async getDefaultWorkspaceId(): Promise<string> {
+    return (await this.ensureDefaultTenant()).workspace.id;
+  }
+
+  private async resolveWorkspaceId(workspaceId?: string | null): Promise<string> {
+    return workspaceId || await this.getDefaultWorkspaceId();
+  }
+
+  private async backfillDefaultWorkspace(): Promise<void> {
+    const workspaceId = await this.getDefaultWorkspaceId();
+    const tables = ["providers", "agents", "sessions", "usage_logs", "http_tools", "knowledge_bases", "provider_channels", "proxy_usage_logs"];
+    for (const table of tables) {
+      try {
+        this.db.prepare(`UPDATE ${table} SET workspace_id = ? WHERE workspace_id IS NULL OR workspace_id = ''`).run(workspaceId);
+      } catch {
+        // Older schemas may not have all tables yet during incremental setup.
+      }
+    }
+    try {
+      this.db.prepare(`
+        INSERT OR IGNORE INTO workspace_skill_categories (workspace_id, skill_name, category, updated_at)
+        SELECT ?, skill_name, category, updated_at FROM skill_categories
+      `).run(workspaceId);
+    } catch {
+      // Legacy table may not exist in partial databases.
+    }
+  }
+
+  // --- Tenant foundation ---
+
+  async ensureDefaultTenant(): Promise<TenantBootstrapResult> {
+    let organization = this.db.prepare("SELECT * FROM organizations WHERE slug = ?").get("default") as Record<string, unknown> | undefined;
+    if (!organization) {
+      const created = await this.createOrganization({ name: "Default Organization", slug: "default" });
+      organization = {
+        id: created.id,
+        name: created.name,
+        slug: created.slug,
+        created_at: created.createdAt,
+        updated_at: created.updatedAt,
+      };
+    }
+
+    let workspace = this.db.prepare("SELECT * FROM workspaces WHERE organization_id = ? AND slug = ?")
+      .get(organization.id, "default") as Record<string, unknown> | undefined;
+    if (!workspace) {
+      const created = await this.createWorkspace({ organizationId: organization.id as string, name: "Default Workspace", slug: "default" });
+      workspace = {
+        id: created.id,
+        organization_id: created.organizationId,
+        name: created.name,
+        slug: created.slug,
+        created_at: created.createdAt,
+        updated_at: created.updatedAt,
+      };
+    }
+
+    return { organization: this.mapOrganization(organization), workspace: this.mapWorkspace(workspace) };
+  }
+
+  async createOrganization(input: OrganizationCreateInput): Promise<Organization> {
+    const id = uuidv4();
+    const now = new Date().toISOString();
+    const slug = normalizeSlug(input.slug ?? input.name);
+    this.db.prepare("INSERT INTO organizations (id, name, slug, created_at, updated_at) VALUES (?, ?, ?, ?, ?)")
+      .run(id, input.name.trim(), slug, now, now);
+    return (await this.getOrganization(id))!;
+  }
+
+  async getOrganization(id: string): Promise<Organization | null> {
+    const row = this.db.prepare("SELECT * FROM organizations WHERE id = ?").get(id) as Record<string, unknown> | undefined;
+    return row ? this.mapOrganization(row) : null;
+  }
+
+  async listOrganizations(): Promise<Organization[]> {
+    const rows = this.db.prepare("SELECT * FROM organizations ORDER BY created_at ASC").all() as Record<string, unknown>[];
+    return rows.map((row) => this.mapOrganization(row));
+  }
+
+  async createWorkspace(input: WorkspaceCreateInput): Promise<Workspace> {
+    const id = uuidv4();
+    const now = new Date().toISOString();
+    const slug = normalizeSlug(input.slug ?? input.name);
+    this.db.prepare("INSERT INTO workspaces (id, organization_id, name, slug, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)")
+      .run(id, input.organizationId, input.name.trim(), slug, now, now);
+    return (await this.getWorkspace(id))!;
+  }
+
+  async getWorkspace(id: string): Promise<Workspace | null> {
+    const row = this.db.prepare("SELECT * FROM workspaces WHERE id = ?").get(id) as Record<string, unknown> | undefined;
+    return row ? this.mapWorkspace(row) : null;
+  }
+
+  async listWorkspaces(organizationId?: string): Promise<Workspace[]> {
+    const rows = organizationId
+      ? this.db.prepare("SELECT * FROM workspaces WHERE organization_id = ? ORDER BY created_at ASC").all(organizationId) as Record<string, unknown>[]
+      : this.db.prepare("SELECT * FROM workspaces ORDER BY created_at ASC").all() as Record<string, unknown>[];
+    return rows.map((row) => this.mapWorkspace(row));
+  }
+
+  async createUser(input: UserCreateInput): Promise<UserAccount> {
+    const id = uuidv4();
+    const now = new Date().toISOString();
+    const email = input.email.trim().toLowerCase();
+    this.db.prepare(`
+      INSERT INTO users (id, email, display_name, avatar_url, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(id, email, input.displayName.trim(), input.avatarUrl ?? null, now, now);
+    return (await this.getUser(id))!;
+  }
+
+  async getUser(id: string): Promise<UserAccount | null> {
+    const row = this.db.prepare("SELECT * FROM users WHERE id = ?").get(id) as Record<string, unknown> | undefined;
+    return row ? this.mapUser(row) : null;
+  }
+
+  async getUserByEmail(email: string): Promise<UserAccount | null> {
+    const row = this.db.prepare("SELECT * FROM users WHERE email = ?").get(email.trim().toLowerCase()) as Record<string, unknown> | undefined;
+    return row ? this.mapUser(row) : null;
+  }
+
+  async listUsers(): Promise<UserAccount[]> {
+    const rows = this.db.prepare("SELECT * FROM users ORDER BY created_at ASC").all() as Record<string, unknown>[];
+    return rows.map((row) => this.mapUser(row));
+  }
+
+  async upsertMembership(input: MembershipInput): Promise<Membership> {
+    const now = new Date().toISOString();
+    const workspaceId = input.workspaceId ?? null;
+    const existing = this.db.prepare(`
+      SELECT * FROM memberships
+      WHERE organization_id = ? AND user_id = ? AND ((workspace_id IS NULL AND ? IS NULL) OR workspace_id = ?)
+    `).get(input.organizationId, input.userId, workspaceId, workspaceId) as Record<string, unknown> | undefined;
+
+    if (existing) {
+      this.db.prepare("UPDATE memberships SET role = ?, status = ?, updated_at = ? WHERE id = ?")
+        .run(input.role, input.status ?? "active", now, existing.id);
+      return (await this.getMembership(existing.id as string))!;
+    }
+
+    const id = uuidv4();
+    this.db.prepare(`
+      INSERT INTO memberships (id, organization_id, workspace_id, user_id, role, status, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(id, input.organizationId, workspaceId, input.userId, input.role, input.status ?? "active", now, now);
+    return (await this.getMembership(id))!;
+  }
+
+  async listMemberships(organizationId: string, workspaceId?: string | null): Promise<Membership[]> {
+    const rows = workspaceId === undefined
+      ? this.db.prepare("SELECT * FROM memberships WHERE organization_id = ? ORDER BY created_at ASC").all(organizationId) as Record<string, unknown>[]
+      : this.db.prepare(`
+          SELECT * FROM memberships
+          WHERE organization_id = ? AND ((workspace_id IS NULL AND ? IS NULL) OR workspace_id = ?)
+          ORDER BY created_at ASC
+        `).all(organizationId, workspaceId, workspaceId) as Record<string, unknown>[];
+    return rows.map((row) => this.mapMembership(row));
+  }
+
+  async createIdentityProvider(input: IdentityProviderCreateInput): Promise<IdentityProviderConfig> {
+    const id = uuidv4();
+    const now = new Date().toISOString();
+    this.db.prepare(`
+      INSERT INTO identity_providers
+        (id, organization_id, type, provider, name, issuer_url, client_id, client_secret_ref, sso_url, certificate, claim_mapping, group_mapping, enabled, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      id, input.organizationId, input.type, input.provider.trim(), input.name.trim(),
+      input.issuerUrl ?? null, input.clientId ?? null, input.clientSecretRef ?? null,
+      input.ssoUrl ?? null, input.certificate ?? null,
+      JSON.stringify(input.claimMapping ?? {}), JSON.stringify(input.groupMapping ?? {}),
+      input.enabled !== false ? 1 : 0, now, now,
+    );
+    const providers = await this.listIdentityProviders(input.organizationId);
+    return providers.find((provider) => provider.id === id)!;
+  }
+
+  async listIdentityProviders(organizationId: string): Promise<IdentityProviderConfig[]> {
+    const rows = this.db.prepare("SELECT * FROM identity_providers WHERE organization_id = ? ORDER BY created_at ASC")
+      .all(organizationId) as Record<string, unknown>[];
+    return rows.map((row) => this.mapIdentityProvider(row));
+  }
+
+  async createAuditLog(input: AuditLogInput): Promise<AuditLog> {
+    const id = uuidv4();
+    const now = new Date().toISOString();
+    this.db.prepare(`
+      INSERT INTO audit_logs
+        (id, organization_id, workspace_id, actor_user_id, action, resource_type, resource_id, metadata, ip_address, user_agent, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      id, input.organizationId, input.workspaceId ?? null, input.actorUserId ?? null,
+      input.action, input.resourceType, input.resourceId ?? null,
+      JSON.stringify(input.metadata ?? {}), input.ipAddress ?? null, input.userAgent ?? null, now,
+    );
+    const row = this.db.prepare("SELECT * FROM audit_logs WHERE id = ?").get(id) as Record<string, unknown>;
+    return this.mapAuditLog(row);
+  }
+
+  async listAuditLogs(organizationId: string, options?: { workspaceId?: string; limit?: number }): Promise<AuditLog[]> {
+    const limit = Math.min(Math.max(options?.limit ?? 100, 1), 500);
+    const rows = options?.workspaceId
+      ? this.db.prepare(`
+          SELECT * FROM audit_logs
+          WHERE organization_id = ? AND workspace_id = ?
+          ORDER BY created_at DESC LIMIT ?
+        `).all(organizationId, options.workspaceId, limit) as Record<string, unknown>[]
+      : this.db.prepare("SELECT * FROM audit_logs WHERE organization_id = ? ORDER BY created_at DESC LIMIT ?")
+        .all(organizationId, limit) as Record<string, unknown>[];
+    return rows.map((row) => this.mapAuditLog(row));
+  }
+
+  private getMembership(id: string): Promise<Membership | null> {
+    const row = this.db.prepare("SELECT * FROM memberships WHERE id = ?").get(id) as Record<string, unknown> | undefined;
+    return Promise.resolve(row ? this.mapMembership(row) : null);
+  }
+
+  private mapOrganization(row: Record<string, unknown>): Organization {
+    return {
+      id: row.id as string,
+      name: row.name as string,
+      slug: row.slug as string,
+      createdAt: row.created_at as string,
+      updatedAt: row.updated_at as string,
+    };
+  }
+
+  private mapWorkspace(row: Record<string, unknown>): Workspace {
+    return {
+      id: row.id as string,
+      organizationId: row.organization_id as string,
+      name: row.name as string,
+      slug: row.slug as string,
+      createdAt: row.created_at as string,
+      updatedAt: row.updated_at as string,
+    };
+  }
+
+  private mapUser(row: Record<string, unknown>): UserAccount {
+    return {
+      id: row.id as string,
+      email: row.email as string,
+      displayName: row.display_name as string,
+      avatarUrl: (row.avatar_url as string) ?? undefined,
+      lastLoginAt: (row.last_login_at as string) ?? null,
+      createdAt: row.created_at as string,
+      updatedAt: row.updated_at as string,
+    };
+  }
+
+  private mapMembership(row: Record<string, unknown>): Membership {
+    return {
+      id: row.id as string,
+      organizationId: row.organization_id as string,
+      workspaceId: (row.workspace_id as string) ?? null,
+      userId: row.user_id as string,
+      role: row.role as Membership["role"],
+      status: row.status as Membership["status"],
+      createdAt: row.created_at as string,
+      updatedAt: row.updated_at as string,
+    };
+  }
+
+  private mapIdentityProvider(row: Record<string, unknown>): IdentityProviderConfig {
+    return {
+      id: row.id as string,
+      organizationId: row.organization_id as string,
+      type: row.type as IdentityProviderConfig["type"],
+      provider: row.provider as string,
+      name: row.name as string,
+      issuerUrl: (row.issuer_url as string) ?? undefined,
+      clientId: (row.client_id as string) ?? undefined,
+      clientSecretRef: (row.client_secret_ref as string) ?? undefined,
+      ssoUrl: (row.sso_url as string) ?? undefined,
+      certificate: (row.certificate as string) ?? undefined,
+      claimMapping: parseJsonObject<Record<string, string>>(row.claim_mapping) ?? {},
+      groupMapping: parseJsonObject<Record<string, string>>(row.group_mapping) ?? {},
+      enabled: (row.enabled as number) === 1,
+      createdAt: row.created_at as string,
+      updatedAt: row.updated_at as string,
+    };
+  }
+
+  private mapAuditLog(row: Record<string, unknown>): AuditLog {
+    return {
+      id: row.id as string,
+      organizationId: row.organization_id as string,
+      workspaceId: (row.workspace_id as string) ?? null,
+      actorUserId: (row.actor_user_id as string) ?? null,
+      action: row.action as string,
+      resourceType: row.resource_type as string,
+      resourceId: (row.resource_id as string) ?? null,
+      metadata: parseJsonObject<Record<string, unknown>>(row.metadata) ?? {},
+      ipAddress: (row.ip_address as string) ?? undefined,
+      userAgent: (row.user_agent as string) ?? undefined,
+      createdAt: row.created_at as string,
+    };
   }
 
   // --- Agents ---
@@ -106,11 +424,12 @@ export class SQLiteAdapter implements DatabaseAdapter {
   async createAgent(input: AgentCreateInput): Promise<AgentConfig> {
     const id = uuidv4();
     const now = new Date().toISOString();
+    const workspaceId = await this.resolveWorkspaceId(input.workspaceId);
     this.db.prepare(`
-      INSERT INTO agents (id, name, description, system_prompt, provider_id, model, fallback_models, fallback_cooldown_seconds, temperature, max_tokens, max_iterations, streaming, thinking, tools, skills, category, enabled, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+      INSERT INTO agents (id, workspace_id, name, description, system_prompt, provider_id, model, fallback_models, fallback_cooldown_seconds, temperature, max_tokens, max_iterations, streaming, thinking, tools, skills, category, enabled, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
     `).run(
-      id, input.name, input.description ?? "", input.systemPrompt,
+      id, workspaceId, input.name, input.description ?? "", input.systemPrompt,
       input.providerId ?? null, input.model ?? "claude-sonnet-4-20250514",
       JSON.stringify(input.fallbackModels ?? []), input.fallbackCooldownSeconds ?? 900,
       input.temperature ?? 0.7, input.maxTokens ?? 4096, input.maxIterations ?? 15,
@@ -128,8 +447,10 @@ export class SQLiteAdapter implements DatabaseAdapter {
     return this.mapAgent(row);
   }
 
-  async listAgents(): Promise<AgentConfig[]> {
-    const rows = this.db.prepare("SELECT * FROM agents ORDER BY created_at DESC").all() as Record<string, unknown>[];
+  async listAgents(workspaceId?: string): Promise<AgentConfig[]> {
+    const rows = workspaceId
+      ? this.db.prepare("SELECT * FROM agents WHERE workspace_id = ? ORDER BY created_at DESC").all(workspaceId) as Record<string, unknown>[]
+      : this.db.prepare("SELECT * FROM agents ORDER BY created_at DESC").all() as Record<string, unknown>[];
     return rows.map((r) => this.mapAgent(r));
   }
 
@@ -141,6 +462,7 @@ export class SQLiteAdapter implements DatabaseAdapter {
     const values: unknown[] = [];
 
     if (input.name !== undefined) { fields.push("name = ?"); values.push(input.name); }
+    if (input.workspaceId !== undefined) { fields.push("workspace_id = ?"); values.push(input.workspaceId); }
     if (input.description !== undefined) { fields.push("description = ?"); values.push(input.description); }
     if (input.systemPrompt !== undefined) { fields.push("system_prompt = ?"); values.push(input.systemPrompt); }
     if (input.providerId !== undefined) { fields.push("provider_id = ?"); values.push(input.providerId || null); }
@@ -175,6 +497,7 @@ export class SQLiteAdapter implements DatabaseAdapter {
   private mapAgent(row: Record<string, unknown>): AgentConfig {
     return {
       id: row.id as string,
+      workspaceId: (row.workspace_id as string) ?? "",
       name: row.name as string,
       description: row.description as string,
       systemPrompt: row.system_prompt as string,
@@ -259,18 +582,20 @@ export class SQLiteAdapter implements DatabaseAdapter {
 
   // --- Sessions ---
 
-  async createSession(agentId: string, options?: { sourceSessionId?: string }): Promise<Session> {
+  async createSession(agentId: string, options?: { sourceSessionId?: string; workspaceId?: string }): Promise<Session> {
     const id = uuidv4();
     const now = new Date().toISOString();
+    const agent = await this.getAgent(agentId);
+    const workspaceId = await this.resolveWorkspaceId(options?.workspaceId ?? agent?.workspaceId);
     const sourceSession = options?.sourceSessionId
       ? this.db.prepare("SELECT * FROM sessions WHERE id = ?").get(options.sourceSessionId) as Record<string, unknown> | undefined
       : undefined;
     const rootSessionId = sourceSession
       ? ((sourceSession.root_session_id as string | null) || (sourceSession.id as string))
       : id;
-    this.db.prepare("INSERT INTO sessions (id, agent_id, root_session_id, source_session_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)")
-      .run(id, agentId, rootSessionId, options?.sourceSessionId ?? null, now, now);
-    return { id, agentId, rootSessionId, sourceSessionId: options?.sourceSessionId ?? null, createdAt: now, updatedAt: now };
+    this.db.prepare("INSERT INTO sessions (id, workspace_id, agent_id, root_session_id, source_session_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
+      .run(id, workspaceId, agentId, rootSessionId, options?.sourceSessionId ?? null, now, now);
+    return { id, workspaceId, agentId, rootSessionId, sourceSessionId: options?.sourceSessionId ?? null, createdAt: now, updatedAt: now };
   }
 
   async getSession(id: string): Promise<Session | null> {
@@ -279,7 +604,8 @@ export class SQLiteAdapter implements DatabaseAdapter {
     return this.mapSession(row);
   }
 
-  async listSessions(agentId?: string, limit: number = 50, offset: number = 0): Promise<Session[]> {
+  async listSessions(agentId?: string, workspaceId?: string, limit: number = 50, offset: number = 0): Promise<Session[]> {
+    const resolvedWorkspaceId = workspaceId ?? await this.getDefaultWorkspaceId();
     const sql = `SELECT s.*, COUNT(m.id) as message_count,
       COALESCE(SUM(m.tokens_in), 0) as total_tokens_in,
       COALESCE(SUM(m.tokens_out), 0) as total_tokens_out,
@@ -288,10 +614,10 @@ export class SQLiteAdapter implements DatabaseAdapter {
       (SELECT json_group_array(DISTINCT model) FROM messages WHERE session_id = s.id AND model IS NOT NULL) as models,
       (SELECT COUNT(*) FROM sessions sf WHERE COALESCE(sf.root_session_id, sf.id) = COALESCE(s.root_session_id, s.id)) as family_size
       FROM sessions s LEFT JOIN messages m ON m.session_id = s.id
-      ${agentId ? "WHERE s.agent_id = ?" : ""}
+      WHERE s.workspace_id = ? ${agentId ? "AND s.agent_id = ?" : ""}
       GROUP BY s.id ORDER BY s.updated_at DESC
       LIMIT ? OFFSET ?`;
-    const params = agentId ? [agentId, limit, offset] : [limit, offset];
+    const params = agentId ? [resolvedWorkspaceId, agentId, limit, offset] : [resolvedWorkspaceId, limit, offset];
     const rows = this.db.prepare(sql).all(...params) as Record<string, unknown>[];
     return rows.map((r) => this.mapSession(r));
   }
@@ -320,6 +646,7 @@ export class SQLiteAdapter implements DatabaseAdapter {
   private mapSession(row: Record<string, unknown>): Session {
     const session: Session = {
       id: row.id as string,
+      workspaceId: (row.workspace_id as string) ?? "",
       agentId: row.agent_id as string,
       rootSessionId: (row.root_session_id as string) ?? (row.id as string),
       sourceSessionId: (row.source_session_id as string) ?? null,
@@ -403,16 +730,18 @@ export class SQLiteAdapter implements DatabaseAdapter {
   async logUsage(log: Omit<UsageLog, "id" | "createdAt">): Promise<void> {
     const id = uuidv4();
     const now = new Date().toISOString();
+    const agent = await this.getAgent(log.agentId);
+    const workspaceId = log.workspaceId || agent?.workspaceId || await this.getDefaultWorkspaceId();
     this.db.prepare(`
-      INSERT INTO usage_logs (id, agent_id, session_id, tokens_in, tokens_out, model, duration_ms, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(id, log.agentId, log.sessionId, log.tokensIn, log.tokensOut, log.model, log.durationMs, now);
+      INSERT INTO usage_logs (id, workspace_id, agent_id, session_id, tokens_in, tokens_out, model, duration_ms, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(id, workspaceId, log.agentId, log.sessionId, log.tokensIn, log.tokensOut, log.model, log.durationMs, now);
   }
 
-  async getUsageStats(agentId?: string): Promise<UsageStats> {
-    let sql = "SELECT COALESCE(SUM(tokens_in), 0) as total_in, COALESCE(SUM(tokens_out), 0) as total_out, COUNT(*) as total_requests FROM usage_logs";
-    const params: unknown[] = [];
-    if (agentId) { sql += " WHERE agent_id = ?"; params.push(agentId); }
+  async getUsageStats(agentId?: string, workspaceId?: string): Promise<UsageStats> {
+    let sql = "SELECT COALESCE(SUM(tokens_in), 0) as total_in, COALESCE(SUM(tokens_out), 0) as total_out, COUNT(*) as total_requests FROM usage_logs WHERE workspace_id = ?";
+    const params: unknown[] = [workspaceId ?? await this.getDefaultWorkspaceId()];
+    if (agentId) { sql += " AND agent_id = ?"; params.push(agentId); }
     const row = this.db.prepare(sql).get(...params) as Record<string, unknown>;
     return {
       totalTokensIn: row.total_in as number,
@@ -421,14 +750,14 @@ export class SQLiteAdapter implements DatabaseAdapter {
     };
   }
 
-  async getDailyStats(agentId?: string, days: number = 30, startDate?: string, endDate?: string, granularity?: string): Promise<DailyStats[]> {
+  async getDailyStats(agentId?: string, days: number = 30, startDate?: string, endDate?: string, granularity?: string, workspaceId?: string): Promise<DailyStats[]> {
     const useHourly = granularity === "hour" || (startDate && endDate && startDate === endDate);
     const groupExpr = useHourly
       ? "strftime('%Y-%m-%d %H:00', created_at)"
       : "date(created_at)";
     let sql = `SELECT ${groupExpr} as date, SUM(tokens_in) as tokens_in, SUM(tokens_out) as tokens_out, COUNT(*) as requests
-      FROM usage_logs WHERE 1=1`;
-    const params: unknown[] = [];
+      FROM usage_logs WHERE workspace_id = ?`;
+    const params: unknown[] = [workspaceId ?? await this.getDefaultWorkspaceId()];
     if (startDate && endDate) {
       sql += " AND date(created_at) >= ? AND date(created_at) <= ?";
       params.push(startDate, endDate);
@@ -447,15 +776,16 @@ export class SQLiteAdapter implements DatabaseAdapter {
     }));
   }
 
-  async getSessionCounts(): Promise<{ total: number; today: number }> {
-    const total = (this.db.prepare("SELECT COUNT(*) as c FROM sessions").get() as { c: number }).c;
-    const today = (this.db.prepare("SELECT COUNT(*) as c FROM sessions WHERE date(created_at) = date('now')").get() as { c: number }).c;
+  async getSessionCounts(workspaceId?: string): Promise<{ total: number; today: number }> {
+    const resolvedWorkspaceId = workspaceId ?? await this.getDefaultWorkspaceId();
+    const total = (this.db.prepare("SELECT COUNT(*) as c FROM sessions WHERE workspace_id = ?").get(resolvedWorkspaceId) as { c: number }).c;
+    const today = (this.db.prepare("SELECT COUNT(*) as c FROM sessions WHERE workspace_id = ? AND date(created_at) = date('now')").get(resolvedWorkspaceId) as { c: number }).c;
     return { total, today };
   }
 
-  async getAgentUsageStats(startDate?: string, endDate?: string): Promise<Array<{ agentId: string; totalRequests: number; totalTokensIn: number; totalTokensOut: number }>> {
-    let sql = "SELECT agent_id, COUNT(*) as requests, COALESCE(SUM(tokens_in), 0) as tokens_in, COALESCE(SUM(tokens_out), 0) as tokens_out FROM usage_logs WHERE 1=1";
-    const params: unknown[] = [];
+  async getAgentUsageStats(startDate?: string, endDate?: string, workspaceId?: string): Promise<Array<{ agentId: string; totalRequests: number; totalTokensIn: number; totalTokensOut: number }>> {
+    let sql = "SELECT agent_id, COUNT(*) as requests, COALESCE(SUM(tokens_in), 0) as tokens_in, COALESCE(SUM(tokens_out), 0) as tokens_out FROM usage_logs WHERE workspace_id = ?";
+    const params: unknown[] = [workspaceId ?? await this.getDefaultWorkspaceId()];
     if (startDate && endDate) {
       sql += " AND date(created_at) >= ? AND date(created_at) <= ?";
       params.push(startDate, endDate);
@@ -470,9 +800,9 @@ export class SQLiteAdapter implements DatabaseAdapter {
     }));
   }
 
-  async getModelStats(startDate?: string, endDate?: string): Promise<Array<{ model: string; requests: number; tokensIn: number; tokensOut: number }>> {
-    let sql = "SELECT model, COUNT(*) as requests, SUM(tokens_in) as tokens_in, SUM(tokens_out) as tokens_out FROM usage_logs WHERE 1=1";
-    const params: unknown[] = [];
+  async getModelStats(startDate?: string, endDate?: string, workspaceId?: string): Promise<Array<{ model: string; requests: number; tokensIn: number; tokensOut: number }>> {
+    let sql = "SELECT model, COUNT(*) as requests, SUM(tokens_in) as tokens_in, SUM(tokens_out) as tokens_out FROM usage_logs WHERE workspace_id = ?";
+    const params: unknown[] = [workspaceId ?? await this.getDefaultWorkspaceId()];
     if (startDate && endDate) {
       sql += " AND date(created_at) >= ? AND date(created_at) <= ?";
       params.push(startDate, endDate);
@@ -492,11 +822,12 @@ export class SQLiteAdapter implements DatabaseAdapter {
   async createHttpTool(input: HttpToolCreateInput): Promise<HttpTool> {
     const id = uuidv4();
     const now = new Date().toISOString();
+    const workspaceId = await this.resolveWorkspaceId(input.workspaceId);
     this.db.prepare(`
-      INSERT INTO http_tools (id, name, description, method, url, headers, parameters, body_template, enabled, category, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
+      INSERT INTO http_tools (id, workspace_id, name, description, method, url, headers, parameters, body_template, enabled, category, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
     `).run(
-      id, input.name, input.description ?? "", input.method ?? "GET", input.url,
+      id, workspaceId, input.name, input.description ?? "", input.method ?? "GET", input.url,
       JSON.stringify(input.headers ?? {}), JSON.stringify(input.parameters ?? { type: "object", properties: {} }),
       input.bodyTemplate ?? "", normalizeCategory(input.category), now, now,
     );
@@ -509,8 +840,10 @@ export class SQLiteAdapter implements DatabaseAdapter {
     return this.mapHttpTool(row);
   }
 
-  async listHttpTools(): Promise<HttpTool[]> {
-    const rows = this.db.prepare("SELECT * FROM http_tools ORDER BY created_at DESC").all() as Record<string, unknown>[];
+  async listHttpTools(workspaceId?: string): Promise<HttpTool[]> {
+    const rows = workspaceId
+      ? this.db.prepare("SELECT * FROM http_tools WHERE workspace_id = ? ORDER BY created_at DESC").all(workspaceId) as Record<string, unknown>[]
+      : this.db.prepare("SELECT * FROM http_tools ORDER BY created_at DESC").all() as Record<string, unknown>[];
     return rows.map((r) => this.mapHttpTool(r));
   }
 
@@ -522,6 +855,7 @@ export class SQLiteAdapter implements DatabaseAdapter {
     const values: unknown[] = [];
 
     if (input.name !== undefined) { fields.push("name = ?"); values.push(input.name); }
+    if (input.workspaceId !== undefined) { fields.push("workspace_id = ?"); values.push(input.workspaceId); }
     if (input.description !== undefined) { fields.push("description = ?"); values.push(input.description); }
     if (input.method !== undefined) { fields.push("method = ?"); values.push(input.method); }
     if (input.url !== undefined) { fields.push("url = ?"); values.push(input.url); }
@@ -549,6 +883,7 @@ export class SQLiteAdapter implements DatabaseAdapter {
   private mapHttpTool(row: Record<string, unknown>): HttpTool {
     return {
       id: row.id as string,
+      workspaceId: (row.workspace_id as string) ?? "",
       name: row.name as string,
       description: row.description as string,
       method: row.method as string,
@@ -563,22 +898,24 @@ export class SQLiteAdapter implements DatabaseAdapter {
     };
   }
 
-  async listSkillCategories(): Promise<Record<string, string>> {
-    const rows = this.db.prepare("SELECT skill_name, category FROM skill_categories").all() as Record<string, unknown>[];
+  async listSkillCategories(workspaceId?: string): Promise<Record<string, string>> {
+    const resolvedWorkspaceId = workspaceId ?? await this.getDefaultWorkspaceId();
+    const rows = this.db.prepare("SELECT skill_name, category FROM workspace_skill_categories WHERE workspace_id = ?").all(resolvedWorkspaceId) as Record<string, unknown>[];
     return Object.fromEntries(rows.map((row) => [row.skill_name as string, row.category as string]));
   }
 
-  async setSkillCategory(skillName: string, category: string): Promise<void> {
+  async setSkillCategory(skillName: string, category: string, workspaceId?: string): Promise<void> {
+    const resolvedWorkspaceId = workspaceId ?? await this.getDefaultWorkspaceId();
     const normalized = category.trim();
     if (!normalized) {
-      this.db.prepare("DELETE FROM skill_categories WHERE skill_name = ?").run(skillName);
+      this.db.prepare("DELETE FROM workspace_skill_categories WHERE workspace_id = ? AND skill_name = ?").run(resolvedWorkspaceId, skillName);
       return;
     }
     this.db.prepare(`
-      INSERT INTO skill_categories (skill_name, category, updated_at)
-      VALUES (?, ?, ?)
-      ON CONFLICT(skill_name) DO UPDATE SET category = excluded.category, updated_at = excluded.updated_at
-    `).run(skillName, normalized, new Date().toISOString());
+      INSERT INTO workspace_skill_categories (workspace_id, skill_name, category, updated_at)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(workspace_id, skill_name) DO UPDATE SET category = excluded.category, updated_at = excluded.updated_at
+    `).run(resolvedWorkspaceId, skillName, normalized, new Date().toISOString());
   }
 
   // --- Providers ---
@@ -586,13 +923,14 @@ export class SQLiteAdapter implements DatabaseAdapter {
   async createProvider(input: ProviderCreateInput): Promise<ProviderConfig> {
     const id = uuidv4();
     const now = new Date().toISOString();
+    const workspaceId = await this.resolveWorkspaceId(input.workspaceId);
     if (input.isPrimary) {
-      this.db.prepare("UPDATE providers SET is_primary = 0").run();
+      this.db.prepare("UPDATE providers SET is_primary = 0 WHERE workspace_id = ?").run(workspaceId);
     }
     this.db.prepare(`
-      INSERT INTO providers (id, name, type, api_key, base_url, default_model, capabilities, enabled, is_primary, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(id, input.name, input.type, input.apiKey, input.baseUrl ?? null, input.defaultModel,
+      INSERT INTO providers (id, workspace_id, name, type, api_key, base_url, default_model, capabilities, enabled, is_primary, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(id, workspaceId, input.name, input.type, input.apiKey, input.baseUrl ?? null, input.defaultModel,
       JSON.stringify(normalizeModelCapabilities(input.type, input.capabilities)),
       input.enabled !== false ? 1 : 0, input.isPrimary ? 1 : 0, now, now);
     return (await this.getProvider(id))!;
@@ -604,8 +942,10 @@ export class SQLiteAdapter implements DatabaseAdapter {
     return this.mapProvider(row);
   }
 
-  async listProviders(): Promise<ProviderConfig[]> {
-    const rows = this.db.prepare("SELECT * FROM providers ORDER BY is_primary DESC, created_at ASC").all() as Record<string, unknown>[];
+  async listProviders(workspaceId?: string): Promise<ProviderConfig[]> {
+    const rows = workspaceId
+      ? this.db.prepare("SELECT * FROM providers WHERE workspace_id = ? ORDER BY is_primary DESC, created_at ASC").all(workspaceId) as Record<string, unknown>[]
+      : this.db.prepare("SELECT * FROM providers ORDER BY is_primary DESC, created_at ASC").all() as Record<string, unknown>[];
     return rows.map((r) => this.mapProvider(r));
   }
 
@@ -614,12 +954,13 @@ export class SQLiteAdapter implements DatabaseAdapter {
     if (!existing) return null;
 
     if (input.isPrimary) {
-      this.db.prepare("UPDATE providers SET is_primary = 0").run();
+      this.db.prepare("UPDATE providers SET is_primary = 0 WHERE workspace_id = ?").run(input.workspaceId ?? existing.workspaceId);
     }
 
     const fields: string[] = [];
     const values: unknown[] = [];
     if (input.name !== undefined) { fields.push("name = ?"); values.push(input.name); }
+    if (input.workspaceId !== undefined) { fields.push("workspace_id = ?"); values.push(input.workspaceId); }
     if (input.type !== undefined) { fields.push("type = ?"); values.push(input.type); }
     if (input.apiKey !== undefined) { fields.push("api_key = ?"); values.push(input.apiKey); }
     if (input.baseUrl !== undefined) { fields.push("base_url = ?"); values.push(input.baseUrl || null); }
@@ -639,10 +980,11 @@ export class SQLiteAdapter implements DatabaseAdapter {
     return result.changes > 0;
   }
 
-  async getPrimaryProvider(): Promise<ProviderConfig | null> {
-    const row = this.db.prepare("SELECT * FROM providers WHERE is_primary = 1 AND enabled = 1 LIMIT 1").get() as Record<string, unknown> | undefined;
+  async getPrimaryProvider(workspaceId?: string): Promise<ProviderConfig | null> {
+    const resolvedWorkspaceId = workspaceId ?? await this.getDefaultWorkspaceId();
+    const row = this.db.prepare("SELECT * FROM providers WHERE workspace_id = ? AND is_primary = 1 AND enabled = 1 LIMIT 1").get(resolvedWorkspaceId) as Record<string, unknown> | undefined;
     if (!row) {
-      const fallback = this.db.prepare("SELECT * FROM providers WHERE enabled = 1 LIMIT 1").get() as Record<string, unknown> | undefined;
+      const fallback = this.db.prepare("SELECT * FROM providers WHERE workspace_id = ? AND enabled = 1 LIMIT 1").get(resolvedWorkspaceId) as Record<string, unknown> | undefined;
       return fallback ? this.mapProvider(fallback) : null;
     }
     return this.mapProvider(row);
@@ -651,6 +993,7 @@ export class SQLiteAdapter implements DatabaseAdapter {
   private mapProvider(row: Record<string, unknown>): ProviderConfig {
     return {
       id: row.id as string,
+      workspaceId: (row.workspace_id as string) ?? "",
       name: row.name as string,
       type: row.type as string,
       apiKey: row.api_key as string,
@@ -669,21 +1012,23 @@ export class SQLiteAdapter implements DatabaseAdapter {
   async createKnowledgeBase(input: KnowledgeBaseCreateInput): Promise<KnowledgeBase> {
     const id = uuidv4();
     const now = new Date().toISOString();
-    this.db.prepare("INSERT INTO knowledge_bases (id, name, description, created_at, updated_at) VALUES (?, ?, ?, ?, ?)").run(
-      id, input.name, input.description ?? "", now, now
+    const workspaceId = await this.resolveWorkspaceId(input.workspaceId);
+    this.db.prepare("INSERT INTO knowledge_bases (id, workspace_id, name, description, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)").run(
+      id, workspaceId, input.name, input.description ?? "", now, now
     );
-    return { id, name: input.name, description: input.description ?? "", createdAt: now, updatedAt: now };
+    return { id, workspaceId, name: input.name, description: input.description ?? "", createdAt: now, updatedAt: now };
   }
 
   async getKnowledgeBase(id: string): Promise<KnowledgeBase | null> {
     const row = this.db.prepare("SELECT * FROM knowledge_bases WHERE id = ?").get(id) as Record<string, unknown> | undefined;
     if (!row) return null;
-    return { id: row.id as string, name: row.name as string, description: (row.description as string) ?? "", createdAt: row.created_at as string, updatedAt: row.updated_at as string };
+    return { id: row.id as string, workspaceId: (row.workspace_id as string) ?? "", name: row.name as string, description: (row.description as string) ?? "", createdAt: row.created_at as string, updatedAt: row.updated_at as string };
   }
 
-  async listKnowledgeBases(): Promise<KnowledgeBase[]> {
-    const rows = this.db.prepare("SELECT * FROM knowledge_bases ORDER BY created_at DESC").all() as Record<string, unknown>[];
-    return rows.map(r => ({ id: r.id as string, name: r.name as string, description: (r.description as string) ?? "", createdAt: r.created_at as string, updatedAt: r.updated_at as string }));
+  async listKnowledgeBases(workspaceId?: string): Promise<KnowledgeBase[]> {
+    const resolvedWorkspaceId = workspaceId ?? await this.getDefaultWorkspaceId();
+    const rows = this.db.prepare("SELECT * FROM knowledge_bases WHERE workspace_id = ? ORDER BY created_at DESC").all(resolvedWorkspaceId) as Record<string, unknown>[];
+    return rows.map(r => ({ id: r.id as string, workspaceId: (r.workspace_id as string) ?? "", name: r.name as string, description: (r.description as string) ?? "", createdAt: r.created_at as string, updatedAt: r.updated_at as string }));
   }
 
   async updateKnowledgeBase(id: string, input: KnowledgeBaseUpdateInput): Promise<KnowledgeBase | null> {
@@ -691,6 +1036,7 @@ export class SQLiteAdapter implements DatabaseAdapter {
     if (!existing) return null;
     const fields: string[] = [];
     const values: unknown[] = [];
+    if (input.workspaceId !== undefined) { fields.push("workspace_id = ?"); values.push(input.workspaceId); }
     if (input.name !== undefined) { fields.push("name = ?"); values.push(input.name); }
     if (input.description !== undefined) { fields.push("description = ?"); values.push(input.description); }
     if (fields.length === 0) return existing;
@@ -854,24 +1200,26 @@ export class SQLiteAdapter implements DatabaseAdapter {
 
   async createChannel(providerId: string, name: string): Promise<{ channel: ProviderChannel; rawKey: string }> {
     const id = uuidv4();
+    const provider = await this.getProvider(providerId);
+    const workspaceId = provider?.workspaceId ?? await this.getDefaultWorkspaceId();
     const raw = randomBytes(16).toString("hex");
     const rawKey = `af-ch-${raw}`;
     const keyHash = hashKey(rawKey);
     const keyPrefix = rawKey.slice(0, 10);
     const now = new Date().toISOString();
     this.db.prepare(`
-      INSERT INTO provider_channels (id, provider_id, name, key_hash, key_prefix, enabled, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, 1, ?, ?)
-    `).run(id, providerId, name, keyHash, keyPrefix, now, now);
+      INSERT INTO provider_channels (id, workspace_id, provider_id, name, key_hash, key_prefix, enabled, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)
+    `).run(id, workspaceId, providerId, name, keyHash, keyPrefix, now, now);
     return {
-      channel: { id, providerId, name, keyHash, keyPrefix, enabled: true, createdAt: now, updatedAt: now },
+      channel: { id, workspaceId, providerId, name, keyHash, keyPrefix, enabled: true, createdAt: now, updatedAt: now },
       rawKey,
     };
   }
 
   async getChannelByHash(keyHash: string): Promise<(ProviderChannel & { providerConfig: ProviderConfig }) | null> {
     const row = this.db.prepare(`
-      SELECT pc.*, p.id as p_id, p.name as p_name, p.type as p_type, p.api_key as p_api_key,
+      SELECT pc.*, p.id as p_id, p.workspace_id as p_workspace_id, p.name as p_name, p.type as p_type, p.api_key as p_api_key,
              p.base_url as p_base_url, p.default_model as p_default_model, p.enabled as p_enabled,
              p.capabilities as p_capabilities, p.is_primary as p_is_primary,
              p.created_at as p_created_at, p.updated_at as p_updated_at
@@ -881,11 +1229,13 @@ export class SQLiteAdapter implements DatabaseAdapter {
     if (!row) return null;
     return {
       id: row.id as string, providerId: row.provider_id as string, name: row.name as string,
+      workspaceId: (row.workspace_id as string) ?? "",
       keyHash: row.key_hash as string, keyPrefix: row.key_prefix as string,
       enabled: (row.enabled as number) === 1,
       createdAt: row.created_at as string, updatedAt: row.updated_at as string,
       providerConfig: {
         id: row.p_id as string, name: row.p_name as string, type: row.p_type as string,
+        workspaceId: (row.p_workspace_id as string) ?? "",
         apiKey: row.p_api_key as string, baseUrl: (row.p_base_url as string) ?? undefined,
         defaultModel: row.p_default_model as string, enabled: (row.p_enabled as number) === 1,
         capabilities: normalizeModelCapabilities(row.p_type as string, parseJsonObject<Partial<ModelCapabilities>>(row.p_capabilities)),
@@ -899,6 +1249,7 @@ export class SQLiteAdapter implements DatabaseAdapter {
     const rows = this.db.prepare("SELECT * FROM provider_channels WHERE provider_id = ? ORDER BY created_at DESC").all(providerId) as Record<string, unknown>[];
     return rows.map(r => ({
       id: r.id as string, providerId: r.provider_id as string, name: r.name as string,
+      workspaceId: (r.workspace_id as string) ?? "",
       keyHash: r.key_hash as string, keyPrefix: r.key_prefix as string,
       enabled: (r.enabled as number) === 1,
       createdAt: r.created_at as string, updatedAt: r.updated_at as string,
@@ -915,10 +1266,12 @@ export class SQLiteAdapter implements DatabaseAdapter {
   async logProxyUsage(log: ProxyUsageLog): Promise<void> {
     const id = uuidv4();
     const now = new Date().toISOString();
+    const provider = await this.getProvider(log.providerId);
+    const workspaceId = log.workspaceId || provider?.workspaceId || await this.getDefaultWorkspaceId();
     this.db.prepare(`
-      INSERT INTO proxy_usage_logs (id, channel_id, provider_id, model, tokens_in, tokens_out, duration_ms, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(id, log.channelId, log.providerId, log.model, log.tokensIn, log.tokensOut, log.durationMs, now);
+      INSERT INTO proxy_usage_logs (id, workspace_id, channel_id, provider_id, model, tokens_in, tokens_out, duration_ms, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(id, workspaceId, log.channelId, log.providerId, log.model, log.tokensIn, log.tokensOut, log.durationMs, now);
   }
 
   async getChannelStats(channelId: string, days: number = 30): Promise<ChannelStats> {
@@ -941,12 +1294,16 @@ export class SQLiteAdapter implements DatabaseAdapter {
     };
   }
 
-  async getProviderChannelStats(providerId: string, startDate?: string, endDate?: string): Promise<Array<{ channelId: string; channelName: string; totalRequests: number; totalTokensIn: number; totalTokensOut: number }>> {
+  async getProviderChannelStats(providerId: string, startDate?: string, endDate?: string, workspaceId?: string): Promise<Array<{ channelId: string; channelName: string; totalRequests: number; totalTokensIn: number; totalTokensOut: number }>> {
     let dateFilter = "";
     const params: unknown[] = [];
     if (startDate && endDate) {
       dateFilter = " AND date(pu.created_at) >= ? AND date(pu.created_at) <= ?";
       params.push(startDate, endDate);
+    }
+    if (workspaceId) {
+      dateFilter += " AND pu.workspace_id = ?";
+      params.push(workspaceId);
     }
     params.push(providerId);
     const rows = this.db.prepare(`
@@ -961,14 +1318,14 @@ export class SQLiteAdapter implements DatabaseAdapter {
     }));
   }
 
-  async getProxyDailyStats(days: number = 30, startDate?: string, endDate?: string, granularity?: string): Promise<DailyStats[]> {
+  async getProxyDailyStats(days: number = 30, startDate?: string, endDate?: string, granularity?: string, workspaceId?: string): Promise<DailyStats[]> {
     const useHourly = granularity === "hour" || (startDate && endDate && startDate === endDate);
     const groupExpr = useHourly
       ? "strftime('%Y-%m-%d %H:00', created_at)"
       : "date(created_at)";
     let sql = `SELECT ${groupExpr} as date, SUM(tokens_in) as tokens_in, SUM(tokens_out) as tokens_out, COUNT(*) as requests
-      FROM proxy_usage_logs WHERE 1=1`;
-    const params: unknown[] = [];
+      FROM proxy_usage_logs WHERE workspace_id = ?`;
+    const params: unknown[] = [workspaceId ?? await this.getDefaultWorkspaceId()];
     if (startDate && endDate) {
       sql += " AND date(created_at) >= ? AND date(created_at) <= ?";
       params.push(startDate, endDate);
@@ -984,9 +1341,10 @@ export class SQLiteAdapter implements DatabaseAdapter {
     }));
   }
 
-  async getProxyOverview(): Promise<{ totalRequests: number; totalTokensIn: number; totalTokensOut: number; totalChannels: number }> {
-    const usageRow = this.db.prepare("SELECT COUNT(*) as cnt, COALESCE(SUM(tokens_in),0) as ti, COALESCE(SUM(tokens_out),0) as to2 FROM proxy_usage_logs").get() as Record<string, unknown>;
-    const channelRow = this.db.prepare("SELECT COUNT(*) as cnt FROM provider_channels").get() as Record<string, unknown>;
+  async getProxyOverview(workspaceId?: string): Promise<{ totalRequests: number; totalTokensIn: number; totalTokensOut: number; totalChannels: number }> {
+    const resolvedWorkspaceId = workspaceId ?? await this.getDefaultWorkspaceId();
+    const usageRow = this.db.prepare("SELECT COUNT(*) as cnt, COALESCE(SUM(tokens_in),0) as ti, COALESCE(SUM(tokens_out),0) as to2 FROM proxy_usage_logs WHERE workspace_id = ?").get(resolvedWorkspaceId) as Record<string, unknown>;
+    const channelRow = this.db.prepare("SELECT COUNT(*) as cnt FROM provider_channels WHERE workspace_id = ?").get(resolvedWorkspaceId) as Record<string, unknown>;
     return {
       totalRequests: usageRow.cnt as number,
       totalTokensIn: usageRow.ti as number,
