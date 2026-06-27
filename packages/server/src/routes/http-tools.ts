@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import type { AppContext } from "../bootstrap.js";
 import { createHttpTools, escapeJsonStringValue, isPlaceholderInJsonString } from "@agentforge/tools";
 import { resolveWorkspaceId } from "../workspace.js";
+import { recordAuditLog } from "../audit.js";
 
 export async function httpToolRoutes(fastify: FastifyInstance, opts: { ctx: AppContext }) {
   const { db, toolRegistry } = opts.ctx;
@@ -35,6 +36,13 @@ export async function httpToolRoutes(fastify: FastifyInstance, opts: { ctx: AppC
     const workspaceId = await resolveWorkspaceId(request, db);
     const httpTool = await db.createHttpTool({ ...body, workspaceId });
     await syncToRegistry(httpTool.id);
+    await recordAuditLog(db, request, {
+      workspaceId,
+      action: "http_tool.create",
+      resourceType: "http_tool",
+      resourceId: httpTool.id,
+      metadata: { name: httpTool.name, method: httpTool.method, url: httpTool.url, enabled: httpTool.enabled },
+    });
     return reply.code(201).send(httpTool);
   });
 
@@ -72,6 +80,19 @@ export async function httpToolRoutes(fastify: FastifyInstance, opts: { ctx: AppC
       if (runtimeTool) toolRegistry.register(runtimeTool);
     }
 
+    await recordAuditLog(db, request, {
+      workspaceId,
+      action: "http_tool.update",
+      resourceType: "http_tool",
+      resourceId: id,
+      metadata: {
+        fields: Object.keys(body).filter((key) => !["headers", "bodyTemplate", "workspaceId"].includes(key)),
+        name: updated.name,
+        method: updated.method,
+        url: updated.url,
+        enabled: updated.enabled,
+      },
+    });
     return updated;
   });
 
@@ -87,6 +108,13 @@ export async function httpToolRoutes(fastify: FastifyInstance, opts: { ctx: AppC
     if (!deleted) {
       return reply.code(404).send({ error: "HTTP tool not found" });
     }
+    await recordAuditLog(db, request, {
+      workspaceId,
+      action: "http_tool.delete",
+      resourceType: "http_tool",
+      resourceId: id,
+      metadata: { name: httpTool.name, method: httpTool.method, url: httpTool.url },
+    });
     return { success: true };
   });
 

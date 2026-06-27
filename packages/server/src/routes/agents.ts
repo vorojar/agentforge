@@ -3,6 +3,7 @@ import type { AppContext } from "../bootstrap.js";
 import { pipeStreamToSSE } from "../sse.js";
 import type { ImageBlock } from "@agentforge/types";
 import { resolveWorkspaceId } from "../workspace.js";
+import { recordAuditLog } from "../audit.js";
 
 export async function agentRoutes(fastify: FastifyInstance, opts: { ctx: AppContext }) {
   const { db, agentLoop } = opts.ctx;
@@ -36,6 +37,20 @@ export async function agentRoutes(fastify: FastifyInstance, opts: { ctx: AppCont
     const workspaceId = await resolveWorkspaceId(request, db);
     const agent = await db.createAgent({ ...body, workspaceId });
     const { apiKey, rawKey } = await db.createApiKey(agent.id, "default");
+    await recordAuditLog(db, request, {
+      workspaceId,
+      action: "agent.create",
+      resourceType: "agent",
+      resourceId: agent.id,
+      metadata: { name: agent.name, model: agent.model, providerId: agent.providerId, category: agent.category },
+    });
+    await recordAuditLog(db, request, {
+      workspaceId,
+      action: "api_key.create",
+      resourceType: "api_key",
+      resourceId: apiKey.id,
+      metadata: { agentId: agent.id, name: apiKey.name, keyPrefix: apiKey.keyPrefix },
+    });
 
     return reply.code(201).send({
       ...agent,
@@ -78,6 +93,18 @@ export async function agentRoutes(fastify: FastifyInstance, opts: { ctx: AppCont
     if (!updated) {
       return reply.code(404).send({ error: "Agent not found" });
     }
+    await recordAuditLog(db, request, {
+      workspaceId,
+      action: "agent.update",
+      resourceType: "agent",
+      resourceId: id,
+      metadata: {
+        fields: Object.keys(body).filter((key) => key !== "workspaceId"),
+        model: updated.model,
+        providerId: updated.providerId,
+        enabled: updated.enabled,
+      },
+    });
     return updated;
   });
 
@@ -90,6 +117,13 @@ export async function agentRoutes(fastify: FastifyInstance, opts: { ctx: AppCont
     if (!deleted) {
       return reply.code(404).send({ error: "Agent not found" });
     }
+    await recordAuditLog(db, request, {
+      workspaceId,
+      action: "agent.delete",
+      resourceType: "agent",
+      resourceId: id,
+      metadata: { name: agent.name },
+    });
     return { success: true };
   });
 
@@ -102,15 +136,39 @@ export async function agentRoutes(fastify: FastifyInstance, opts: { ctx: AppCont
       return reply.code(404).send({ error: "Agent not found" });
     }
     const { apiKey, rawKey } = await db.createApiKey(id, body.name);
+    await recordAuditLog(db, request, {
+      workspaceId,
+      action: "api_key.create",
+      resourceType: "api_key",
+      resourceId: apiKey.id,
+      metadata: { agentId: id, name: apiKey.name, keyPrefix: apiKey.keyPrefix },
+    });
     return reply.code(201).send({ ...apiKey, rawKey });
   });
 
   fastify.delete("/api/agents/:id/keys/:keyId", async (request, reply) => {
-    const { keyId } = request.params as { id: string; keyId: string };
+    const { id, keyId } = request.params as { id: string; keyId: string };
+    const workspaceId = await resolveWorkspaceId(request, db);
+    const agent = await db.getAgent(id);
+    if (!agent || agent.workspaceId !== workspaceId) {
+      return reply.code(404).send({ error: "Agent not found" });
+    }
+    const keys = await db.listApiKeys(id);
+    const apiKey = keys.find((key) => key.id === keyId);
+    if (!apiKey) {
+      return reply.code(404).send({ error: "API key not found" });
+    }
     const deleted = await db.deleteApiKey(keyId);
     if (!deleted) {
       return reply.code(404).send({ error: "API key not found" });
     }
+    await recordAuditLog(db, request, {
+      workspaceId,
+      action: "api_key.delete",
+      resourceType: "api_key",
+      resourceId: keyId,
+      metadata: { agentId: id, name: apiKey.name, keyPrefix: apiKey.keyPrefix },
+    });
     return { success: true };
   });
 

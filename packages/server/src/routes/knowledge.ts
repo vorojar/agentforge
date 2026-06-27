@@ -9,6 +9,7 @@ import type { FastifyInstance } from "fastify";
 import type { AppContext } from "../bootstrap.js";
 import { chunkText } from "@agentforge/tools/chunker";
 import { resolveWorkspaceId } from "../workspace.js";
+import { recordAuditLog } from "../audit.js";
 
 export async function knowledgeRoutes(fastify: FastifyInstance, opts: { ctx: AppContext }) {
   const { db } = opts.ctx;
@@ -38,6 +39,13 @@ export async function knowledgeRoutes(fastify: FastifyInstance, opts: { ctx: App
     if (!body.name) return reply.code(400).send({ error: "name is required" });
     const workspaceId = await resolveWorkspaceId(request, db);
     const kb = await db.createKnowledgeBase({ ...body, workspaceId });
+    await recordAuditLog(db, request, {
+      workspaceId,
+      action: "knowledge_base.create",
+      resourceType: "knowledge_base",
+      resourceId: kb.id,
+      metadata: { name: kb.name },
+    });
     return reply.code(201).send(kb);
   });
 
@@ -69,6 +77,13 @@ export async function knowledgeRoutes(fastify: FastifyInstance, opts: { ctx: App
     if (!kb || kb.workspaceId !== workspaceId) return reply.code(404).send({ error: "Knowledge base not found" });
     const updated = await db.updateKnowledgeBase(id, body);
     if (!updated) return reply.code(404).send({ error: "Knowledge base not found" });
+    await recordAuditLog(db, request, {
+      workspaceId,
+      action: "knowledge_base.update",
+      resourceType: "knowledge_base",
+      resourceId: id,
+      metadata: { fields: Object.keys(body), name: updated.name },
+    });
     return updated;
   });
 
@@ -79,6 +94,13 @@ export async function knowledgeRoutes(fastify: FastifyInstance, opts: { ctx: App
     if (!kb || kb.workspaceId !== workspaceId) return reply.code(404).send({ error: "Knowledge base not found" });
     const deleted = await db.deleteKnowledgeBase(id);
     if (!deleted) return reply.code(404).send({ error: "Knowledge base not found" });
+    await recordAuditLog(db, request, {
+      workspaceId,
+      action: "knowledge_base.delete",
+      resourceType: "knowledge_base",
+      resourceId: id,
+      metadata: { name: kb.name },
+    });
     return { success: true };
   });
 
@@ -96,6 +118,13 @@ export async function knowledgeRoutes(fastify: FastifyInstance, opts: { ctx: App
     const chunks = chunkText(body.content);
     const embeddings = await embedChunks(chunks, request.log, body.name);
     const count = await db.ingestKnowledge(id, body.name, body.content, chunks, embeddings);
+    await recordAuditLog(db, request, {
+      workspaceId,
+      action: "knowledge_source.ingest",
+      resourceType: "knowledge_source",
+      resourceId: id,
+      metadata: { kbId: id, sourceName: body.name, chunks: count, embedded: !!embeddings },
+    });
     return { sourceName: body.name, chunks: count, embedded: !!embeddings };
   });
 
@@ -130,6 +159,13 @@ export async function knowledgeRoutes(fastify: FastifyInstance, opts: { ctx: App
     const chunks = chunkText(body.content);
     const embeddings = await embedChunks(chunks, request.log, decoded);
     const count = await db.ingestKnowledge(id, decoded, body.content, chunks, embeddings);
+    await recordAuditLog(db, request, {
+      workspaceId,
+      action: "knowledge_source.update_content",
+      resourceType: "knowledge_source",
+      resourceId: id,
+      metadata: { kbId: id, sourceName: decoded, chunks: count, embedded: !!embeddings },
+    });
     return { sourceName: decoded, chunks: count, embedded: !!embeddings };
   });
 
@@ -140,8 +176,16 @@ export async function knowledgeRoutes(fastify: FastifyInstance, opts: { ctx: App
     if (!kb || kb.workspaceId !== workspaceId) return reply.code(404).send({ error: "Knowledge base not found" });
     const body = request.body as { newName: string };
     if (!body.newName?.trim()) return reply.code(400).send({ error: "newName is required" });
-    const renamed = await db.renameKnowledgeSource(id, decodeURIComponent(sourceName), body.newName.trim());
+    const decoded = decodeURIComponent(sourceName);
+    const renamed = await db.renameKnowledgeSource(id, decoded, body.newName.trim());
     if (!renamed) return reply.code(404).send({ error: "Knowledge source not found" });
+    await recordAuditLog(db, request, {
+      workspaceId,
+      action: "knowledge_source.rename",
+      resourceType: "knowledge_source",
+      resourceId: id,
+      metadata: { kbId: id, sourceName: decoded, newName: body.newName.trim() },
+    });
     return { success: true };
   });
 
@@ -150,8 +194,16 @@ export async function knowledgeRoutes(fastify: FastifyInstance, opts: { ctx: App
     const workspaceId = await resolveWorkspaceId(request, db);
     const kb = await db.getKnowledgeBase(id);
     if (!kb || kb.workspaceId !== workspaceId) return reply.code(404).send({ error: "Knowledge base not found" });
-    const deleted = await db.deleteKnowledgeSource(id, decodeURIComponent(sourceName));
+    const decoded = decodeURIComponent(sourceName);
+    const deleted = await db.deleteKnowledgeSource(id, decoded);
     if (!deleted) return reply.code(404).send({ error: "Knowledge source not found" });
+    await recordAuditLog(db, request, {
+      workspaceId,
+      action: "knowledge_source.delete",
+      resourceType: "knowledge_source",
+      resourceId: id,
+      metadata: { kbId: id, sourceName: decoded },
+    });
     return { success: true };
   });
 
@@ -193,6 +245,13 @@ export async function knowledgeRoutes(fastify: FastifyInstance, opts: { ctx: App
       if (kb?.workspaceId === workspaceId) kbIds.push(kbId);
     }
     await db.setAgentKnowledge(agentId, kbIds);
+    await recordAuditLog(db, request, {
+      workspaceId,
+      action: "agent_knowledge.update",
+      resourceType: "agent",
+      resourceId: agentId,
+      metadata: { kbIds },
+    });
     return { success: true, kbIds };
   });
 
@@ -224,11 +283,32 @@ export async function knowledgeRoutes(fastify: FastifyInstance, opts: { ctx: App
       const kb = await db.createKnowledgeBase({ name: `${agent.name} - 默认知识库`, workspaceId: agent.workspaceId });
       kbId = kb.id;
       await db.setAgentKnowledge(id, [kbId]);
+      await recordAuditLog(db, request, {
+        workspaceId,
+        action: "knowledge_base.create",
+        resourceType: "knowledge_base",
+        resourceId: kb.id,
+        metadata: { name: kb.name, agentId: id },
+      });
+      await recordAuditLog(db, request, {
+        workspaceId,
+        action: "agent_knowledge.update",
+        resourceType: "agent",
+        resourceId: id,
+        metadata: { kbIds: [kbId] },
+      });
     }
 
     const chunks = chunkText(body.content);
     const embeddings = await embedChunks(chunks, request.log, body.name);
     const count = await db.ingestKnowledge(kbId, body.name, body.content, chunks, embeddings);
+    await recordAuditLog(db, request, {
+      workspaceId,
+      action: "knowledge_source.ingest",
+      resourceType: "knowledge_source",
+      resourceId: kbId,
+      metadata: { kbId, sourceName: body.name, agentId: id, chunks: count, embedded: !!embeddings },
+    });
     return { sourceName: body.name, chunks: count, embedded: !!embeddings };
   });
 }

@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import type { ModelCapabilities } from "@agentforge/types";
 import type { AppContext } from "../bootstrap.js";
 import { resolveWorkspaceId } from "../workspace.js";
+import { recordAuditLog } from "../audit.js";
 
 export async function providerRoutes(fastify: FastifyInstance, opts: { ctx: AppContext }) {
   const { db, providerRegistry } = opts.ctx;
@@ -17,6 +18,19 @@ export async function providerRoutes(fastify: FastifyInstance, opts: { ctx: AppC
     const workspaceId = await resolveWorkspaceId(request, db);
     const provider = await db.createProvider({ ...body, workspaceId });
     await providerRegistry.reload(db);
+    await recordAuditLog(db, request, {
+      workspaceId,
+      action: "provider.create",
+      resourceType: "provider",
+      resourceId: provider.id,
+      metadata: {
+        name: provider.name,
+        type: provider.type,
+        defaultModel: provider.defaultModel,
+        enabled: provider.enabled,
+        isPrimary: provider.isPrimary,
+      },
+    });
     return reply.code(201).send(provider);
   });
 
@@ -43,6 +57,21 @@ export async function providerRoutes(fastify: FastifyInstance, opts: { ctx: AppC
     const updated = await db.updateProvider(id, body);
     if (!updated) return reply.code(404).send({ error: "Provider not found" });
     await providerRegistry.reload(db);
+    await recordAuditLog(db, request, {
+      workspaceId,
+      action: "provider.update",
+      resourceType: "provider",
+      resourceId: id,
+      metadata: {
+        fields: Object.keys(body).filter((key) => key !== "apiKey" && key !== "workspaceId"),
+        name: updated.name,
+        type: updated.type,
+        defaultModel: updated.defaultModel,
+        enabled: updated.enabled,
+        isPrimary: updated.isPrimary,
+        apiKeyChanged: Object.prototype.hasOwnProperty.call(body, "apiKey"),
+      },
+    });
     return { ...updated, apiKey: maskKey(updated.apiKey) };
   });
 
@@ -54,6 +83,13 @@ export async function providerRoutes(fastify: FastifyInstance, opts: { ctx: AppC
     const deleted = await db.deleteProvider(id);
     if (!deleted) return reply.code(404).send({ error: "Provider not found" });
     await providerRegistry.reload(db);
+    await recordAuditLog(db, request, {
+      workspaceId,
+      action: "provider.delete",
+      resourceType: "provider",
+      resourceId: id,
+      metadata: { name: provider.name, type: provider.type, defaultModel: provider.defaultModel },
+    });
     return { success: true };
   });
 
@@ -69,6 +105,13 @@ export async function providerRoutes(fastify: FastifyInstance, opts: { ctx: AppC
     if (!body.name) return reply.code(400).send({ error: "name is required" });
 
     const { channel, rawKey } = await db.createChannel(id, body.name);
+    await recordAuditLog(db, request, {
+      workspaceId,
+      action: "provider_channel.create",
+      resourceType: "provider_channel",
+      resourceId: channel.id,
+      metadata: { providerId: id, name: channel.name, keyPrefix: channel.keyPrefix },
+    });
     return reply.code(201).send({ ...channel, rawKey });
   });
 
@@ -93,6 +136,13 @@ export async function providerRoutes(fastify: FastifyInstance, opts: { ctx: AppC
     }
     const deleted = await db.deleteChannel(channelId);
     if (!deleted) return reply.code(404).send({ error: "Channel not found" });
+    await recordAuditLog(db, request, {
+      workspaceId,
+      action: "provider_channel.delete",
+      resourceType: "provider_channel",
+      resourceId: channelId,
+      metadata: { providerId },
+    });
     return { success: true };
   });
 

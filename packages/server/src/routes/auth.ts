@@ -10,6 +10,7 @@ import {
 } from "../local-auth.js";
 import { finishOidcLogin, listOidcLoginProviders, startOidcLogin } from "../oidc-auth.js";
 import { finishEnterpriseOAuthLogin, listEnterpriseOAuthLoginProviders, startEnterpriseOAuthLogin } from "../enterprise-oauth.js";
+import { recordUserMembershipAuditLogs } from "../audit.js";
 
 export async function authRoutes(fastify: FastifyInstance, opts: { ctx: AppContext }) {
   const { ctx } = opts;
@@ -35,6 +36,7 @@ export async function authRoutes(fastify: FastifyInstance, opts: { ctx: AppConte
       return reply.code(401).send({ error: "Invalid email or password" });
     }
 
+    await recordUserMembershipAuditLogs(ctx.db, request, result.user, "auth.local_login", { email: result.user.email });
     setSessionCookie(reply, result.token, ctx.config.sessionTtlDays * 24 * 60 * 60);
     return { user: result.user, expiresAt: result.expiresAt };
   });
@@ -46,7 +48,9 @@ export async function authRoutes(fastify: FastifyInstance, opts: { ctx: AppConte
   });
 
   fastify.post("/api/auth/logout", async (request, reply) => {
+    const user = await resolveCurrentUser(request, ctx);
     await logoutCurrentUser(request, ctx);
+    if (user) await recordUserMembershipAuditLogs(ctx.db, request, user, "auth.logout", { email: user.email });
     clearSessionCookie(reply);
     return { ok: true };
   });

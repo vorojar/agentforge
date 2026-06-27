@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import type { IdentityProviderType, MembershipStatus, OrganizationRole } from "@agentforge/types";
 import type { AppContext } from "../bootstrap.js";
+import { recordAuditLog } from "../audit.js";
 
 const ROLES = new Set<OrganizationRole>(["owner", "admin", "builder", "viewer"]);
 const STATUSES = new Set<MembershipStatus>(["active", "invited", "disabled"]);
@@ -23,7 +24,7 @@ export async function tenantRoutes(fastify: FastifyInstance, opts: { ctx: AppCon
       return reply.code(400).send({ error: "name is required" });
     }
     const organization = await db.createOrganization({ name: body.name, slug: body.slug });
-    await db.createAuditLog({
+    await recordAuditLog(db, request, {
       organizationId: organization.id,
       action: "organization.create",
       resourceType: "organization",
@@ -46,7 +47,7 @@ export async function tenantRoutes(fastify: FastifyInstance, opts: { ctx: AppCon
     if (!body.name?.trim()) return reply.code(400).send({ error: "name is required" });
 
     const workspace = await db.createWorkspace({ organizationId, name: body.name, slug: body.slug });
-    await db.createAuditLog({
+    await recordAuditLog(db, request, {
       organizationId,
       workspaceId: workspace.id,
       action: "workspace.create",
@@ -70,6 +71,14 @@ export async function tenantRoutes(fastify: FastifyInstance, opts: { ctx: AppCon
       email: body.email,
       displayName: body.displayName,
       avatarUrl: body.avatarUrl,
+    });
+    const tenant = await db.ensureDefaultTenant();
+    await recordAuditLog(db, request, {
+      organizationId: tenant.organization.id,
+      action: "user.create",
+      resourceType: "user",
+      resourceId: user.id,
+      metadata: { email: user.email, displayName: user.displayName },
     });
     return reply.code(201).send(user);
   });
@@ -98,7 +107,7 @@ export async function tenantRoutes(fastify: FastifyInstance, opts: { ctx: AppCon
       role: body.role as OrganizationRole,
       status: body.status as MembershipStatus | undefined,
     });
-    await db.createAuditLog({
+    await recordAuditLog(db, request, {
       organizationId,
       workspaceId: membership.workspaceId,
       action: "membership.upsert",
@@ -145,7 +154,7 @@ export async function tenantRoutes(fastify: FastifyInstance, opts: { ctx: AppCon
       groupMapping: isStringRecord(body.groupMapping) ? body.groupMapping : undefined,
       enabled: typeof body.enabled === "boolean" ? body.enabled : undefined,
     });
-    await db.createAuditLog({
+    await recordAuditLog(db, request, {
       organizationId,
       action: "identity_provider.create",
       resourceType: "identity_provider",

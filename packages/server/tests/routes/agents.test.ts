@@ -103,4 +103,29 @@ describe("Agent routes", () => {
     const check = await ctx.db.getAgent(agent.id);
     expect(check).toBeNull();
   });
+
+  it("should not delete an API key through another agent", async () => {
+    const agentA = (await app.inject({
+      method: "POST",
+      url: "/api/agents",
+      headers: adminHeaders,
+      payload: { name: "Agent A", systemPrompt: "test" },
+    })).json();
+    const agentB = (await app.inject({
+      method: "POST",
+      url: "/api/agents",
+      headers: adminHeaders,
+      payload: { name: "Agent B", systemPrompt: "test" },
+    })).json();
+    const keyB = agentB.apiKeys[0];
+
+    const res = await app.inject({
+      method: "DELETE",
+      url: `/api/agents/${agentA.id}/keys/${keyB.id}`,
+      headers: adminHeaders,
+    });
+
+    expect(res.statusCode).toBe(404);
+    expect((await ctx.db.listApiKeys(agentB.id)).map((key) => key.id)).toContain(keyB.id);
+  });
 });
