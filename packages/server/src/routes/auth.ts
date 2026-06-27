@@ -8,6 +8,7 @@ import {
   resolveCurrentUser,
   setSessionCookie,
 } from "../local-auth.js";
+import { finishOidcLogin, listOidcLoginProviders, startOidcLogin } from "../oidc-auth.js";
 
 export async function authRoutes(fastify: FastifyInstance, opts: { ctx: AppContext }) {
   const { ctx } = opts;
@@ -17,6 +18,7 @@ export async function authRoutes(fastify: FastifyInstance, opts: { ctx: AppConte
     return {
       loginEnabled: true,
       defaultWorkspaceId: user.memberships.find((membership) => membership.workspaceId)?.workspaceId ?? null,
+      oidcProviders: await listOidcLoginProviders(ctx),
     };
   });
 
@@ -45,5 +47,16 @@ export async function authRoutes(fastify: FastifyInstance, opts: { ctx: AppConte
     await logoutCurrentUser(request, ctx);
     clearSessionCookie(reply);
     return { ok: true };
+  });
+
+  fastify.get("/api/auth/oidc/:providerId/start", async (request, reply) => {
+    const { providerId } = request.params as { providerId: string };
+    const { redirect } = request.query as { redirect?: string };
+    await startOidcLogin(request, reply, ctx, providerId, redirect);
+  });
+
+  fastify.get("/api/auth/oidc/:providerId/callback", async (request, reply) => {
+    const { providerId } = request.params as { providerId: string };
+    await finishOidcLogin(request, reply, ctx, providerId);
   });
 }

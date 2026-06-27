@@ -69,11 +69,14 @@ export async function loginLocalUser(ctx: AppContext, email: string, password: s
   const storedPassword = await ctx.db.getUserPassword(user.id);
   if (!storedPassword || !verifyPassword(password, storedPassword.passwordHash)) return null;
 
+  return await createUserSession(ctx, user);
+}
+
+export async function createUserSession(ctx: AppContext, user: UserAccount): Promise<{ user: AuthenticatedUser; token: string; expiresAt: string }> {
   const token = createSessionToken();
   const expiresAt = new Date(Date.now() + ctx.config.sessionTtlDays * 24 * 60 * 60 * 1000).toISOString();
   await ctx.db.createAuthSession(user.id, hashSessionToken(token), expiresAt);
   await ctx.db.updateUserLastLogin(user.id);
-
   return { user: await toAuthenticatedUser(ctx.db, user), token, expiresAt };
 }
 
@@ -93,14 +96,11 @@ export async function logoutCurrentUser(request: FastifyRequest, ctx: AppContext
 
 export function setSessionCookie(reply: FastifyReply, token: string, maxAgeSeconds: number): void {
   const secure = process.env.AUTH_COOKIE_SECURE === "true" ? "; Secure" : "";
-  reply.header(
-    "Set-Cookie",
-    `${COOKIE_NAME}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAgeSeconds}${secure}`,
-  );
+  appendSetCookie(reply, `${COOKIE_NAME}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAgeSeconds}${secure}`);
 }
 
 export function clearSessionCookie(reply: FastifyReply): void {
-  reply.header("Set-Cookie", `${COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`);
+  appendSetCookie(reply, `${COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`);
 }
 
 export function readSessionCookie(request: FastifyRequest): string | null {
@@ -122,4 +122,15 @@ async function toAuthenticatedUser(db: DatabaseAdapter, user: UserAccount): Prom
     memberships.push(...await db.listMemberships(organization.id));
   }
   return { ...user, memberships: memberships.filter((membership) => membership.userId === user.id) };
+}
+
+export function appendSetCookie(reply: FastifyReply, cookie: string): void {
+  const existing = reply.getHeader("Set-Cookie");
+  if (!existing) {
+    reply.header("Set-Cookie", cookie);
+  } else if (Array.isArray(existing)) {
+    reply.header("Set-Cookie", [...existing, cookie]);
+  } else {
+    reply.header("Set-Cookie", [String(existing), cookie]);
+  }
 }

@@ -9,6 +9,7 @@ const api = axios.create({
 // --- Auth ---
 export const bootstrapAuth = () => api.get("/auth/bootstrap");
 export const loginApi = (data: { email: string; password: string }) => api.post("/auth/login", data);
+export const oidcStartUrl = (providerId: string, redirect = "/dashboard") => `/api/auth/oidc/${providerId}/start?redirect=${encodeURIComponent(redirect)}`;
 export const getCurrentUser = () => api.get("/auth/me");
 export const logoutApi = () => api.post("/auth/logout");
 

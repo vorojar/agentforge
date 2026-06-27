@@ -19,6 +19,7 @@ services:
       - AUTH_SESSION_DAYS=${AUTH_SESSION_DAYS:-7}
       - AUTH_COOKIE_SECURE=${AUTH_COOKIE_SECURE:-true}
       - CORS_ORIGIN=${CORS_ORIGIN}
+      - PUBLIC_URL=${PUBLIC_URL}
       - PORT=3000
     restart: unless-stopped
     healthcheck:

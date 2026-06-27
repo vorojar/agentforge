@@ -9,6 +9,7 @@ export interface AppConfig {
   adminEmail: string;
   adminPassword: string;
   sessionTtlDays: number;
+  publicUrl?: string;
 }
 
 export function loadConfig(): AppConfig {
@@ -39,6 +40,7 @@ export function loadConfig(): AppConfig {
     adminEmail: process.env.ADMIN_EMAIL ?? "demo@example.com",
     adminPassword,
     sessionTtlDays: parseInt(process.env.AUTH_SESSION_DAYS ?? "7", 10),
+    publicUrl: process.env.PUBLIC_URL || undefined,
   };
 }
 

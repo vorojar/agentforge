@@ -34,22 +34,52 @@
           {{ t("auth.signIn") }}
         </el-button>
       </el-form>
+
+      <template v-if="oidcProviders.length > 0">
+        <div class="login-divider">
+          <span>{{ t("auth.or") }}</span>
+        </div>
+        <div class="sso-list">
+          <el-button
+            v-for="provider in oidcProviders"
+            :key="provider.id"
+            size="large"
+            class="sso-button"
+            @click="startSso(provider.id)"
+          >
+            {{ t("auth.signInWith", { name: provider.name }) }}
+          </el-button>
+        </div>
+      </template>
     </section>
   </main>
 </template>
 
 <script setup lang="ts">
-import { ref } from "vue";
+import { onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { ElMessage } from "element-plus";
 import { login } from "@/auth";
+import { bootstrapAuth, oidcStartUrl } from "@/api";
 import { t } from "@/i18n";
+
+interface OidcProvider {
+  id: string;
+  name: string;
+  provider: string;
+}
 
 const route = useRoute();
 const router = useRouter();
 const email = ref("");
 const password = ref("");
 const loading = ref(false);
+const oidcProviders = ref<OidcProvider[]>([]);
+
+onMounted(async () => {
+  const { data } = await bootstrapAuth();
+  oidcProviders.value = data.oidcProviders ?? [];
+});
 
 async function submit() {
   if (!email.value.trim() || !password.value) {
@@ -67,6 +97,11 @@ async function submit() {
   } finally {
     loading.value = false;
   }
+}
+
+function startSso(providerId: string) {
+  const redirect = typeof route.query.redirect === "string" ? route.query.redirect : "/dashboard";
+  window.location.href = oidcStartUrl(providerId, redirect);
 }
 </script>
 
@@ -120,5 +155,27 @@ async function submit() {
 .login-button {
   width: 100%;
   margin-top: 8px;
+}
+.login-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 22px 0 14px;
+  color: #94a3b8;
+  font-size: 13px;
+}
+.login-divider::before,
+.login-divider::after {
+  content: "";
+  height: 1px;
+  flex: 1;
+  background: #e2e8f0;
+}
+.sso-list {
+  display: grid;
+  gap: 10px;
+}
+.sso-button {
+  width: 100%;
 }
 </style>

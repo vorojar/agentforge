@@ -9,6 +9,7 @@ describe("runProductionPreflight", () => {
     adminPassword: "ADMIN_" + "PASSWORD",
     adminEmail: "ADMIN_" + "EMAIL",
     authCookieSecure: "AUTH_" + "COOKIE_SECURE",
+    publicUrl: "PUBLIC_" + "URL",
     corsOrigin: "CORS_" + "ORIGIN",
     dbPath: "DB_" + "PATH",
   };
@@ -21,6 +22,7 @@ describe("runProductionPreflight", () => {
       [keys.adminPassword]: "long-random-admin-password",
       [keys.adminEmail]: "owner@example.com",
       [keys.authCookieSecure]: "true",
+      [keys.publicUrl]: "https://agentforge.example.com",
       [keys.corsOrigin]: "https://agentforge.example.com",
       [keys.dbPath]: "/app/data/agentforge.db",
     });
@@ -38,6 +40,7 @@ describe("runProductionPreflight", () => {
       [keys.adminPassword]: demoPassword,
       [keys.adminEmail]: "demo@example.com",
       [keys.authCookieSecure]: "false",
+      [keys.publicUrl]: "http://agentforge.example.com",
       [keys.corsOrigin]: "true",
       [keys.dbPath]: "data/agentforge.db",
     });
@@ -46,6 +49,7 @@ describe("runProductionPreflight", () => {
     expect(statusFor(report, "admin_secret")).toBe("fail");
     expect(statusFor(report, "admin_password")).toBe("fail");
     expect(statusFor(report, "auth_cookie_secure")).toBe("fail");
+    expect(statusFor(report, "public_url")).toBe("fail");
     expect(statusFor(report, "cors_origin")).toBe("fail");
     expect(statusFor(report, "database_path")).toBe("warn");
   });

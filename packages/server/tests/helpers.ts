@@ -36,6 +36,7 @@ export function createTestConfig(): AppConfig {
     adminEmail: "demo@example.com",
     adminPassword: "password",
     sessionTtlDays: 7,
+    publicUrl: "http://localhost",
   };
 }
 

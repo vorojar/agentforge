@@ -53,7 +53,7 @@ pnpm dev
 NODE_ENV=production pnpm preflight:prod
 ```
 
-自检会阻塞默认 `ADMIN_SECRET`、演示密码、缺失 `LLM_API_KEY`、未开启 `AUTH_COOKIE_SECURE`、不安全 `CORS_ORIGIN` 和未配置持久化数据库路径等问题。Docker 部署必须显式设置 `ADMIN_SECRET`、`ADMIN_EMAIL`、`ADMIN_PASSWORD`、`AUTH_COOKIE_SECURE=true` 和 `CORS_ORIGIN=https://...`。
+自检会阻塞默认 `ADMIN_SECRET`、演示密码、缺失 `LLM_API_KEY`、未开启 `AUTH_COOKIE_SECURE`、不安全 `CORS_ORIGIN`、缺失 `PUBLIC_URL` 和未配置持久化数据库路径等问题。Docker 部署必须显式设置 `ADMIN_SECRET`、`ADMIN_EMAIL`、`ADMIN_PASSWORD`、`AUTH_COOKIE_SECURE=true`、`CORS_ORIGIN=https://...` 和 `PUBLIC_URL=https://...`。
 
 ## 环境变量
 
@@ -68,6 +68,7 @@ NODE_ENV=production pnpm preflight:prod
 | `ADMIN_PASSWORD` | `password` | 本地开发默认演示密码；生产环境必须替换，且会拒绝 `password` / `admin` / `change-me-in-production` |
 | `AUTH_SESSION_DAYS` | `7` | 登录会话有效天数 |
 | `AUTH_COOKIE_SECURE` | `false` | 生产 HTTPS 部署必须设为 `true` |
+| `PUBLIC_URL` | — | 生产外部访问地址，用于 OIDC callback URL，例如 `https://agentforge.example.com` |
 | `ADMIN_SECRET` | `admin` | 管理 API 兼容兜底密钥；生产环境必须设置或迁移到正式 IdP |
 | `PORT` | `3000` | 服务端口 |
 | `CORS_ORIGIN` | `true` | CORS 允许的域名（生产环境设置具体域名） |
@@ -150,6 +151,8 @@ curl http://localhost:3000/api/tenant/bootstrap \
 - `POST /api/auth/login`
 - `GET /api/auth/me`
 - `POST /api/auth/logout`
+- `GET /api/auth/oidc/:providerId/start`
+- `GET /api/auth/oidc/:providerId/callback`
 
 主要租户接口：
 

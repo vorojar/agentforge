@@ -22,6 +22,7 @@ export function runProductionPreflight(env: NodeJS.ProcessEnv = process.env): Pr
     checkSecret("admin_password", env.ADMIN_PASSWORD, "ADMIN_PASSWORD is configured and not a demo value.", "Set a strong bootstrap password, then rotate after SSO is configured."),
     checkRequired("admin_email", env.ADMIN_EMAIL, "ADMIN_EMAIL is configured.", "Set ADMIN_EMAIL to the initial enterprise owner account."),
     checkExact("auth_cookie_secure", env.AUTH_COOKIE_SECURE, "true", "AUTH_COOKIE_SECURE=true for HTTPS deployments.", "Set AUTH_COOKIE_SECURE=true behind HTTPS."),
+    checkPublicUrl(env.PUBLIC_URL),
     checkCors(env.CORS_ORIGIN),
     checkDatabasePath(env.DB_PATH ?? env.DATABASE_URL),
   ];
@@ -80,6 +81,27 @@ function checkCors(value: string | undefined): PreflightCheck {
     };
   }
   return { id: "cors_origin", status: "pass", message: "CORS_ORIGIN is explicit." };
+}
+
+function checkPublicUrl(value: string | undefined): PreflightCheck {
+  if (!value?.trim()) {
+    return {
+      id: "public_url",
+      status: "fail",
+      message: "PUBLIC_URL must be configured for OIDC callback URLs.",
+      remediation: "Set PUBLIC_URL=https://your-agentforge-domain.example.",
+    };
+  }
+  const publicUrl = value.trim();
+  if (!publicUrl.startsWith("https://")) {
+    return {
+      id: "public_url",
+      status: "fail",
+      message: `PUBLIC_URL must use HTTPS in production: ${publicUrl}.`,
+      remediation: "Expose AgentForge behind HTTPS and set PUBLIC_URL to that origin.",
+    };
+  }
+  return { id: "public_url", status: "pass", message: "PUBLIC_URL is configured." };
 }
 
 function checkDatabasePath(value: string | undefined): PreflightCheck {
