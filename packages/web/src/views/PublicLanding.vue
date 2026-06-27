@@ -79,7 +79,7 @@
         <div class="proof-panel">
           <div class="panel-row" v-for="row in modelRows" :key="row.name">
             <span>{{ row.rank }}</span>
-            <strong>{{ row.name }}</strong>
+            <strong>{{ t(row.name) }}</strong>
             <em>{{ t(row.status) }}</em>
           </div>
         </div>
@@ -117,7 +117,7 @@
         <article v-for="plan in plans" :key="plan.title" class="pricing-card" :class="{ featured: plan.featured }">
           <h3>{{ t(plan.title) }}</h3>
           <p>{{ t(plan.subtitle) }}</p>
-          <strong>{{ t("public.pricing.contact") }}</strong>
+          <strong>{{ t(plan.price) }}</strong>
           <ul class="check-list">
             <li v-for="item in plan.items" :key="item">{{ t(item) }}</li>
           </ul>
@@ -180,9 +180,9 @@ const proofChecks = [
 ] as const;
 
 const modelRows = [
-  { rank: "1", name: "OpenAI GPT-4o", status: "public.proof.status.healthy" },
-  { rank: "2", name: "Azure OpenAI GPT-4o", status: "public.proof.status.healthy" },
-  { rank: "3", name: "Claude 3.5 Sonnet", status: "public.proof.status.standby" },
+  { rank: "1", name: "public.proof.model.primary", status: "public.proof.status.primary" },
+  { rank: "2", name: "public.proof.model.backup", status: "public.proof.status.backup" },
+  { rank: "3", name: "public.proof.model.private", status: "public.proof.status.private" },
 ] as const;
 
 const capabilityCards = [
@@ -205,18 +205,21 @@ const plans = [
   {
     title: "public.plan.trial.title",
     subtitle: "public.plan.trial.subtitle",
+    price: "public.plan.trial.price",
     items: ["public.plan.trial.item1", "public.plan.trial.item2", "public.plan.trial.item3"],
     featured: false,
   },
   {
     title: "public.plan.business.title",
     subtitle: "public.plan.business.subtitle",
+    price: "public.plan.business.price",
     items: ["public.plan.business.item1", "public.plan.business.item2", "public.plan.business.item3", "public.plan.business.item4"],
     featured: true,
   },
   {
     title: "public.plan.enterprise.title",
     subtitle: "public.plan.enterprise.subtitle",
+    price: "public.plan.enterprise.price",
     items: ["public.plan.enterprise.item1", "public.plan.enterprise.item2", "public.plan.enterprise.item3"],
     featured: false,
   },
