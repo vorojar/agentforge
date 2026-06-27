@@ -11,21 +11,21 @@
 
     <el-table :data="filteredAgents" v-loading="loading" stripe>
       <el-table-column prop="name" :label="t('common.name')" min-width="150" />
-      <el-table-column :label="t('common.category')" width="140">
+      <el-table-column :label="t('common.category')" width="130">
         <template #default="{ row }">
           <el-tag v-if="row.category" size="small">{{ row.category }}</el-tag>
           <span v-else style="color: #c0c4cc">{{ t("common.uncategorized") }}</span>
         </template>
       </el-table-column>
-      <el-table-column prop="providerName" :label="t('common.model')" width="200" show-overflow-tooltip />
-      <el-table-column :label="t('cap.streaming')" width="100" align="center">
+      <el-table-column prop="providerName" :label="t('common.model')" width="160" show-overflow-tooltip />
+      <el-table-column :label="t('cap.streaming')" width="120" align="center">
         <template #default="{ row }">
           <el-tag :type="row.streaming ? 'success' : 'info'" size="small">
             {{ row.streaming ? t("common.on") : t("common.off") }}
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column :label="t('common.status')" width="100" align="center">
+      <el-table-column :label="t('common.status')" width="90" align="center">
         <template #default="{ row }">
           <el-switch
             v-model="row.enabled"
@@ -33,7 +33,7 @@
           />
         </template>
       </el-table-column>
-      <el-table-column :label="t('agents.apiKey')" width="200">
+      <el-table-column :label="t('agents.apiKey')" width="160">
         <template #default="{ row }">
           <code style="font-size: 12px; color: #909399">{{ row.apiKeyPrefix || "—" }}...</code>
           <el-button link size="small" @click="copyKey(row)" v-if="row.rawKey">
@@ -41,7 +41,7 @@
           </el-button>
         </template>
       </el-table-column>
-      <el-table-column :label="t('common.actions')" width="180" align="center">
+      <el-table-column :label="t('common.actions')" width="140" align="center">
         <template #default="{ row }">
           <el-button link type="primary" @click="$router.push(`/agents/${row.id}/edit`)">{{ t("common.edit") }}</el-button>
           <el-popconfirm :title="t('agents.deleteConfirm')" @confirm="handleDelete(row.id)">

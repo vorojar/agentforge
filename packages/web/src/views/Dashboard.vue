@@ -9,7 +9,7 @@
   <div>
     <!-- Summary cards row 1: Agent usage (always cumulative) -->
     <el-row :gutter="16" style="margin-bottom: 20px">
-      <el-col :span="6" v-for="card in statCards" :key="card.label">
+      <el-col :xs="24" :sm="12" :lg="6" v-for="card in statCards" :key="card.label">
         <el-card shadow="hover">
           <div class="stat-card">
             <div class="stat-value">{{ card.value }}</div>
@@ -21,7 +21,7 @@
 
     <!-- Summary cards row 2: Proxy/Channel usage (always cumulative) -->
     <el-row :gutter="16" style="margin-bottom: 20px">
-      <el-col :span="6" v-for="card in proxyCards" :key="card.label">
+      <el-col :xs="24" :sm="12" :lg="6" v-for="card in proxyCards" :key="card.label">
         <el-card shadow="hover">
           <div class="stat-card">
             <div class="stat-value" style="color: #e6a23c">{{ card.value }}</div>
@@ -80,7 +80,7 @@
 
     <!-- Three tables -->
     <el-row :gutter="16">
-      <el-col :span="8">
+      <el-col :xs="24" :lg="8">
         <el-card>
           <template #header><span>{{ t("dashboard.usageByModel") }}</span></template>
           <el-table :data="modelStats" stripe size="small" class="dashboard-usage-table">
@@ -94,7 +94,7 @@
           </el-table>
         </el-card>
       </el-col>
-      <el-col :span="8">
+      <el-col :xs="24" :lg="8">
         <el-card>
           <template #header><span>{{ t("dashboard.usageByAgent") }}</span></template>
           <el-table :data="agentStats" stripe size="small" class="dashboard-usage-table">
@@ -108,7 +108,7 @@
           </el-table>
         </el-card>
       </el-col>
-      <el-col :span="8">
+      <el-col :xs="24" :lg="8">
         <el-card>
           <template #header><span>{{ t("dashboard.usageByChannel") }}</span></template>
           <el-table :data="channelStats" stripe size="small" :empty-text="t('dashboard.noChannelData')" class="dashboard-usage-table">
@@ -471,5 +471,26 @@ onUnmounted(() => {
 .dashboard-usage-table :deep(.nowrap-table-header .cell) {
   white-space: nowrap;
   word-break: keep-all;
+}
+
+@media (max-width: 720px) {
+  .filter-card :deep(.el-card__body) {
+    padding: 12px;
+  }
+  .filter-bar {
+    align-items: flex-start;
+  }
+  .filter-bar :deep(.el-radio-group) {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+  }
+  .filter-bar :deep(.el-radio-button__inner) {
+    width: 100%;
+  }
+  .filter-hint {
+    width: 100%;
+    margin-left: 0;
+  }
 }
 </style>

@@ -1,6 +1,6 @@
 <template>
-  <el-container style="height: 100%">
-    <el-aside width="230px" style="background: #0f172a">
+  <el-container class="app-shell">
+    <el-aside class="app-sidebar" width="230px">
       <div class="logo">
         <span class="logo-icon">⚡</span>
         <span class="logo-text">AgentForge</span>
@@ -44,8 +44,8 @@
       </el-menu>
     </el-aside>
     <el-container>
-      <el-header style="background: #fff; border-bottom: 1px solid #f1f5f9; display: flex; align-items: center; justify-content: space-between; padding: 0 24px">
-        <h1 style="font-size: 15px; font-weight: 600; color: #1e293b; letter-spacing: -0.01em">{{ pageTitle }}</h1>
+      <el-header class="app-header">
+        <h1 class="page-title">{{ pageTitle }}</h1>
         <div class="header-actions">
           <el-select
             :model-value="locale"
@@ -66,7 +66,7 @@
           </el-button>
         </div>
       </el-header>
-      <el-main style="background: #f8fafc; overflow-y: auto; padding: 24px">
+      <el-main class="app-main">
         <router-view />
       </el-main>
     </el-container>
@@ -79,7 +79,6 @@
             type="password"
             show-password
             :placeholder="t('settings.adminSecretPlaceholder')"
-            @change="saveSecret"
           />
         </el-form-item>
       </el-form>
@@ -92,7 +91,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import {
   DataAnalysis,
@@ -135,9 +134,13 @@ const pageTitle = computed(() => {
   return "AgentForge";
 });
 
-function saveSecret() {
-  localStorage.setItem("adminSecret", adminSecret.value);
-}
+watch(adminSecret, (value) => {
+  if (value) {
+    localStorage.setItem("adminSecret", value);
+  } else {
+    localStorage.removeItem("adminSecret");
+  }
+});
 
 function clearSecret() {
   localStorage.removeItem("adminSecret");
@@ -147,6 +150,31 @@ function clearSecret() {
 </script>
 
 <style scoped>
+.app-shell {
+  height: 100%;
+}
+.app-sidebar {
+  background: #0f172a;
+}
+.app-header {
+  background: #fff;
+  border-bottom: 1px solid #f1f5f9;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+}
+.page-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #1e293b;
+  letter-spacing: 0;
+}
+.app-main {
+  background: #f8fafc;
+  overflow-y: auto;
+  padding: 24px;
+}
 .logo {
   height: 64px;
   display: flex;
@@ -171,5 +199,46 @@ function clearSecret() {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+@media (max-width: 720px) {
+  .app-shell {
+    flex-direction: column;
+  }
+  .app-sidebar {
+    width: 100% !important;
+    flex: none;
+  }
+  .logo {
+    height: 52px;
+    justify-content: flex-start;
+    padding: 0 16px;
+  }
+  .app-sidebar :deep(.el-menu) {
+    display: flex;
+    overflow-x: auto;
+    overflow-y: hidden;
+    white-space: nowrap;
+  }
+  .app-sidebar :deep(.el-menu-item) {
+    flex: 0 0 auto;
+    height: 44px;
+    line-height: 44px;
+  }
+  .app-header {
+    min-height: 56px;
+    height: auto;
+    gap: 12px;
+    padding: 10px 16px;
+  }
+  .page-title {
+    min-width: 0;
+  }
+  .header-actions {
+    flex-shrink: 0;
+  }
+  .app-main {
+    padding: 16px;
+  }
 }
 </style>

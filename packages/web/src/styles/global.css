@@ -145,6 +145,11 @@ pre {
   color: #64748b;
 }
 
+.el-table th.el-table__cell .cell {
+  white-space: nowrap;
+  word-break: keep-all;
+}
+
 /* --- Buttons: refined feel --- */
 .el-button--primary {
   background: #6366f1;
