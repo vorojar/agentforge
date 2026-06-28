@@ -18,7 +18,17 @@
           </el-form-item>
 
           <el-form-item :label="t('common.category')">
-            <el-input v-model="form.category" :placeholder="t('agent.optionalCategory')" />
+            <el-select
+              v-model="form.category"
+              filterable
+              clearable
+              allow-create
+              default-first-option
+              style="width: 100%"
+              :placeholder="t('agent.categoryPlaceholder')"
+            >
+              <el-option v-for="category in agentCategoryOptions" :key="category" :label="category" :value="category" />
+            </el-select>
           </el-form-item>
 
           <el-form-item :label="t('agent.systemPrompt')" required>
@@ -414,7 +424,7 @@ curl -X POST {{ baseUrl }}/api/chat/stream \
 import { ref, onMounted, computed, nextTick } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import {
-  getAgent, createAgent, updateAgent,
+  getAgent, getAgents, createAgent, updateAgent,
   getTools, getSkills, getStats,
   getHttpTools, getProviders,
   createApiKey, deleteApiKey,
@@ -454,6 +464,7 @@ const form = ref({
 const availableTools = ref<Array<{ name: string; description: string }>>([]);
 const httpToolNames = ref<Set<string>>(new Set());
 const availableSkills = ref<Array<{ name: string }>>([]);
+const agentCategoryOptions = ref<string[]>([]);
 interface ModelCapabilities {
   supportsTools: boolean;
   supportsVision: boolean;
@@ -606,17 +617,19 @@ async function handleKbChange(newIds: string[]) {
 async function loadData() {
   loading.value = true;
   try {
-    const [toolsRes, skillsRes, statsRes, httpToolsRes, providersRes] = await Promise.all([
+    const [toolsRes, skillsRes, statsRes, httpToolsRes, providersRes, agentsRes] = await Promise.all([
       getTools().catch(() => ({ data: [] })),
       getSkills().catch(() => ({ data: [] })),
       getStats().catch(() => ({ data: {} })),
       getHttpTools().catch(() => ({ data: [] })),
       getProviders().catch(() => ({ data: [] })),
+      getAgents().catch(() => ({ data: [] })),
     ]);
     availableTools.value = toolsRes.data;
     availableSkills.value = skillsRes.data;
     httpToolNames.value = new Set((httpToolsRes.data as Array<{ name: string }>).map(t => t.name));
     availableProviders.value = providersRes.data;
+    agentCategoryOptions.value = uniqueCategories(agentsRes.data as Array<{ category?: string }>);
 
     if (!isEdit.value) {
       // Auto-select primary provider and its default model for new agents
@@ -663,6 +676,10 @@ async function loadData() {
   } finally {
     loading.value = false;
   }
+}
+
+function uniqueCategories(items: Array<{ category?: string }>): string[] {
+  return Array.from(new Set(items.map((item) => item.category?.trim()).filter((category): category is string => Boolean(category)))).sort();
 }
 
 async function handleSave() {

@@ -118,29 +118,40 @@
     <el-dialog v-model="formVisible" :title="editingTool ? t('tools.editHttpTool') : t('tools.createHttpTool')" width="650px">
       <el-form :model="form" label-width="120px">
         <el-form-item :label="t('common.name')" required>
-          <el-input v-model="form.name" placeholder="e.g. query_order" />
+          <el-input v-model="form.name" :placeholder="t('tools.namePlaceholder')" />
         </el-form-item>
         <el-form-item :label="t('common.description')">
           <el-input v-model="form.description" :placeholder="t('skills.descriptionPlaceholder')" />
         </el-form-item>
         <el-form-item :label="t('common.category')">
-          <el-input v-model="form.category" :placeholder="t('agent.optionalCategory')" />
+          <el-select
+            v-model="form.category"
+            filterable
+            clearable
+            allow-create
+            default-first-option
+            style="width: 100%"
+            :placeholder="t('tools.categoryPlaceholder')"
+          >
+            <el-option v-for="category in httpToolCategoryOptions" :key="category" :label="category" :value="category" />
+          </el-select>
         </el-form-item>
         <el-form-item :label="t('common.method')">
           <el-select v-model="form.method" style="width: 120px">
             <el-option label="GET" value="GET" />
             <el-option label="POST" value="POST" />
             <el-option label="PUT" value="PUT" />
+            <el-option label="PATCH" value="PATCH" />
             <el-option label="DELETE" value="DELETE" />
           </el-select>
         </el-form-item>
         <el-form-item :label="t('common.url')" required>
-          <el-input v-model="form.url" placeholder="https://api.example.com/orders/{orderId}" />
+          <el-input v-model="form.url" :placeholder="t('tools.urlPlaceholder')" />
           <el-text type="info" size="small">{{ t("tools.useParamsHelp") }}</el-text>
         </el-form-item>
         <el-form-item :label="t('common.headers')">
           <el-input v-model="form.headersStr" type="textarea" :rows="3"
-            placeholder='{"Authorization": "Bearer xxx"}' />
+            :placeholder="t('tools.headersPlaceholder')" />
         </el-form-item>
         <el-form-item :label="t('common.parameters')">
           <el-input v-model="form.parametersStr" type="textarea" :rows="5"
@@ -149,7 +160,7 @@
         </el-form-item>
         <el-form-item :label="t('common.bodyTemplate')" v-if="['POST','PUT','PATCH'].includes(form.method)">
           <el-input v-model="form.bodyTemplate" type="textarea" :rows="4"
-            placeholder='{"orderId": "{orderId}", "status": "{status}"}' />
+            :placeholder="t('tools.bodyTemplatePlaceholder')" />
         </el-form-item>
         <el-form-item :label="t('common.enabled')">
           <el-switch v-model="form.enabled" />
@@ -197,6 +208,7 @@ const tools = computed(() => {
   const httpNames = new Set(httpTools.value.map(t => t.name));
   return allTools.value.filter(t => !httpNames.has(t.name) && !HIDDEN_TOOLS.has(t.name));
 });
+const httpToolCategoryOptions = computed(() => uniqueCategories(httpTools.value));
 const loading = ref(false);
 const httpLoading = ref(false);
 const saving = ref(false);
@@ -228,6 +240,10 @@ const parameterPlaceholder = `{
   },
   "required": ["orderId"]
 }`;
+
+function uniqueCategories(items: Array<{ category?: string }>): string[] {
+  return Array.from(new Set(items.map((item) => item.category?.trim()).filter((category): category is string => Boolean(category)))).sort();
+}
 
 // Test tool state
 const testVisible = ref(false);

@@ -55,24 +55,33 @@
     <!-- Provider Form Dialog -->
     <el-dialog v-model="formVisible" :title="editingProvider ? t('providers.editModel') : t('providers.addModelTitle')" width="550px">
       <el-form :model="form" label-width="120px">
-        <el-form-item :label="t('common.name')" required>
-          <el-input v-model="form.name" placeholder="e.g. 火山引擎 (豆包)" />
-        </el-form-item>
-        <el-form-item :label="t('common.type')" required>
-          <el-select v-model="form.type" style="width: 100%" @change="onTypeChange">
-            <el-option :label="t('providers.openaiCompatible')" value="openai" />
-            <el-option :label="t('providers.anthropicClaude')" value="claude" />
+        <el-form-item :label="t('providers.modelPlatform')" required>
+          <el-select
+            v-model="form.presetId"
+            filterable
+            data-testid="model-platform-select"
+            style="width: 100%"
+            :placeholder="t('providers.modelPlatformPlaceholder')"
+            @change="applyProviderPreset"
+          >
+            <el-option v-for="preset in providerPresets" :key="preset.id" :label="t(preset.labelKey)" :value="preset.id" />
           </el-select>
         </el-form-item>
+        <el-form-item :label="t('common.name')" required>
+          <el-input v-model="form.name" :placeholder="t('providers.displayNamePlaceholder')" />
+        </el-form-item>
+        <el-form-item :label="t('common.type')" required>
+          <el-input :model-value="providerTypeLabel(form.type)" disabled />
+        </el-form-item>
         <el-form-item :label="t('providers.apiKey')" required>
-          <el-input v-model="form.apiKey" type="password" show-password placeholder="sk-..." />
+          <el-input v-model="form.apiKey" type="password" show-password :placeholder="t('providers.apiKeyPlaceholder')" />
         </el-form-item>
         <el-form-item :label="t('providers.baseUrl')">
-          <el-input v-model="form.baseUrl" placeholder="https://api.openai.com/v1 (optional)" />
+          <el-input v-model="form.baseUrl" :placeholder="t('providers.baseUrlPlaceholder')" />
           <el-text type="info" size="small">{{ t("providers.baseUrlHelp") }}</el-text>
         </el-form-item>
         <el-form-item :label="t('providers.modelName')" required>
-          <el-input v-model="form.defaultModel" placeholder="e.g. gpt-4o, doubao-seed-2-0-lite-260215" />
+          <el-input v-model="form.defaultModel" :placeholder="t('providers.modelNamePlaceholder')" />
         </el-form-item>
         <el-form-item :label="t('providers.capabilities')">
           <div class="capability-switches">
@@ -220,6 +229,17 @@ interface ChannelStatItem {
   channelId: string; channelName: string;
   totalRequests: number; totalTokensIn: number; totalTokensOut: number;
 }
+type ProviderType = "openai" | "claude";
+type MessageKey = Parameters<typeof t>[0];
+interface ProviderPreset {
+  id: string;
+  labelKey: MessageKey;
+  nameKey: MessageKey;
+  type: ProviderType;
+  baseUrl: string;
+  defaultModel: string;
+  capabilities: ModelCapabilities;
+}
 
 const exampleCollapse = ref<string[]>([]);
 const exampleTab = ref("curl");
@@ -295,7 +315,7 @@ const formVisible = ref(false);
 const editingProvider = ref<ProviderItem | null>(null);
 const saving = ref(false);
 const form = ref({
-  name: "", type: "openai", apiKey: "", baseUrl: "",
+  presetId: "", name: "", type: "openai" as ProviderType, apiKey: "", baseUrl: "",
   defaultModel: "", enabled: true, isPrimary: false,
   capabilities: defaultCapabilities("openai"),
 });
@@ -308,6 +328,71 @@ const creatingChannel = ref(false);
 const newChannelName = ref("");
 const newlyCreatedChannelKey = ref("");
 const channelStatsMap = ref<Record<string, ChannelStatItem>>({});
+const providerPresets: ProviderPreset[] = [
+  {
+    id: "openai",
+    labelKey: "providers.preset.openai",
+    nameKey: "providers.preset.openaiName",
+    type: "openai",
+    baseUrl: "https://api.openai.com/v1",
+    defaultModel: "gpt-4o-mini",
+    capabilities: { supportsTools: true, supportsVision: true, supportsThinking: false, supportsStreaming: true },
+  },
+  {
+    id: "anthropic",
+    labelKey: "providers.preset.anthropic",
+    nameKey: "providers.preset.anthropicName",
+    type: "claude",
+    baseUrl: "",
+    defaultModel: "claude-sonnet-4-20250514",
+    capabilities: { supportsTools: true, supportsVision: true, supportsThinking: true, supportsStreaming: true },
+  },
+  {
+    id: "deepseek",
+    labelKey: "providers.preset.deepseek",
+    nameKey: "providers.preset.deepseekName",
+    type: "openai",
+    baseUrl: "https://api.deepseek.com",
+    defaultModel: "deepseek-chat",
+    capabilities: { supportsTools: true, supportsVision: false, supportsThinking: false, supportsStreaming: true },
+  },
+  {
+    id: "qwen",
+    labelKey: "providers.preset.qwen",
+    nameKey: "providers.preset.qwenName",
+    type: "openai",
+    baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    defaultModel: "qwen-plus",
+    capabilities: { supportsTools: true, supportsVision: false, supportsThinking: false, supportsStreaming: true },
+  },
+  {
+    id: "doubao",
+    labelKey: "providers.preset.doubao",
+    nameKey: "providers.preset.doubaoName",
+    type: "openai",
+    baseUrl: "https://ark.cn-beijing.volces.com/api/v3",
+    defaultModel: "doubao-seed-2-0-lite-260215",
+    capabilities: { supportsTools: true, supportsVision: false, supportsThinking: false, supportsStreaming: true },
+  },
+  {
+    id: "openrouter",
+    labelKey: "providers.preset.openrouter",
+    nameKey: "providers.preset.openrouterName",
+    type: "openai",
+    baseUrl: "https://openrouter.ai/api/v1",
+    defaultModel: "openai/gpt-4o-mini",
+    capabilities: { supportsTools: true, supportsVision: true, supportsThinking: false, supportsStreaming: true },
+  },
+  {
+    id: "custom-openai",
+    labelKey: "providers.preset.customOpenai",
+    nameKey: "providers.preset.customOpenaiName",
+    type: "openai",
+    baseUrl: "",
+    defaultModel: "",
+    capabilities: defaultCapabilities("openai"),
+  },
+];
 
 async function loadProviders() {
   try {
@@ -320,15 +405,16 @@ async function loadProviders() {
 
 function openCreate() {
   editingProvider.value = null;
-  form.value = { name: "", type: "openai", apiKey: "", baseUrl: "", defaultModel: "", enabled: true, isPrimary: false, capabilities: defaultCapabilities("openai") };
+  form.value = { presetId: "", name: "", type: "openai", apiKey: "", baseUrl: "", defaultModel: "", enabled: true, isPrimary: false, capabilities: defaultCapabilities("openai") };
   formVisible.value = true;
 }
 
 function openEdit(p: ProviderItem) {
   editingProvider.value = p;
   form.value = {
+    presetId: inferProviderPresetId(p),
     name: p.name,
-    type: p.type,
+    type: p.type as ProviderType,
     apiKey: "",
     baseUrl: p.baseUrl ?? "",
     defaultModel: p.defaultModel,
@@ -348,11 +434,34 @@ function defaultCapabilities(type: string): ModelCapabilities {
   };
 }
 
-function onTypeChange(type: string) {
-  form.value.capabilities = defaultCapabilities(type);
+function applyProviderPreset(presetId: string) {
+  const preset = providerPresets.find((item) => item.id === presetId);
+  if (!preset) return;
+  form.value = {
+    ...form.value,
+    presetId: preset.id,
+    name: t(preset.nameKey),
+    type: preset.type,
+    baseUrl: preset.baseUrl,
+    defaultModel: preset.defaultModel,
+    capabilities: { ...preset.capabilities },
+  };
+}
+
+function inferProviderPresetId(provider: ProviderItem): string {
+  const exact = providerPresets.find((preset) => preset.type === provider.type && preset.baseUrl === (provider.baseUrl ?? ""));
+  return exact?.id ?? (provider.type === "claude" ? "anthropic" : "custom-openai");
+}
+
+function providerTypeLabel(type: string): string {
+  return type === "claude" ? t("providers.anthropicClaude") : t("providers.openaiCompatible");
 }
 
 async function handleSave() {
+  if (!form.value.presetId) {
+    ElMessage.warning(t("providers.modelPlatformRequired"));
+    return;
+  }
   if (!form.value.name || !form.value.type || !form.value.defaultModel) {
     ElMessage.warning(t("providers.nameModelRequired"));
     return;
@@ -363,7 +472,8 @@ async function handleSave() {
   }
   saving.value = true;
   try {
-    const payload: Record<string, unknown> = { ...form.value };
+    const { presetId, ...providerPayload } = form.value;
+    const payload: Record<string, unknown> = { ...providerPayload };
     if (editingProvider.value && !form.value.apiKey) delete payload.apiKey;
     if (!form.value.baseUrl) delete payload.baseUrl;
 

@@ -134,7 +134,7 @@
             </el-select>
           </el-form-item>
           <el-form-item :label="t('common.filename')">
-            <el-input v-model="newFileName" placeholder="e.g. my-doc.md">
+            <el-input v-model="newFileName" :placeholder="t('skills.fileNamePlaceholder')">
               <template #append>.md</template>
             </el-input>
           </el-form-item>
