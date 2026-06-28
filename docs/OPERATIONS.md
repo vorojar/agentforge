@@ -78,7 +78,7 @@ NODE_ENV=production pnpm preflight:prod
 5. Pull the new release image or code.
 6. Run `NODE_ENV=production pnpm preflight:prod`.
 7. Start the app and confirm `/health`.
-8. Browser-smoke login, Tenants audit logs, Models, Agents, Knowledge, and Test Chat.
+8. Browser-smoke login, Enterprise Settings audit logs, Models, Agents, Knowledge, and Test Chat.
 9. Keep the previous image and backup available until smoke passes.
 
 ## Rollback

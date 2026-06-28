@@ -11,7 +11,7 @@
 - **知识库（RAG）** — 上传文档，自动分块（中英文句子感知） + 向量化（火山引擎 Embedding），混合搜索（向量 60% + BM25 40%），支持原始内容在线编辑与重切片
 - **HTTP API Tools** — 无需写代码，通过管理界面配置外部 API 为 Agent 工具，热加载无需重启
 - **OpenAI 兼容渠道** — 每个 Model 可创建独立 Channel API Key，兼容 `/v1/chat/completions`，并统计渠道用量
-- **企业租户与登录** — 支持 Organization / Workspace / User / Membership / Identity Provider / Audit Log，本地管理员登录、通用 OIDC，以及飞书、企业微信、钉钉企业 OAuth 登录
+- **企业设置与登录** — 私有化部署默认就是客户自己的企业；管理台提供业务空间、账号、成员角色、企业登录和审计日志，本地账号可直接使用，也可接入 OIDC、飞书、企业微信、钉钉等企业登录
 - **多语言后台** — 管理后台支持中文、日语、英文，右上角可切换，默认跟随浏览器语言
 - **上下文压缩** — 长对话自动截断旧 tool 结果 + 超出 token 预算时裁剪历史
 - **流式输出** — SSE 实时流式返回，Test Chat 支持流式展示
@@ -98,7 +98,7 @@ pnpm restore:postgres backups/agentforge-prod.sql.gz
 
 ## 上线与销售 Demo
 
-私有云企业版发布前必须通过发布闸门：根目录 `./scripts/verify.sh`、目标环境 `NODE_ENV=production pnpm preflight:prod`、PostgreSQL migration smoke、备份/恢复演练、浏览器登录和租户管理 smoke。销售演示建议按同一条产品路径走：登录账号、左下角用户菜单、Tenants 租户治理、企业身份源、Audit Log、Models fallback、Agents/Test Chat、最后解释私有云运维闭环。
+私有云企业版发布前必须通过发布闸门：根目录 `./scripts/verify.sh`、目标环境 `NODE_ENV=production pnpm preflight:prod`、PostgreSQL migration smoke、备份/恢复演练、浏览器登录和企业设置 smoke。销售演示建议按同一条产品路径走：登录账号、左下角用户菜单、企业设置、企业登录、审计日志、Models fallback、Agents/Test Chat、最后解释私有云运维闭环。
 
 完整上线验收和销售 demo 脚本见 [docs/RELEASE_CHECKLIST.md](docs/RELEASE_CHECKLIST.md)。
 
@@ -118,11 +118,11 @@ pnpm demo:status
 
 ## 管理后台
 
-后台使用本地账号登录，首次启动会自动创建 `ADMIN_EMAIL` 指定的管理员并加入默认 Organization / Workspace。开发环境常见演示账号是 `demo@example.com` / `password`，这也是国外 SaaS demo、starter kit、admin template 里最常见的写法之一；生产环境必须在 `.env` 中替换。登录后浏览器使用 HttpOnly session cookie 访问管理 API；`X-Admin-Secret` 只保留给自动化、迁移和紧急维护。
+后台使用本地账号登录，首次启动会自动创建 `ADMIN_EMAIL` 指定的管理员并加入默认企业和默认业务空间。开发环境常见演示账号是 `demo@example.com` / `password`，这也是国外 SaaS demo、starter kit、admin template 里最常见的写法之一；生产环境必须在 `.env` 中替换。登录后浏览器使用 HttpOnly session cookie 访问管理 API；`X-Admin-Secret` 只保留给自动化、迁移和紧急维护。
 
-### 企业 SSO
+### 企业登录
 
-Identity Provider 统一存放在租户模型中。支持两类登录：
+本地账号开箱即用，企业登录是可选接入项，用于连接客户公司已经在用的 Google Workspace、Microsoft Entra ID、Okta、Auth0、Keycloak、飞书、企业微信、钉钉等系统。技术上这些登录方式仍存放在后端 Identity Provider 模型中。支持两类登录：
 
 - `type: "oidc"`：Google Workspace、Microsoft Entra ID、Okta、Auth0、Keycloak、GitHub Enterprise 等标准 OIDC。回调地址是 `https://your-domain/api/auth/oidc/:providerId/callback`。
 - `type: "oauth"`：飞书、企业微信、钉钉。回调地址是 `https://your-domain/api/auth/oauth/:providerId/callback`。
@@ -144,7 +144,7 @@ OAuth provider 配置约定：
 | **Skills** | 卡片列表 / 文件编辑器（创建/删除/重命名 Skill 及其文件和文件夹） |
 | **Sessions** | 会话列表（首条消息预览、token 统计），Session Detail 紧凑展示工具调用 |
 | **Knowledge** | Agent 编辑页 → Knowledge Tab：上传文档、查看/编辑原始内容（自动重切片）、重命名/删除 |
-| **Tenants** | 管理 Organization、Workspace、User、Membership、Identity Provider 和 Audit Log，用于私有云客户接入企业身份系统与权限治理 |
+| **Enterprise Settings** | 管理业务空间、账号、成员角色、企业登录和审计日志；后端 Organization / Identity Provider 模型由系统维护，不暴露成普通客户的日常任务 |
 | **Test Chat** | Agent 编辑页 → Test Chat Tab：全屏聊天窗口、工具栏固定底部，支持流式 + 图片，显示 token 用量 + 思考过程 |
 
 ## Skill 系统
@@ -187,7 +187,7 @@ skills/
 
 ### 管理接口（登录会话 / 兼容 Admin Secret）
 
-管理端浏览器请求使用登录 Cookie。自动化脚本仍可临时使用 `X-Admin-Secret`。企业租户地基提供以下基础资源，OIDC、飞书、企业微信、钉钉等登录都会接入同一套 Organization / Workspace / Membership / Audit Log 模型。
+管理端浏览器请求使用登录 Cookie。自动化脚本仍可临时使用 `X-Admin-Secret`。企业设置背后仍使用 Organization / Workspace / Membership / Audit Log 等租户地基，OIDC、飞书、企业微信、钉钉等企业登录都会接入同一套权限和审计模型。
 
 工作区选择支持三种方式，优先级从高到低：
 
@@ -212,7 +212,7 @@ curl http://localhost:3000/api/tenant/bootstrap \
 - `GET /api/auth/oauth/:providerId/start`
 - `GET /api/auth/oauth/:providerId/callback`
 
-主要租户接口：
+主要企业设置接口：
 
 - `GET /api/tenant/bootstrap`
 - `GET/POST /api/organizations`

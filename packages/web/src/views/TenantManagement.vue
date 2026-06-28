@@ -1,29 +1,21 @@
 <template>
   <div class="tenant-page">
     <div class="tenant-toolbar">
-      <el-select v-model="selectedOrganizationId" :placeholder="t('tenant.selectOrganization')" style="width: 280px" @change="reloadOrganizationScope">
-        <el-option v-for="org in organizations" :key="org.id" :label="org.name" :value="org.id" />
-      </el-select>
-      <el-button type="primary" @click="openOrganizationDialog">{{ t("tenant.createOrganization") }}</el-button>
+      <div class="enterprise-summary">
+        <span class="enterprise-label">{{ t("tenant.currentEnterprise") }}</span>
+        <strong>{{ currentOrganizationName }}</strong>
+      </div>
     </div>
 
     <el-tabs v-model="activeTab" class="tenant-tabs">
-      <el-tab-pane :label="t('tenant.organizations')" name="organizations">
-        <el-table :data="organizations" v-loading="loading" stripe>
-          <el-table-column prop="name" :label="t('common.name')" min-width="180" />
-          <el-table-column prop="slug" :label="t('tenant.slug')" width="160" />
-          <el-table-column prop="createdAt" :label="t('common.created')" width="150">
-            <template #default="{ row }">{{ formatDate(row.createdAt) }}</template>
-          </el-table-column>
-        </el-table>
-      </el-tab-pane>
-
       <el-tab-pane :label="t('tenant.workspaces')" name="workspaces">
         <div class="section-actions">
           <el-button type="primary" :disabled="!selectedOrganizationId" @click="openWorkspaceDialog">{{ t("tenant.createWorkspace") }}</el-button>
         </div>
         <el-table :data="workspaces" v-loading="loading" stripe>
-          <el-table-column prop="name" :label="t('common.name')" min-width="180" />
+          <el-table-column :label="t('common.name')" min-width="180">
+            <template #default="{ row }">{{ workspaceDisplayName(row) }}</template>
+          </el-table-column>
           <el-table-column prop="slug" :label="t('tenant.slug')" width="160" />
           <el-table-column prop="createdAt" :label="t('common.created')" width="150">
             <template #default="{ row }">{{ formatDate(row.createdAt) }}</template>
@@ -76,7 +68,7 @@
         </div>
         <el-table :data="identityProviders" v-loading="loading" stripe>
           <el-table-column prop="name" :label="t('common.name')" min-width="160" />
-          <el-table-column prop="type" :label="t('common.type')" width="100" />
+          <el-table-column prop="type" :label="t('tenant.loginProtocol')" width="110" />
           <el-table-column prop="provider" :label="t('tenant.provider')" width="140" />
           <el-table-column prop="clientId" :label="t('tenant.clientId')" min-width="170" show-overflow-tooltip />
           <el-table-column :label="t('common.status')" width="110">
@@ -119,21 +111,6 @@
         </el-table>
       </el-tab-pane>
     </el-tabs>
-
-    <el-dialog v-model="organizationDialogVisible" :title="t('tenant.createOrganization')" width="460px">
-      <el-form :model="organizationForm" label-width="120px">
-        <el-form-item :label="t('common.name')" required>
-          <el-input v-model="organizationForm.name" :placeholder="t('tenant.organizationNamePlaceholder')" />
-        </el-form-item>
-        <el-form-item :label="t('tenant.slug')">
-          <el-input v-model="organizationForm.slug" :placeholder="t('tenant.slugPlaceholder')" />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="organizationDialogVisible = false">{{ t("common.cancel") }}</el-button>
-        <el-button type="primary" :loading="saving" @click="createOrganization">{{ t("common.create") }}</el-button>
-      </template>
-    </el-dialog>
 
     <el-dialog v-model="workspaceDialogVisible" :title="t('tenant.createWorkspace')" width="460px">
       <el-form :model="workspaceForm" label-width="120px">
@@ -178,7 +155,7 @@
         <el-form-item :label="t('tenant.scope')">
           <el-select v-model="membershipForm.workspaceId" style="width: 100%" :placeholder="t('tenant.organizationWide')">
             <el-option :label="t('tenant.organizationWide')" :value="null" />
-            <el-option v-for="workspace in workspaces" :key="workspace.id" :label="workspace.name" :value="workspace.id" />
+            <el-option v-for="workspace in workspaces" :key="workspace.id" :label="workspaceDisplayName(workspace)" :value="workspace.id" />
           </el-select>
         </el-form-item>
         <el-form-item :label="t('tenant.role')" required>
@@ -203,7 +180,7 @@
         <el-form-item :label="t('common.name')" required>
           <el-input v-model="identityProviderForm.name" :placeholder="t('tenant.idpNamePlaceholder')" />
         </el-form-item>
-        <el-form-item :label="t('common.type')" required>
+        <el-form-item :label="t('tenant.loginProtocol')" required>
           <el-select v-model="identityProviderForm.type" style="width: 100%">
             <el-option label="OIDC" value="oidc" />
             <el-option label="OAuth" value="oauth" />
@@ -252,7 +229,6 @@ import { computed, onMounted, ref } from "vue";
 import { ElMessage } from "element-plus";
 import {
   createIdentityProviderApi,
-  createOrganizationApi,
   createUserApi,
   createWorkspaceApi,
   getAuditLogs,
@@ -278,7 +254,7 @@ interface AuditLog { id: string; workspaceId: string | null; actorUserId: string
 
 const loading = ref(false);
 const saving = ref(false);
-const activeTab = ref("organizations");
+const activeTab = ref("workspaces");
 const organizations = ref<Organization[]>([]);
 const workspaces = ref<Workspace[]>([]);
 const users = ref<UserAccount[]>([]);
@@ -288,13 +264,11 @@ const auditLogs = ref<AuditLog[]>([]);
 const selectedOrganizationId = ref("");
 const auditWorkspaceId = ref("");
 
-const organizationDialogVisible = ref(false);
 const workspaceDialogVisible = ref(false);
 const userDialogVisible = ref(false);
 const membershipDialogVisible = ref(false);
 const identityProviderDialogVisible = ref(false);
 
-const organizationForm = ref({ name: "", slug: "" });
 const workspaceForm = ref({ name: "", slug: "" });
 const userForm = ref({ email: "", displayName: "", avatarUrl: "" });
 const membershipForm = ref<{ userId: string; workspaceId: string | null; role: Role; status: MemberStatus }>({
@@ -321,6 +295,13 @@ const roleOptions: Role[] = ["owner", "admin", "builder", "viewer"];
 const statusOptions: MemberStatus[] = ["active", "invited", "disabled"];
 const tenantActionLabel = computed(() => t("tenant.action"));
 const tenantResourceLabel = computed(() => t("tenant.resource"));
+const currentOrganizationName = computed(() => {
+  const organization = organizations.value.find((org) => org.id === selectedOrganizationId.value);
+  if (!organization || (organization.slug === "default" && organization.name === "Default Organization")) {
+    return t("tenant.defaultEnterprise");
+  }
+  return organization.name;
+});
 const claimMappingPlaceholder = `{
   "scope": "openid",
   "emailDomain": "company.com",
@@ -382,11 +363,6 @@ async function loadAuditLogs() {
   }
 }
 
-function openOrganizationDialog() {
-  organizationForm.value = { name: "", slug: "" };
-  organizationDialogVisible.value = true;
-}
-
 function openWorkspaceDialog() {
   workspaceForm.value = { name: "", slug: "" };
   workspaceDialogVisible.value = true;
@@ -417,22 +393,6 @@ function openIdentityProviderDialog() {
     enabled: true,
   };
   identityProviderDialogVisible.value = true;
-}
-
-async function createOrganization() {
-  if (!organizationForm.value.name.trim()) return ElMessage.warning(t("tenant.nameRequired"));
-  saving.value = true;
-  try {
-    const { data } = await createOrganizationApi(compactPayload(organizationForm.value));
-    selectedOrganizationId.value = data.id;
-    organizationDialogVisible.value = false;
-    ElMessage.success(t("tenant.created"));
-    await loadAll();
-  } catch {
-    ElMessage.error(t("tenant.saveFailed"));
-  } finally {
-    saving.value = false;
-  }
 }
 
 async function createWorkspace() {
@@ -529,7 +489,13 @@ function userLabel(userId: string): string {
 
 function workspaceLabel(workspaceId: string | null): string {
   if (!workspaceId) return t("tenant.organizationWide");
-  return workspaces.value.find((workspace) => workspace.id === workspaceId)?.name ?? workspaceId;
+  const workspace = workspaces.value.find((item) => item.id === workspaceId);
+  return workspace ? workspaceDisplayName(workspace) : workspaceId;
+}
+
+function workspaceDisplayName(workspace: Workspace): string {
+  if (workspace.slug === "default" && workspace.name === "Default Workspace") return t("tenant.defaultWorkspace");
+  return workspace.name;
 }
 
 function roleLabel(role: Role): string {
@@ -575,7 +541,7 @@ function formatDateTime(value: string): string {
   justify-content: flex-end;
 }
 .tenant-toolbar {
-  justify-content: space-between;
+  justify-content: flex-start;
 }
 .tenant-tabs {
   background: #fff;
@@ -597,6 +563,24 @@ function formatDateTime(value: string): string {
   font-size: 12px;
   line-height: 1.5;
 }
+.enterprise-summary {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+.enterprise-label {
+  color: #64748b;
+  font-size: 13px;
+}
+.enterprise-summary strong {
+  color: #0f172a;
+  font-size: 16px;
+  font-weight: 650;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 @media (max-width: 720px) {
   .tenant-toolbar {
@@ -614,6 +598,11 @@ function formatDateTime(value: string): string {
 
   .tenant-toolbar :deep(.el-button) {
     justify-self: start;
+  }
+
+  .tenant-tabs :deep(.el-tabs__item) {
+    font-size: 13px;
+    padding: 0 8px;
   }
 }
 </style>

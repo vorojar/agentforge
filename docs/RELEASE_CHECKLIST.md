@@ -11,7 +11,7 @@ Release is ready only when every item is true:
 3. Production uses `DB_TYPE=postgres` or an equivalent PostgreSQL URL.
 4. `pnpm verify:postgres` passes against staging or the target database.
 5. `pnpm backup:postgres` produces a restorable `.sql.gz` backup outside the app container.
-6. Browser smoke passes: login, user menu, Tenants, membership, identity provider, audit log, and logout.
+6. Browser smoke passes: login, user menu, Enterprise Settings, membership, enterprise login, audit log, and logout.
 7. Browser console has no new `error` or `warning` entries during the smoke path.
 8. At least one enterprise identity provider path is configured or scheduled with the customer.
 9. Rollback plan points to a previous image/commit and a pre-upgrade database backup.
@@ -23,10 +23,10 @@ Use seeded or non-sensitive customer-like data only.
 
 1. Login with the local demo admin in a development or staging environment.
 2. Show the user menu in the lower-left corner and explain session-based admin access.
-3. Open **Tenants** and show Organization, Workspace, User, Membership, Identity Provider, and Audit Log.
+3. Open **Enterprise Settings** and show business spaces, accounts, members and roles, enterprise login, and audit logs.
 4. Create a workspace for a department or environment.
 5. Create a user and assign a role to the workspace.
-6. Create an identity provider entry for Google Workspace, Microsoft Entra ID, Okta, Feishu, WeCom, or DingTalk.
+6. Add an enterprise login method for Google Workspace, Microsoft Entra ID, Okta, Feishu, WeCom, or DingTalk.
 7. Open Audit Logs and show the recorded tenant/admin changes.
 8. Open **Models** and explain primary model, fallback models, capability flags, and channel API keys.
 9. Open **Agents** and show model selection, fallback models, tools, skills, and knowledge binding.

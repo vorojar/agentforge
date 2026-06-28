@@ -101,7 +101,7 @@ After deployment or upgrade:
 1. Open `/health`.
 2. Login with local admin or configured SSO.
 3. Confirm lower-left user menu shows the signed-in user.
-4. Open **Tenants** and check Organization, Workspace, Users, Members, Identity Providers, and Audit Logs.
+4. Open **Enterprise Settings** and check business spaces, accounts, members and roles, enterprise login, and audit logs.
 5. Open **Models** and confirm at least one enabled model.
 6. Open **Agents** and confirm model/fallback configuration.
 7. Run a safe **Test Chat** prompt.
