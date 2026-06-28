@@ -16,6 +16,9 @@ services:
       - POSTGRES_PASSWORD
       - POSTGRES_DB=${POSTGRES_DB:-agentforge}
       - POSTGRES_URL
+      - POSTGRES_POOL_MAX=${POSTGRES_POOL_MAX:-10}
+      - POSTGRES_IDLE_TIMEOUT_MS=${POSTGRES_IDLE_TIMEOUT_MS:-30000}
+      - POSTGRES_CONNECTION_TIMEOUT_MS=${POSTGRES_CONNECTION_TIMEOUT_MS:-5000}
       - LLM_PROVIDER=${LLM_PROVIDER:-claude}
       - LLM_API_KEY
       - LLM_BASE_URL
@@ -30,7 +33,7 @@ services:
       - PORT=3000
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 30s
       timeout: 10s
       retries: 3

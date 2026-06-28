@@ -69,6 +69,8 @@ NODE_ENV=production pnpm preflight:prod
 | `POSTGRES_HOST` / `POSTGRES_PORT` | `postgres` / `5432` | PostgreSQL 主机和端口 |
 | `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | `agentforge` / — / `agentforge` | PostgreSQL 用户、密码和数据库名 |
 | `POSTGRES_SSL` | `false` | 外部托管 PostgreSQL 需要 SSL 时设为 `true` |
+| `POSTGRES_POOL_MAX` | `10` | 应用侧连接池最大连接数，客户已有 PgBouncer 时也建议保持小池 |
+| `POSTGRES_IDLE_TIMEOUT_MS` / `POSTGRES_CONNECTION_TIMEOUT_MS` | `30000` / `5000` | 空闲连接回收与连接建立超时 |
 | `ADMIN_EMAIL` | `demo@example.com` | 首个本地管理员账号；本地开发默认演示账号 |
 | `ADMIN_PASSWORD` | `password` | 本地开发默认演示密码；生产环境必须替换，且会拒绝 `password` / `admin` / `change-me-in-production` |
 | `AUTH_SESSION_DAYS` | `7` | 登录会话有效天数 |

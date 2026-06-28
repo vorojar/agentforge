@@ -117,6 +117,9 @@ export interface PostgresConfig {
   password: string;
   database: string;
   ssl?: boolean;
+  max?: number;
+  idleTimeoutMillis?: number;
+  connectionTimeoutMillis?: number;
 }
 
 export class PostgresAdapter implements DatabaseAdapter {
@@ -129,7 +132,9 @@ export class PostgresAdapter implements DatabaseAdapter {
       user: config.user,
       password: config.password,
       database: config.database,
-      max: 10,
+      max: config.max ?? 10,
+      idleTimeoutMillis: config.idleTimeoutMillis ?? 30_000,
+      connectionTimeoutMillis: config.connectionTimeoutMillis ?? 5_000,
       ssl: config.ssl ? { rejectUnauthorized: false } : undefined,
     });
   }
@@ -904,11 +909,11 @@ export class PostgresAdapter implements DatabaseAdapter {
       FROM usage_logs WHERE workspace_id = ?`;
     const params: SqlParams = [workspaceId ?? await this.getDefaultWorkspaceId()];
     if (startDate && endDate) {
-      sql += " AND DATE(created_at) >= ? AND DATE(created_at) <= ?";
-      params.push(startDate, endDate);
+      sql += " AND created_at >= ? AND created_at < ?";
+      params.push(this.dayStartStr(startDate), this.nextDayStartStr(endDate));
     } else {
-      sql += " AND created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)";
-      params.push(days);
+      sql += " AND created_at >= ?";
+      params.push(this.daysAgoStr(days));
     }
     if (agentId) { sql += " AND agent_id = ?"; params.push(agentId); }
     sql += ` GROUP BY ${groupExpr} ORDER BY ${groupExpr} ASC`;
@@ -920,9 +925,9 @@ export class PostgresAdapter implements DatabaseAdapter {
     const resolvedWorkspaceId = workspaceId ?? await this.getDefaultWorkspaceId();
     const [rows] = await this.execute<Record<string, any>[]>(
       `SELECT COUNT(*) as total,
-              SUM(CASE WHEN created_at >= CURDATE() THEN 1 ELSE 0 END) as today
+              SUM(CASE WHEN created_at >= ? THEN 1 ELSE 0 END) as today
        FROM sessions WHERE workspace_id = ?`,
-      [resolvedWorkspaceId],
+      [this.todayStartStr(), resolvedWorkspaceId],
     );
     return { total: Number(rows[0].total), today: Number(rows[0].today) };
   }
@@ -931,8 +936,8 @@ export class PostgresAdapter implements DatabaseAdapter {
     let sql = `SELECT agent_id, COUNT(*) as requests, COALESCE(SUM(tokens_in), 0) as tokens_in, COALESCE(SUM(tokens_out), 0) as tokens_out FROM usage_logs WHERE workspace_id = ?`;
     const params: SqlParams = [workspaceId ?? await this.getDefaultWorkspaceId()];
     if (startDate && endDate) {
-      sql += " AND DATE(created_at) >= ? AND DATE(created_at) <= ?";
-      params.push(startDate, endDate);
+      sql += " AND created_at >= ? AND created_at < ?";
+      params.push(this.dayStartStr(startDate), this.nextDayStartStr(endDate));
     }
     sql += " GROUP BY agent_id ORDER BY requests DESC";
     const [rows] = await this.execute<Record<string, any>[]>(sql, params);
@@ -943,8 +948,8 @@ export class PostgresAdapter implements DatabaseAdapter {
     let sql = `SELECT model, COUNT(*) as requests, SUM(tokens_in) as tokens_in, SUM(tokens_out) as tokens_out FROM usage_logs WHERE workspace_id = ?`;
     const params: SqlParams = [workspaceId ?? await this.getDefaultWorkspaceId()];
     if (startDate && endDate) {
-      sql += " AND DATE(created_at) >= ? AND DATE(created_at) <= ?";
-      params.push(startDate, endDate);
+      sql += " AND created_at >= ? AND created_at < ?";
+      params.push(this.dayStartStr(startDate), this.nextDayStartStr(endDate));
     }
     sql += " GROUP BY model ORDER BY requests DESC";
     const [rows] = await this.execute<Record<string, any>[]>(sql, params);
@@ -1390,9 +1395,9 @@ export class PostgresAdapter implements DatabaseAdapter {
     );
     const [dailyRows] = await this.execute<Record<string, any>[]>(
       `SELECT DATE(created_at) as date, COUNT(*) as requests, SUM(tokens_in) as tokens_in, SUM(tokens_out) as tokens_out
-       FROM proxy_usage_logs WHERE channel_id = ? AND created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
+       FROM proxy_usage_logs WHERE channel_id = ? AND created_at >= ?
        GROUP BY DATE(created_at) ORDER BY DATE(created_at) ASC`,
-      [channelId, days]
+      [channelId, this.daysAgoStr(days)]
     );
     const t = totalRows[0];
     return {
@@ -1405,8 +1410,8 @@ export class PostgresAdapter implements DatabaseAdapter {
     let joinCondition = "pu.channel_id = pc.id";
     const params: SqlParams = [];
     if (startDate && endDate) {
-      joinCondition += " AND DATE(pu.created_at) >= ? AND DATE(pu.created_at) <= ?";
-      params.push(startDate, endDate);
+      joinCondition += " AND pu.created_at >= ? AND pu.created_at < ?";
+      params.push(this.dayStartStr(startDate), this.nextDayStartStr(endDate));
     }
     if (workspaceId) {
       joinCondition += " AND pu.workspace_id = ?";
@@ -1433,11 +1438,11 @@ export class PostgresAdapter implements DatabaseAdapter {
        FROM proxy_usage_logs WHERE workspace_id = ?`;
     const params: SqlParams = [workspaceId ?? await this.getDefaultWorkspaceId()];
     if (startDate && endDate) {
-      sql += " AND DATE(created_at) >= ? AND DATE(created_at) <= ?";
-      params.push(startDate, endDate);
+      sql += " AND created_at >= ? AND created_at < ?";
+      params.push(this.dayStartStr(startDate), this.nextDayStartStr(endDate));
     } else {
-      sql += " AND created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)";
-      params.push(days);
+      sql += " AND created_at >= ?";
+      params.push(this.daysAgoStr(days));
     }
     sql += ` GROUP BY ${groupExpr} ORDER BY ${groupExpr} ASC`;
     const [rows] = await this.execute<Record<string, any>[]>(sql, params);
@@ -1473,5 +1478,23 @@ export class PostgresAdapter implements DatabaseAdapter {
     const offset = 8 * 60;
     const local = new Date(d.getTime() + offset * 60000);
     return local.toISOString().slice(0, 19).replace("T", " ");
+  }
+
+  private todayStartStr(): string {
+    return `${this.nowStr().slice(0, 10)} 00:00:00`;
+  }
+
+  private dayStartStr(value: string): string {
+    return `${value.slice(0, 10)} 00:00:00`;
+  }
+
+  private nextDayStartStr(value: string): string {
+    const [year, month, day] = value.slice(0, 10).split("-").map(Number);
+    const date = new Date(Date.UTC(year, month - 1, day + 1));
+    return `${date.toISOString().slice(0, 10)} 00:00:00`;
+  }
+
+  private daysAgoStr(days: number): string {
+    return this.dateTimeStr(new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString());
   }
 }

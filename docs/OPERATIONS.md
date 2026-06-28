@@ -15,9 +15,14 @@ POSTGRES_PORT=5432
 POSTGRES_USER=agentforge
 POSTGRES_PASSWORD=<strong database password>
 POSTGRES_DB=agentforge
+POSTGRES_POOL_MAX=10
+POSTGRES_IDLE_TIMEOUT_MS=30000
+POSTGRES_CONNECTION_TIMEOUT_MS=5000
 ```
 
 `POSTGRES_URL=postgres://user:password@host:5432/database` or `DATABASE_URL=postgres://...` is also supported.
+
+Keep the application pool small and predictable. For higher concurrency, put PgBouncer or the customer's managed pooler in front of PostgreSQL, then tune `POSTGRES_POOL_MAX` against that pooler.
 
 ## Preflight
 

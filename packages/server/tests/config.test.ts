@@ -24,7 +24,7 @@ describe("loadConfig", () => {
     process.env.LLM_API_KEY = "test-key";
     process.env[postgresPasswordEnv] = "postgres-db-credential";
 
-    expect(loadConfig().database).toEqual({
+    expect(loadConfig().database).toMatchObject({
       type: "postgres",
       host: "postgres",
       port: 5432,
@@ -32,13 +32,16 @@ describe("loadConfig", () => {
       password: "postgres-db-credential",
       database: "agentforge",
       ssl: false,
+      max: undefined,
+      idleTimeoutMillis: undefined,
+      connectionTimeoutMillis: undefined,
     });
   });
 
   it("supports PostgreSQL database config from DATABASE_URL", () => {
     const urlCredential = "postgres-url-credential!";
     process.env.LLM_API_KEY = "test-key";
-    process.env.DATABASE_URL = `postgres://agentforge:${encodeURIComponent(urlCredential)}@postgres.example.com:5433/agentforge_prod?sslmode=require`;
+    process.env.DATABASE_URL = `postgres://agentforge:${encodeURIComponent(urlCredential)}@postgres.example.com:5433/agentforge_prod?sslmode=require&pool_max=20&idle_timeout_ms=45000&connection_timeout_ms=8000`;
 
     const database = loadConfig().database as Record<string, unknown>;
     expect(database).toMatchObject({
@@ -48,6 +51,9 @@ describe("loadConfig", () => {
       user: "agentforge",
       database: "agentforge_prod",
       ssl: true,
+      max: 20,
+      idleTimeoutMillis: 45000,
+      connectionTimeoutMillis: 8000,
     });
     expect(database[passwordField]).toBe(urlCredential);
   });
@@ -61,6 +67,9 @@ describe("loadConfig", () => {
     process.env.POSTGRES_USER = "agentforge";
     process.env[postgresPasswordEnv] = dbCredential;
     process.env.POSTGRES_DB = "agentforge";
+    process.env.POSTGRES_POOL_MAX = "15";
+    process.env.POSTGRES_IDLE_TIMEOUT_MS = "30000";
+    process.env.POSTGRES_CONNECTION_TIMEOUT_MS = "5000";
 
     const database = loadConfig().database as Record<string, unknown>;
     expect(database).toMatchObject({
@@ -69,8 +78,19 @@ describe("loadConfig", () => {
       port: 5434,
       user: "agentforge",
       database: "agentforge",
+      max: 15,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 5000,
     });
     expect(database[passwordField]).toBe(dbCredential);
+  });
+
+  it("rejects invalid PostgreSQL pool settings", () => {
+    process.env.LLM_API_KEY = "test-key";
+    process.env[postgresPasswordEnv] = "postgres-db-credential";
+    process.env.POSTGRES_POOL_MAX = "0";
+
+    expect(() => loadConfig()).toThrow("POSTGRES_POOL_MAX must be a positive integer");
   });
 
   it("uses a conventional local demo account by default", () => {

@@ -23,6 +23,9 @@ export interface PostgresConfig {
   password: string;
   database: string;
   ssl?: boolean;
+  max?: number;
+  idleTimeoutMillis?: number;
+  connectionTimeoutMillis?: number;
 }
 
 export function loadConfig(): AppConfig {
@@ -97,6 +100,9 @@ function loadPostgresConfig(env: NodeJS.ProcessEnv, postgresUrl: string | undefi
     password,
     database,
     ssl: env.POSTGRES_SSL === "true",
+    max: parsePositiveInt(env.POSTGRES_POOL_MAX, "POSTGRES_POOL_MAX"),
+    idleTimeoutMillis: parsePositiveInt(env.POSTGRES_IDLE_TIMEOUT_MS, "POSTGRES_IDLE_TIMEOUT_MS"),
+    connectionTimeoutMillis: parsePositiveInt(env.POSTGRES_CONNECTION_TIMEOUT_MS, "POSTGRES_CONNECTION_TIMEOUT_MS"),
   };
 }
 
@@ -116,5 +122,17 @@ function parsePostgresUrl(value: string): PostgresConfig {
     password: decodeURIComponent(url.password),
     database: decodeURIComponent(database),
     ssl: url.searchParams.get("sslmode") === "require",
+    max: parsePositiveInt(url.searchParams.get("pool_max") ?? undefined, "pool_max"),
+    idleTimeoutMillis: parsePositiveInt(url.searchParams.get("idle_timeout_ms") ?? undefined, "idle_timeout_ms"),
+    connectionTimeoutMillis: parsePositiveInt(url.searchParams.get("connection_timeout_ms") ?? undefined, "connection_timeout_ms"),
   };
+}
+
+function parsePositiveInt(value: string | undefined, name: string): number | undefined {
+  if (!value?.trim()) return undefined;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new Error(`${name} must be a positive integer`);
+  }
+  return parsed;
 }
