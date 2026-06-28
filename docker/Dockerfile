@@ -51,13 +51,14 @@ COPY --from=builder /app/packages/server/dist packages/server/dist
 COPY --from=builder /app/packages/web/dist packages/web/dist
 COPY --from=builder /app/skills skills/
 
-RUN mkdir -p /app/data
-
 EXPOSE 3000
 
 ENV NODE_ENV=production
-ENV DB_TYPE=sqlite
-ENV DB_PATH=/app/data/agentforge.db
+ENV DB_TYPE=postgres
+ENV POSTGRES_HOST=postgres
+ENV POSTGRES_PORT=5432
+ENV POSTGRES_USER=agentforge
+ENV POSTGRES_DB=agentforge
 ENV PORT=3000
 
 CMD ["node", "packages/server/dist/index.js"]

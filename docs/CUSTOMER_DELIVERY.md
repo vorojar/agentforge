@@ -7,7 +7,7 @@ Use this checklist with customer IT before a private-cloud rollout.
 Supported first-wave deployment:
 
 - Docker Compose on a customer-controlled VM or private cloud host.
-- MySQL for production multi-user deployments.
+- PostgreSQL for all deployments. Docker Compose can start an included PostgreSQL service, or customers can provide an existing PostgreSQL instance.
 - HTTPS termination by customer load balancer, reverse proxy, or ingress.
 - Outbound network access from AgentForge to selected LLM providers and enterprise IdP endpoints.
 
@@ -18,7 +18,7 @@ Future deployment shapes can include Kubernetes or customer platform packaging, 
 | Area | Required Input |
 |---|---|
 | Domain | External URL, for example `https://agentforge.example.com` |
-| Database | MySQL host, port, database, user, password, backup owner |
+| Database | PostgreSQL host, port, database, user, password, backup owner |
 | Identity | OIDC/OAuth provider, client ID, secret reference, callback URL registration |
 | LLM | Approved provider, base URL if private gateway is used, API key ownership |
 | Security | Admin owner email, emergency admin secret owner, password rotation policy |
@@ -42,7 +42,7 @@ Secrets must be supplied through `.env`, container secrets, or the customer secr
 - `LLM_API_KEY`
 - `ADMIN_SECRET`
 - `ADMIN_PASSWORD`
-- `MYSQL_PASSWORD`
+- `POSTGRES_PASSWORD`
 - IdP client secret environment variables referenced by `clientSecretRef`
 
 Do not put raw secrets in README files, tickets, chat, screenshots, audit logs, or demo scripts.
@@ -55,14 +55,14 @@ Run before switching traffic:
 NODE_ENV=production pnpm preflight:prod
 ```
 
-Expected result: all checks are `[OK]`. Treat SQLite production warnings as customer-approved exceptions only for small single-node trials.
+Expected result: all checks are `[OK]`. Any non-PostgreSQL database configuration is a blocker.
 
 ## Database Verification
 
-Production-like MySQL must pass:
+Production-like PostgreSQL must pass:
 
 ```bash
-DB_TYPE=mysql pnpm verify:mysql
+pnpm verify:postgres
 ```
 
 The command checks schema initialization, tenant creation, agent creation, knowledge-base creation, relation persistence, audit write/read, and adapter shutdown.
@@ -72,14 +72,14 @@ The command checks schema initialization, tenant creation, agent creation, knowl
 Before upgrade:
 
 ```bash
-pnpm backup:mysql
+pnpm backup:postgres
 ```
 
 Restore test on non-production:
 
 ```bash
-pnpm restore:mysql backups/<backup-file>.sql.gz
-DB_TYPE=mysql pnpm verify:mysql
+pnpm restore:postgres backups/<backup-file>.sql.gz
+pnpm verify:postgres
 ```
 
 ## Demo Reset

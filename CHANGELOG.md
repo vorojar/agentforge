@@ -2,6 +2,12 @@
 
 All notable changes to AgentForge are documented in this file.
 
+## Unreleased
+
+### Changed
+- **PostgreSQL-only runtime** — Removed SQLite/MySQL runtime adapters, scripts, and dependencies; PostgreSQL is now the only supported database.
+- **Docker one-command deployment** — Docker Compose starts AgentForge with PostgreSQL by default, with `.env.example`, PostgreSQL preflight, migration verification, backup, and restore commands aligned.
+
 ## [0.7.1] - 2026-04-12
 
 ### Added

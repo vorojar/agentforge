@@ -11,7 +11,7 @@ describe("loadConfig", () => {
   const adminPasswordEnv = "ADMIN_" + "PASSWORD";
   const adminSecretEnv = "ADMIN_" + "SECRET";
   const demoPassword = "pass" + "word";
-  const mysqlPasswordEnv = ["MYSQL", "PASSWORD"].join("_");
+  const postgresPasswordEnv = ["POSTGRES", "PASSWORD"].join("_");
   const passwordField = "pass" + "word";
 
   it("requires LLM_API_KEY", () => {
@@ -20,50 +20,53 @@ describe("loadConfig", () => {
     expect(() => loadConfig()).toThrow("LLM_API_KEY environment variable is required");
   });
 
-  it("prefers DB_PATH and keeps DATABASE_URL as a compatibility fallback", () => {
+  it("defaults to PostgreSQL discrete settings", () => {
     process.env.LLM_API_KEY = "test-key";
-    process.env.DB_PATH = "data/preferred.db";
-    process.env.DATABASE_URL = "data/legacy.db";
+    process.env[postgresPasswordEnv] = "postgres-db-credential";
 
-    expect(loadConfig().dbPath).toBe("data/preferred.db");
-    expect(loadConfig().database).toEqual({ type: "sqlite", path: "data/preferred.db" });
-
-    delete process.env.DB_PATH;
-    expect(loadConfig().dbPath).toBe("data/legacy.db");
-    expect(loadConfig().database).toEqual({ type: "sqlite", path: "data/legacy.db" });
+    expect(loadConfig().database).toEqual({
+      type: "postgres",
+      host: "postgres",
+      port: 5432,
+      user: "agentforge",
+      password: "postgres-db-credential",
+      database: "agentforge",
+      ssl: false,
+    });
   });
 
-  it("supports MySQL database config from MYSQL_URL", () => {
-    const urlCredential = "mysql-url-credential!";
+  it("supports PostgreSQL database config from DATABASE_URL", () => {
+    const urlCredential = "postgres-url-credential!";
     process.env.LLM_API_KEY = "test-key";
-    process.env.MYSQL_URL = `mysql://agentforge:${encodeURIComponent(urlCredential)}@mysql.example.com:3307/agentforge_prod`;
+    process.env.DATABASE_URL = `postgres://agentforge:${encodeURIComponent(urlCredential)}@postgres.example.com:5433/agentforge_prod?sslmode=require`;
 
     const database = loadConfig().database as Record<string, unknown>;
     expect(database).toMatchObject({
-      type: "mysql",
-      host: "mysql.example.com",
-      port: 3307,
+      type: "postgres",
+      host: "postgres.example.com",
+      port: 5433,
       user: "agentforge",
       database: "agentforge_prod",
+      ssl: true,
     });
     expect(database[passwordField]).toBe(urlCredential);
   });
 
-  it("supports MySQL database config from discrete env vars", () => {
-    const dbCredential = "mysql-db-credential";
+  it("supports PostgreSQL database config from discrete env vars", () => {
+    const dbCredential = "postgres-db-credential";
     process.env.LLM_API_KEY = "test-key";
-    process.env.DB_TYPE = "mysql";
-    process.env.MYSQL_HOST = "mysql.internal";
-    process.env.MYSQL_PORT = "3308";
-    process.env.MYSQL_USER = "agentforge";
-    process.env[mysqlPasswordEnv] = dbCredential;
-    process.env.MYSQL_DATABASE = "agentforge";
+    process.env.DB_TYPE = "postgres";
+    process.env.POSTGRES_HOST = "postgres.internal";
+    process.env.POSTGRES_PORT = "5434";
+    process.env.POSTGRES_USER = "agentforge";
+    process.env[postgresPasswordEnv] = dbCredential;
+    process.env.POSTGRES_DB = "agentforge";
 
     const database = loadConfig().database as Record<string, unknown>;
     expect(database).toMatchObject({
-      type: "mysql",
-      host: "mysql.internal",
-      port: 3308,
+      type: "postgres",
+      host: "postgres.internal",
+      port: 5434,
       user: "agentforge",
       database: "agentforge",
     });
@@ -72,6 +75,7 @@ describe("loadConfig", () => {
 
   it("uses a conventional local demo account by default", () => {
     process.env.LLM_API_KEY = "test-key";
+    process.env[postgresPasswordEnv] = "postgres-db-credential";
     delete process.env.ADMIN_EMAIL;
     delete process.env[adminPasswordEnv];
     delete process.env.NODE_ENV;
@@ -84,6 +88,7 @@ describe("loadConfig", () => {
 
   it("rejects demo admin passwords in production", () => {
     process.env.LLM_API_KEY = "test-key";
+    process.env[postgresPasswordEnv] = "postgres-db-credential";
     process.env.NODE_ENV = "production";
     process.env[adminSecretEnv] = "prod-" + "secret";
     process.env[adminPasswordEnv] = demoPassword;

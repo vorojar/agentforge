@@ -1,16 +1,16 @@
 import { config as loadEnv } from "dotenv";
-import { MySQLAdapter } from "../packages/database/src/mysql.js";
+import { PostgresAdapter } from "../packages/database/src/postgres.js";
 import { loadDatabaseConfig } from "../packages/server/src/config.js";
 
 loadEnv({ quiet: true });
 
 const database = loadDatabaseConfig(process.env);
-if (database.type !== "mysql") {
-  console.error("DB_TYPE=mysql or MYSQL_URL is required for MySQL migration verification.");
+if (database.type !== "postgres") {
+  console.error("DB_TYPE=postgres, POSTGRES_URL, or DATABASE_URL is required for PostgreSQL migration verification.");
   process.exit(1);
 }
 
-const db = new MySQLAdapter(database);
+const db = new PostgresAdapter(database);
 
 try {
   await db.initialize();
@@ -42,7 +42,7 @@ try {
     throw new Error("Audit log smoke row was not persisted.");
   }
 
-  console.log("MySQL migrations verified: schema initialized and smoke CRUD passed.");
+  console.log("PostgreSQL migrations verified: schema initialized and smoke CRUD passed.");
 } finally {
   await db.close();
 }

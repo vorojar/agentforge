@@ -13,7 +13,7 @@ const checks: Check[] = [
   scriptCheck("demo:seed"),
   scriptCheck("demo:status"),
   scriptCheck("preflight:prod"),
-  scriptCheck("verify:mysql"),
+  scriptCheck("verify:postgres"),
   fileContains("docs/COMMERCIAL_READINESS.md", ["Acceptance Matrix", "Demo Environment Standard", "Release Version Standard"]),
   fileContains("docs/CUSTOMER_DELIVERY.md", ["Required Customer Inputs", "Production Preflight", "Go-Live Smoke", "Rollback Evidence"]),
   fileContains("docs/PRICING.md", ["Recommended Packaging", "Pricing Units", "Buyer Narrative", "Quote Readiness Gate"]),

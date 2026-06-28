@@ -56,8 +56,8 @@ When changing providers, agents, or chat execution:
 When adding persisted fields:
 
 1. Update shared types.
-2. Update SQLite adapter and migrations.
-3. Update MySQL adapter and migrations.
+2. Update PostgreSQL adapter and migrations.
+3. Update PostgreSQL persistence tests.
 4. Update API route serialization/deserialization.
 5. Update relevant frontend API types.
 6. Add or update database tests.
@@ -65,11 +65,11 @@ When adding persisted fields:
 
 ## Private-Cloud Operations Checklist
 
-1. Production multi-user deployments should use `DB_TYPE=mysql`; SQLite is only for development or explicitly accepted single-node trials.
+1. All deployments should use `DB_TYPE=postgres` or a PostgreSQL URL.
 2. Run `NODE_ENV=production pnpm preflight:prod` before rollout.
-3. Run `DB_TYPE=mysql pnpm verify:mysql` against staging or the target database before switching traffic.
-4. Run `pnpm backup:mysql` before upgrade and store the `.sql.gz` outside the app container.
-5. Test restore with `pnpm restore:mysql <backup.sql.gz>` on a non-production database before relying on a backup policy.
+3. Run `pnpm verify:postgres` against staging or the target database before switching traffic.
+4. Run `pnpm backup:postgres` before upgrade and store the `.sql.gz` outside the app container.
+5. Test restore with `pnpm restore:postgres <backup.sql.gz>` on a non-production database before relying on a backup policy.
 6. Keep [docs/OPERATIONS.md](OPERATIONS.md) updated whenever deployment, migration, backup, restore, or rollback behavior changes.
 7. Keep [docs/RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md) updated whenever the launch gate, browser smoke path, or sales demo path changes.
 8. Keep [docs/CUSTOMER_DELIVERY.md](CUSTOMER_DELIVERY.md) updated whenever customer IT inputs, ports, URLs, secrets, or go-live smoke change.
@@ -93,7 +93,7 @@ When adding SaaS/private-cloud capabilities:
 3. Store identity provider secrets as references such as `env:NAME` or KMS paths, not raw secret values in normal API payloads, docs, logs, or audit metadata.
 4. Validate roles and membership status at the API boundary.
 5. Write audit logs for sensitive organization, workspace, membership, provider, model, key, and auth configuration changes.
-6. Keep SQLite and MySQL behavior aligned; MySQL is the expected production path for many private-cloud deployments.
+6. Keep PostgreSQL behavior covered by migrations, adapter tests, and Docker smoke checks.
 7. Do not add a provider-specific login path that bypasses workspace scoping or audit logging.
 8. Admin APIs should resolve workspace from `X-Workspace-Id`, `workspaceId` query, or body `workspaceId`; if omitted, use the default workspace.
 9. Detail/update/delete routes must verify the resource belongs to the resolved workspace before returning data or mutating state.

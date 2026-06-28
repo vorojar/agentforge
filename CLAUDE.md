@@ -10,7 +10,7 @@ Enterprise AI Agent service platform. Docker-deployable, Vue3 admin UI, business
 
 ```
 packages/types      → TypeScript interfaces (zero runtime deps)
-packages/database   → SQLite adapter + migrations
+packages/database   → PostgreSQL adapter + migrations
 packages/providers  → LLM adapters (Claude, OpenAI-compatible) + failover
 packages/tools      → Tool registry, executor, builtins, HTTP tools, embedding, chunker
 packages/skills     → Skill parser, matcher (CJK bigram), loader (lazy + hot reload)
@@ -86,6 +86,5 @@ pnpm dev              # Start dev (API :3000 + Web :5173)
 
 - LLM: primarily Doubao (Volcano Engine OpenAI-compatible API)
 - Embedding: Volcano Engine doubao-embedding-vision API
-- Database: SQLite (better-sqlite3)
+- Database: PostgreSQL (`pg`)
 - Skills directory: `skills/` at project root
-- Data directory: `data/` at project root

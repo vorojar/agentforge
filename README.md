@@ -28,20 +28,13 @@
 cp .env.example .env
 # 编辑 .env，填入 LLM API Key；生产环境必须替换 ADMIN_EMAIL / ADMIN_PASSWORD
 
-cd docker
-docker compose up --build -d
+docker compose -f docker/docker-compose.yml up --build -d
 
 # 访问管理后台
 open http://localhost:3000
 ```
 
-生产私有云建议使用 MySQL：
-
-```bash
-# .env 中设置 DB_TYPE=mysql 和 MYSQL_* 后
-cd docker
-docker compose --profile mysql up --build -d
-```
+Docker Compose 会同时启动 AgentForge 和 PostgreSQL。生产私有云也可以把 `.env` 改成客户已有的 `POSTGRES_URL` 或 `POSTGRES_HOST` / `POSTGRES_*`，但运行数据库只支持 PostgreSQL。
 
 ### 本地开发
 
@@ -61,7 +54,7 @@ pnpm dev
 NODE_ENV=production pnpm preflight:prod
 ```
 
-自检会阻塞默认 `ADMIN_SECRET`、演示密码、缺失 `LLM_API_KEY`、未开启 `AUTH_COOKIE_SECURE`、不安全 `CORS_ORIGIN`、缺失 `PUBLIC_URL` 和未配置持久化数据库路径等问题。Docker 部署必须显式设置 `ADMIN_SECRET`、`ADMIN_EMAIL`、`ADMIN_PASSWORD`、`AUTH_COOKIE_SECURE=true`、`CORS_ORIGIN=https://...` 和 `PUBLIC_URL=https://...`。
+自检会阻塞默认 `ADMIN_SECRET`、演示密码、缺失 `LLM_API_KEY`、未开启 `AUTH_COOKIE_SECURE`、不安全 `CORS_ORIGIN`、缺失 `PUBLIC_URL` 和未配置 PostgreSQL 等问题。Docker 部署必须显式设置 `POSTGRES_PASSWORD`、`ADMIN_SECRET`、`ADMIN_EMAIL`、`ADMIN_PASSWORD`、`AUTH_COOKIE_SECURE=true`、`CORS_ORIGIN=https://...` 和 `PUBLIC_URL=https://...`。
 
 ## 环境变量
 
@@ -71,11 +64,11 @@ NODE_ENV=production pnpm preflight:prod
 | `LLM_API_KEY` | — | LLM API Key（必填） |
 | `LLM_BASE_URL` | — | OpenAI 兼容 API 地址（豆包、DeepSeek 等） |
 | `DEFAULT_MODEL` | `claude-sonnet-4-20250514` | 默认模型 |
-| `DB_TYPE` | `sqlite` | 数据库类型：`sqlite` / `mysql`；私有云生产建议 `mysql` |
-| `DB_PATH` | `data/agentforge.db` | SQLite 数据库文件路径；兼容读取旧变量 `DATABASE_URL` |
-| `MYSQL_URL` | — | MySQL 连接 URL；也可用下面的离散 `MYSQL_*` 变量 |
-| `MYSQL_HOST` / `MYSQL_PORT` | — / `3306` | MySQL 主机和端口 |
-| `MYSQL_USER` / `MYSQL_PASSWORD` / `MYSQL_DATABASE` | — | MySQL 用户、密码和数据库名 |
+| `DB_TYPE` | `postgres` | 数据库类型；只支持 `postgres` / `postgresql` |
+| `POSTGRES_URL` | — | PostgreSQL 连接 URL；也可使用 `DATABASE_URL=postgres://...` |
+| `POSTGRES_HOST` / `POSTGRES_PORT` | `postgres` / `5432` | PostgreSQL 主机和端口 |
+| `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | `agentforge` / — / `agentforge` | PostgreSQL 用户、密码和数据库名 |
+| `POSTGRES_SSL` | `false` | 外部托管 PostgreSQL 需要 SSL 时设为 `true` |
 | `ADMIN_EMAIL` | `demo@example.com` | 首个本地管理员账号；本地开发默认演示账号 |
 | `ADMIN_PASSWORD` | `password` | 本地开发默认演示密码；生产环境必须替换，且会拒绝 `password` / `admin` / `change-me-in-production` |
 | `AUTH_SESSION_DAYS` | `7` | 登录会话有效天数 |
@@ -94,16 +87,16 @@ NODE_ENV=production pnpm preflight:prod
 
 ```bash
 NODE_ENV=production pnpm preflight:prod
-DB_TYPE=mysql pnpm verify:mysql
-pnpm backup:mysql
-pnpm restore:mysql backups/agentforge-prod.sql.gz
+pnpm verify:postgres
+pnpm backup:postgres
+pnpm restore:postgres backups/agentforge-prod.sql.gz
 ```
 
 完整备份、恢复、升级和回滚步骤见 [docs/OPERATIONS.md](docs/OPERATIONS.md)。
 
 ## 上线与销售 Demo
 
-私有云企业版发布前必须通过发布闸门：根目录 `./scripts/verify.sh`、目标环境 `NODE_ENV=production pnpm preflight:prod`、MySQL migration smoke、备份/恢复演练、浏览器登录和租户管理 smoke。销售演示建议按同一条产品路径走：登录账号、左下角用户菜单、Tenants 租户治理、企业身份源、Audit Log、Models fallback、Agents/Test Chat、最后解释私有云运维闭环。
+私有云企业版发布前必须通过发布闸门：根目录 `./scripts/verify.sh`、目标环境 `NODE_ENV=production pnpm preflight:prod`、PostgreSQL migration smoke、备份/恢复演练、浏览器登录和租户管理 smoke。销售演示建议按同一条产品路径走：登录账号、左下角用户菜单、Tenants 租户治理、企业身份源、Audit Log、Models fallback、Agents/Test Chat、最后解释私有云运维闭环。
 
 完整上线验收和销售 demo 脚本见 [docs/RELEASE_CHECKLIST.md](docs/RELEASE_CHECKLIST.md)。
 
@@ -308,7 +301,7 @@ curl -X POST http://localhost:3000/api/chat \
 ```
 packages/
 ├── types/        TypeScript 接口定义（零运行时依赖）
-├── database/     数据库适配器（SQLite，自动迁移）
+├── database/     PostgreSQL 数据库适配器与自动迁移
 ├── providers/    LLM 模型适配（Claude / OpenAI 兼容，含 thinking 支持）
 ├── tools/        工具系统（注册表、执行器、内置工具、HTTP 工具、知识搜索、Skill 内容加载、Embedding）
 ├── skills/       Skill 系统（Markdown 解析、注册、文件扫描）

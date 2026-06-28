@@ -1,12 +1,11 @@
 /**
- * MySQL 数据库适配器
- * 功能：基于 mysql2 连接池实现 DatabaseAdapter 接口
+ * Postgres 数据库适配器
+ * 功能：基于 pg 连接池实现 DatabaseAdapter 接口
  * 创建时间：2026-03-31
  * 负责人：王觉贤
  */
 
-import mysql from "mysql2/promise";
-import type { Pool, RowDataPacket, ResultSetHeader, QueryResult } from "mysql2/promise";
+import { Pool } from "pg";
 
 type SqlParams = (string | number | Buffer | null | boolean)[];
 import { v4 as uuidv4 } from "uuid";
@@ -55,7 +54,11 @@ import type {
   Workspace,
   WorkspaceCreateInput,
 } from "@agentforge/types";
-import { MYSQL_MIGRATIONS, MYSQL_INDEXES, MYSQL_ALTERS } from "./migrations.js";
+import { POSTGRES_MIGRATIONS, POSTGRES_INDEXES, POSTGRES_ALTERS } from "./migrations.js";
+
+interface DbResultHeader {
+  affectedRows: number;
+}
 
 function hashKey(raw: string): string {
   return createHash("sha256").update(raw).digest("hex");
@@ -107,43 +110,83 @@ function normalizeModelCapabilities(type: string | undefined, input?: Partial<Mo
   return { ...defaultModelCapabilities(type), ...(input ?? {}) };
 }
 
-export interface MySQLConfig {
+export interface PostgresConfig {
   host: string;
   port: number;
   user: string;
   password: string;
   database: string;
+  ssl?: boolean;
 }
 
-export class MySQLAdapter implements DatabaseAdapter {
+export class PostgresAdapter implements DatabaseAdapter {
   private pool: Pool;
 
-  constructor(config: MySQLConfig) {
-    this.pool = mysql.createPool({
+  constructor(config: PostgresConfig) {
+    this.pool = new Pool({
       host: config.host,
       port: config.port,
       user: config.user,
       password: config.password,
       database: config.database,
-      waitForConnections: true,
-      connectionLimit: 10,
-      charset: "utf8mb4",
-      timezone: "+08:00",
+      max: 10,
+      ssl: config.ssl ? { rejectUnauthorized: false } : undefined,
     });
   }
 
   async initialize(): Promise<void> {
-    const statements = MYSQL_MIGRATIONS.split(";").map(s => s.trim()).filter(s => s.length > 0);
+    const statements = POSTGRES_MIGRATIONS.split(";").map(s => s.trim()).filter(s => s.length > 0);
     for (const stmt of statements) {
-      await this.pool.execute(stmt);
+      await this.execute(stmt);
     }
-    for (const alter of MYSQL_ALTERS) {
-      try { await this.pool.execute(alter); } catch { /* column/table may already exist */ }
+    for (const alter of POSTGRES_ALTERS) {
+      try { await this.execute(alter); } catch { /* column/table may already exist */ }
     }
-    for (const idx of MYSQL_INDEXES) {
-      try { await this.pool.execute(idx); } catch { /* index may already exist */ }
+    for (const idx of POSTGRES_INDEXES) {
+      try { await this.execute(idx); } catch { /* index may already exist */ }
     }
     await this.backfillDefaultWorkspace();
+  }
+
+  private async execute<T = Record<string, any>[]>(sql: string, params: SqlParams = []): Promise<[T]> {
+    const rewritten = this.rewriteSql(sql);
+    const normalizedParams = params.map((value) => typeof value === "boolean" ? (value ? 1 : 0) : value);
+    const result = await this.pool.query(this.toPostgresPlaceholders(rewritten), normalizedParams);
+    if (/^\s*(select|with|show)\b/i.test(rewritten)) {
+      return [result.rows as T];
+    }
+    return [{ affectedRows: result.rowCount ?? 0 } as T];
+  }
+
+  private toPostgresPlaceholders(sql: string): string {
+    let index = 0;
+    return sql.replace(/\?/g, () => `$${++index}`);
+  }
+
+  private rewriteSql(sql: string): string {
+    return sql
+      .replace(/created_at >= DATE_SUB\(NOW\(\), INTERVAL \? DAY\)/gi, "created_at::timestamp >= (CURRENT_TIMESTAMP - (? * INTERVAL '1 day'))")
+      .replace(/created_at >= CURDATE\(\)/gi, "created_at::date >= CURRENT_DATE")
+      .replace(
+        /INSERT IGNORE INTO workspace_skill_categories \(workspace_id, skill_name, category, updated_at\)\s+SELECT \?, skill_name, category, updated_at FROM skill_categories/gi,
+        "INSERT INTO workspace_skill_categories (workspace_id, skill_name, category, updated_at) SELECT ?, skill_name, category, updated_at FROM skill_categories ON CONFLICT (workspace_id, skill_name) DO NOTHING",
+      )
+      .replace(
+        /ON DUPLICATE KEY UPDATE password_hash = VALUES\(password_hash\), updated_at = VALUES\(updated_at\)/gi,
+        "ON CONFLICT (user_id) DO UPDATE SET password_hash = EXCLUDED.password_hash, updated_at = EXCLUDED.updated_at",
+      )
+      .replace(
+        /ON DUPLICATE KEY UPDATE category = VALUES\(category\), updated_at = NOW\(\)/gi,
+        "ON CONFLICT (workspace_id, skill_name) DO UPDATE SET category = EXCLUDED.category, updated_at = CURRENT_TIMESTAMP",
+      )
+      .replace(/JSON_ARRAYAGG\(DISTINCT model\)/gi, "json_agg(DISTINCT model)")
+      .replace(/DATE_FORMAT\(created_at, '%Y-%m-%d %H:00'\)/gi, "to_char(created_at::timestamp, 'YYYY-MM-DD HH24:00')")
+      .replace(/DATE_SUB\(NOW\(\), INTERVAL \? DAY\)/gi, "(CURRENT_TIMESTAMP - (? * INTERVAL '1 day'))")
+      .replace(/CURDATE\(\)/gi, "CURRENT_DATE")
+      .replace(/DATE\(([^)]+)\)/gi, "($1)::date")
+      .replace(/NOW\(\)/gi, "CURRENT_TIMESTAMP")
+      .replace(/FIELD\(role, 'user', 'assistant', 'tool'\)/gi, "CASE role WHEN 'user' THEN 1 WHEN 'assistant' THEN 2 WHEN 'tool' THEN 3 ELSE 4 END")
+      .replace(/FIELD\(role, 'assistant', 'tool', 'user'\)/gi, "CASE role WHEN 'assistant' THEN 1 WHEN 'tool' THEN 2 WHEN 'user' THEN 3 ELSE 4 END");
   }
 
   private async getDefaultWorkspaceId(): Promise<string> {
@@ -159,13 +202,13 @@ export class MySQLAdapter implements DatabaseAdapter {
     const tables = ["providers", "agents", "sessions", "usage_logs", "http_tools", "knowledge_bases", "provider_channels", "proxy_usage_logs"];
     for (const table of tables) {
       try {
-        await this.pool.execute(`UPDATE ${table} SET workspace_id = ? WHERE workspace_id IS NULL OR workspace_id = ''`, [workspaceId]);
+        await this.execute(`UPDATE ${table} SET workspace_id = ? WHERE workspace_id IS NULL OR workspace_id = ''`, [workspaceId]);
       } catch {
         // Table or column may not exist in partial schemas during upgrades.
       }
     }
     try {
-      await this.pool.execute(
+      await this.execute(
         `INSERT IGNORE INTO workspace_skill_categories (workspace_id, skill_name, category, updated_at)
          SELECT ?, skill_name, category, updated_at FROM skill_categories`,
         [workspaceId],
@@ -178,12 +221,12 @@ export class MySQLAdapter implements DatabaseAdapter {
   // --- Tenant foundation ---
 
   async ensureDefaultTenant(): Promise<TenantBootstrapResult> {
-    const [orgRows] = await this.pool.execute<RowDataPacket[]>("SELECT * FROM organizations WHERE slug = ?", ["default"]);
+    const [orgRows] = await this.execute<Record<string, any>[]>("SELECT * FROM organizations WHERE slug = ?", ["default"]);
     const organization = orgRows.length > 0
       ? this.mapOrganization(orgRows[0])
       : await this.createOrganization({ name: "Default Organization", slug: "default" });
 
-    const [workspaceRows] = await this.pool.execute<RowDataPacket[]>(
+    const [workspaceRows] = await this.execute<Record<string, any>[]>(
       "SELECT * FROM workspaces WHERE organization_id = ? AND slug = ?",
       [organization.id, "default"],
     );
@@ -198,7 +241,7 @@ export class MySQLAdapter implements DatabaseAdapter {
     const id = uuidv4();
     const now = this.nowStr();
     const slug = normalizeSlug(input.slug ?? input.name);
-    await this.pool.execute(
+    await this.execute(
       "INSERT INTO organizations (id, name, slug, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
       [id, input.name.trim(), slug, now, now],
     );
@@ -206,12 +249,12 @@ export class MySQLAdapter implements DatabaseAdapter {
   }
 
   async getOrganization(id: string): Promise<Organization | null> {
-    const [rows] = await this.pool.execute<RowDataPacket[]>("SELECT * FROM organizations WHERE id = ?", [id]);
+    const [rows] = await this.execute<Record<string, any>[]>("SELECT * FROM organizations WHERE id = ?", [id]);
     return rows.length > 0 ? this.mapOrganization(rows[0]) : null;
   }
 
   async listOrganizations(): Promise<Organization[]> {
-    const [rows] = await this.pool.execute<RowDataPacket[]>("SELECT * FROM organizations ORDER BY created_at ASC");
+    const [rows] = await this.execute<Record<string, any>[]>("SELECT * FROM organizations ORDER BY created_at ASC");
     return rows.map((row) => this.mapOrganization(row));
   }
 
@@ -219,7 +262,7 @@ export class MySQLAdapter implements DatabaseAdapter {
     const id = uuidv4();
     const now = this.nowStr();
     const slug = normalizeSlug(input.slug ?? input.name);
-    await this.pool.execute(
+    await this.execute(
       "INSERT INTO workspaces (id, organization_id, name, slug, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
       [id, input.organizationId, input.name.trim(), slug, now, now],
     );
@@ -227,14 +270,14 @@ export class MySQLAdapter implements DatabaseAdapter {
   }
 
   async getWorkspace(id: string): Promise<Workspace | null> {
-    const [rows] = await this.pool.execute<RowDataPacket[]>("SELECT * FROM workspaces WHERE id = ?", [id]);
+    const [rows] = await this.execute<Record<string, any>[]>("SELECT * FROM workspaces WHERE id = ?", [id]);
     return rows.length > 0 ? this.mapWorkspace(rows[0]) : null;
   }
 
   async listWorkspaces(organizationId?: string): Promise<Workspace[]> {
     const [rows] = organizationId
-      ? await this.pool.execute<RowDataPacket[]>("SELECT * FROM workspaces WHERE organization_id = ? ORDER BY created_at ASC", [organizationId])
-      : await this.pool.execute<RowDataPacket[]>("SELECT * FROM workspaces ORDER BY created_at ASC");
+      ? await this.execute<Record<string, any>[]>("SELECT * FROM workspaces WHERE organization_id = ? ORDER BY created_at ASC", [organizationId])
+      : await this.execute<Record<string, any>[]>("SELECT * FROM workspaces ORDER BY created_at ASC");
     return rows.map((row) => this.mapWorkspace(row));
   }
 
@@ -242,7 +285,7 @@ export class MySQLAdapter implements DatabaseAdapter {
     const id = uuidv4();
     const now = this.nowStr();
     const email = input.email.trim().toLowerCase();
-    await this.pool.execute(
+    await this.execute(
       "INSERT INTO users (id, email, display_name, avatar_url, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
       [id, email, input.displayName.trim(), input.avatarUrl ?? null, now, now],
     );
@@ -250,23 +293,23 @@ export class MySQLAdapter implements DatabaseAdapter {
   }
 
   async getUser(id: string): Promise<UserAccount | null> {
-    const [rows] = await this.pool.execute<RowDataPacket[]>("SELECT * FROM users WHERE id = ?", [id]);
+    const [rows] = await this.execute<Record<string, any>[]>("SELECT * FROM users WHERE id = ?", [id]);
     return rows.length > 0 ? this.mapUser(rows[0]) : null;
   }
 
   async getUserByEmail(email: string): Promise<UserAccount | null> {
-    const [rows] = await this.pool.execute<RowDataPacket[]>("SELECT * FROM users WHERE email = ?", [email.trim().toLowerCase()]);
+    const [rows] = await this.execute<Record<string, any>[]>("SELECT * FROM users WHERE email = ?", [email.trim().toLowerCase()]);
     return rows.length > 0 ? this.mapUser(rows[0]) : null;
   }
 
   async listUsers(): Promise<UserAccount[]> {
-    const [rows] = await this.pool.execute<RowDataPacket[]>("SELECT * FROM users ORDER BY created_at ASC");
+    const [rows] = await this.execute<Record<string, any>[]>("SELECT * FROM users ORDER BY created_at ASC");
     return rows.map((row) => this.mapUser(row));
   }
 
   async setUserPassword(userId: string, passwordHash: string): Promise<UserPassword> {
     const now = this.nowStr();
-    await this.pool.execute(
+    await this.execute(
       `INSERT INTO user_passwords (user_id, password_hash, created_at, updated_at)
        VALUES (?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE password_hash = VALUES(password_hash), updated_at = VALUES(updated_at)`,
@@ -276,58 +319,58 @@ export class MySQLAdapter implements DatabaseAdapter {
   }
 
   async getUserPassword(userId: string): Promise<UserPassword | null> {
-    const [rows] = await this.pool.execute<RowDataPacket[]>("SELECT * FROM user_passwords WHERE user_id = ?", [userId]);
+    const [rows] = await this.execute<Record<string, any>[]>("SELECT * FROM user_passwords WHERE user_id = ?", [userId]);
     return rows.length > 0 ? this.mapUserPassword(rows[0]) : null;
   }
 
   async updateUserLastLogin(userId: string): Promise<void> {
     const now = this.nowStr();
-    await this.pool.execute("UPDATE users SET last_login_at = ?, updated_at = ? WHERE id = ?", [now, now, userId]);
+    await this.execute("UPDATE users SET last_login_at = ?, updated_at = ? WHERE id = ?", [now, now, userId]);
   }
 
   async createAuthSession(userId: string, tokenHash: string, expiresAt: string): Promise<AuthSession> {
     const id = uuidv4();
     const now = this.nowStr();
     const expires = this.dateTimeStr(expiresAt);
-    await this.pool.execute(
+    await this.execute(
       "INSERT INTO auth_sessions (id, user_id, token_hash, expires_at, created_at, last_seen_at) VALUES (?, ?, ?, ?, ?, ?)",
       [id, userId, tokenHash, expires, now, now],
     );
-    const [rows] = await this.pool.execute<RowDataPacket[]>("SELECT * FROM auth_sessions WHERE id = ?", [id]);
+    const [rows] = await this.execute<Record<string, any>[]>("SELECT * FROM auth_sessions WHERE id = ?", [id]);
     return this.mapAuthSession(rows[0]);
   }
 
   async getAuthSessionByHash(tokenHash: string): Promise<AuthSession | null> {
-    const [rows] = await this.pool.execute<RowDataPacket[]>("SELECT * FROM auth_sessions WHERE token_hash = ?", [tokenHash]);
+    const [rows] = await this.execute<Record<string, any>[]>("SELECT * FROM auth_sessions WHERE token_hash = ?", [tokenHash]);
     if (rows.length === 0) return null;
     const session = this.mapAuthSession(rows[0]);
     if (Date.parse(session.expiresAt) <= Date.now()) {
       await this.deleteAuthSessionByHash(tokenHash);
       return null;
     }
-    await this.pool.execute("UPDATE auth_sessions SET last_seen_at = ? WHERE id = ?", [this.nowStr(), session.id]);
+    await this.execute("UPDATE auth_sessions SET last_seen_at = ? WHERE id = ?", [this.nowStr(), session.id]);
     return session;
   }
 
   async deleteAuthSessionByHash(tokenHash: string): Promise<boolean> {
-    const [res] = await this.pool.execute<ResultSetHeader>("DELETE FROM auth_sessions WHERE token_hash = ?", [tokenHash]);
+    const [res] = await this.execute<DbResultHeader>("DELETE FROM auth_sessions WHERE token_hash = ?", [tokenHash]);
     return res.affectedRows > 0;
   }
 
   async deleteExpiredAuthSessions(): Promise<void> {
-    await this.pool.execute("DELETE FROM auth_sessions WHERE expires_at <= ?", [this.nowStr()]);
+    await this.execute("DELETE FROM auth_sessions WHERE expires_at <= ?", [this.nowStr()]);
   }
 
   async upsertMembership(input: MembershipInput): Promise<Membership> {
     const workspaceId = input.workspaceId ?? null;
-    const [rows] = await this.pool.execute<RowDataPacket[]>(
+    const [rows] = await this.execute<Record<string, any>[]>(
       `SELECT * FROM memberships
-       WHERE organization_id = ? AND user_id = ? AND ((workspace_id IS NULL AND ? IS NULL) OR workspace_id = ?)`,
+       WHERE organization_id = ? AND user_id = ? AND ((workspace_id IS NULL AND ?::text IS NULL) OR workspace_id = ?)`,
       [input.organizationId, input.userId, workspaceId, workspaceId],
     );
     const now = this.nowStr();
     if (rows.length > 0) {
-      await this.pool.execute(
+      await this.execute(
         "UPDATE memberships SET role = ?, status = ?, updated_at = ? WHERE id = ?",
         [input.role, input.status ?? "active", now, rows[0].id],
       );
@@ -335,7 +378,7 @@ export class MySQLAdapter implements DatabaseAdapter {
     }
 
     const id = uuidv4();
-    await this.pool.execute(
+    await this.execute(
       `INSERT INTO memberships (id, organization_id, workspace_id, user_id, role, status, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [id, input.organizationId, workspaceId, input.userId, input.role, input.status ?? "active", now, now],
@@ -345,10 +388,10 @@ export class MySQLAdapter implements DatabaseAdapter {
 
   async listMemberships(organizationId: string, workspaceId?: string | null): Promise<Membership[]> {
     const [rows] = workspaceId === undefined
-      ? await this.pool.execute<RowDataPacket[]>("SELECT * FROM memberships WHERE organization_id = ? ORDER BY created_at ASC", [organizationId])
-      : await this.pool.execute<RowDataPacket[]>(
+      ? await this.execute<Record<string, any>[]>("SELECT * FROM memberships WHERE organization_id = ? ORDER BY created_at ASC", [organizationId])
+      : await this.execute<Record<string, any>[]>(
           `SELECT * FROM memberships
-           WHERE organization_id = ? AND ((workspace_id IS NULL AND ? IS NULL) OR workspace_id = ?)
+           WHERE organization_id = ? AND ((workspace_id IS NULL AND ?::text IS NULL) OR workspace_id = ?)
            ORDER BY created_at ASC`,
           [organizationId, workspaceId, workspaceId],
         );
@@ -358,7 +401,7 @@ export class MySQLAdapter implements DatabaseAdapter {
   async createIdentityProvider(input: IdentityProviderCreateInput): Promise<IdentityProviderConfig> {
     const id = uuidv4();
     const now = this.nowStr();
-    await this.pool.execute(
+    await this.execute(
       `INSERT INTO identity_providers
         (id, organization_id, type, provider, name, issuer_url, client_id, client_secret_ref, sso_url, certificate, claim_mapping, group_mapping, enabled, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -375,7 +418,7 @@ export class MySQLAdapter implements DatabaseAdapter {
   }
 
   async listIdentityProviders(organizationId: string): Promise<IdentityProviderConfig[]> {
-    const [rows] = await this.pool.execute<RowDataPacket[]>(
+    const [rows] = await this.execute<Record<string, any>[]>(
       "SELECT * FROM identity_providers WHERE organization_id = ? ORDER BY created_at ASC",
       [organizationId],
     );
@@ -385,7 +428,7 @@ export class MySQLAdapter implements DatabaseAdapter {
   async createAuditLog(input: AuditLogInput): Promise<AuditLog> {
     const id = uuidv4();
     const now = this.nowStr();
-    await this.pool.execute(
+    await this.execute(
       `INSERT INTO audit_logs
         (id, organization_id, workspace_id, actor_user_id, action, resource_type, resource_id, metadata, ip_address, user_agent, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -395,20 +438,20 @@ export class MySQLAdapter implements DatabaseAdapter {
         JSON.stringify(input.metadata ?? {}), input.ipAddress ?? null, input.userAgent ?? null, now,
       ],
     );
-    const [rows] = await this.pool.execute<RowDataPacket[]>("SELECT * FROM audit_logs WHERE id = ?", [id]);
+    const [rows] = await this.execute<Record<string, any>[]>("SELECT * FROM audit_logs WHERE id = ?", [id]);
     return this.mapAuditLog(rows[0]);
   }
 
   async listAuditLogs(organizationId: string, options?: { workspaceId?: string; limit?: number }): Promise<AuditLog[]> {
     const limit = Math.min(Math.max(options?.limit ?? 100, 1), 500);
     const [rows] = options?.workspaceId
-      ? await this.pool.execute<RowDataPacket[]>(
+      ? await this.execute<Record<string, any>[]>(
           `SELECT * FROM audit_logs
            WHERE organization_id = ? AND workspace_id = ?
            ORDER BY created_at DESC LIMIT ?`,
           [organizationId, options.workspaceId, limit],
         )
-      : await this.pool.execute<RowDataPacket[]>(
+      : await this.execute<Record<string, any>[]>(
           "SELECT * FROM audit_logs WHERE organization_id = ? ORDER BY created_at DESC LIMIT ?",
           [organizationId, limit],
         );
@@ -416,11 +459,11 @@ export class MySQLAdapter implements DatabaseAdapter {
   }
 
   private async getMembership(id: string): Promise<Membership | null> {
-    const [rows] = await this.pool.execute<RowDataPacket[]>("SELECT * FROM memberships WHERE id = ?", [id]);
+    const [rows] = await this.execute<Record<string, any>[]>("SELECT * FROM memberships WHERE id = ?", [id]);
     return rows.length > 0 ? this.mapMembership(rows[0]) : null;
   }
 
-  private mapOrganization(row: RowDataPacket): Organization {
+  private mapOrganization(row: Record<string, any>): Organization {
     return {
       id: row.id,
       name: row.name,
@@ -430,7 +473,7 @@ export class MySQLAdapter implements DatabaseAdapter {
     };
   }
 
-  private mapWorkspace(row: RowDataPacket): Workspace {
+  private mapWorkspace(row: Record<string, any>): Workspace {
     return {
       id: row.id,
       organizationId: row.organization_id,
@@ -441,7 +484,7 @@ export class MySQLAdapter implements DatabaseAdapter {
     };
   }
 
-  private mapUser(row: RowDataPacket): UserAccount {
+  private mapUser(row: Record<string, any>): UserAccount {
     return {
       id: row.id,
       email: row.email,
@@ -453,7 +496,7 @@ export class MySQLAdapter implements DatabaseAdapter {
     };
   }
 
-  private mapUserPassword(row: RowDataPacket): UserPassword {
+  private mapUserPassword(row: Record<string, any>): UserPassword {
     return {
       userId: row.user_id,
       passwordHash: row.password_hash,
@@ -462,7 +505,7 @@ export class MySQLAdapter implements DatabaseAdapter {
     };
   }
 
-  private mapAuthSession(row: RowDataPacket): AuthSession {
+  private mapAuthSession(row: Record<string, any>): AuthSession {
     return {
       id: row.id,
       userId: row.user_id,
@@ -473,7 +516,7 @@ export class MySQLAdapter implements DatabaseAdapter {
     };
   }
 
-  private mapMembership(row: RowDataPacket): Membership {
+  private mapMembership(row: Record<string, any>): Membership {
     return {
       id: row.id,
       organizationId: row.organization_id,
@@ -486,7 +529,7 @@ export class MySQLAdapter implements DatabaseAdapter {
     };
   }
 
-  private mapIdentityProvider(row: RowDataPacket): IdentityProviderConfig {
+  private mapIdentityProvider(row: Record<string, any>): IdentityProviderConfig {
     return {
       id: row.id,
       organizationId: row.organization_id,
@@ -506,7 +549,7 @@ export class MySQLAdapter implements DatabaseAdapter {
     };
   }
 
-  private mapAuditLog(row: RowDataPacket): AuditLog {
+  private mapAuditLog(row: Record<string, any>): AuditLog {
     return {
       id: row.id,
       organizationId: row.organization_id,
@@ -528,7 +571,7 @@ export class MySQLAdapter implements DatabaseAdapter {
     const id = uuidv4();
     const now = this.nowStr();
     const workspaceId = await this.resolveWorkspaceId(input.workspaceId);
-    await this.pool.execute(
+    await this.execute(
       `INSERT INTO agents (id, workspace_id, name, description, system_prompt, provider_id, model, fallback_models, fallback_cooldown_seconds, temperature, max_tokens, max_iterations, streaming, thinking, tools, skills, category, enabled, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
       [id, workspaceId, input.name, input.description ?? "", input.systemPrompt, input.providerId ?? null,
@@ -541,15 +584,15 @@ export class MySQLAdapter implements DatabaseAdapter {
   }
 
   async getAgent(id: string): Promise<AgentConfig | null> {
-    const [rows] = await this.pool.execute<RowDataPacket[]>("SELECT * FROM agents WHERE id = ?", [id]);
+    const [rows] = await this.execute<Record<string, any>[]>("SELECT * FROM agents WHERE id = ?", [id]);
     if (rows.length === 0) return null;
     return this.mapAgent(rows[0]);
   }
 
   async listAgents(workspaceId?: string): Promise<AgentConfig[]> {
     const [rows] = workspaceId
-      ? await this.pool.execute<RowDataPacket[]>("SELECT * FROM agents WHERE workspace_id = ? ORDER BY created_at DESC", [workspaceId])
-      : await this.pool.execute<RowDataPacket[]>("SELECT * FROM agents ORDER BY created_at DESC");
+      ? await this.execute<Record<string, any>[]>("SELECT * FROM agents WHERE workspace_id = ? ORDER BY created_at DESC", [workspaceId])
+      : await this.execute<Record<string, any>[]>("SELECT * FROM agents ORDER BY created_at DESC");
     return rows.map(r => this.mapAgent(r));
   }
 
@@ -579,16 +622,16 @@ export class MySQLAdapter implements DatabaseAdapter {
     fields.push("updated_at = ?");
     values.push(this.nowStr());
     values.push(id);
-    await this.pool.execute(`UPDATE agents SET ${fields.join(", ")} WHERE id = ?`, values);
+    await this.execute(`UPDATE agents SET ${fields.join(", ")} WHERE id = ?`, values);
     return (await this.getAgent(id))!;
   }
 
   async deleteAgent(id: string): Promise<boolean> {
-    const [result] = await this.pool.execute<ResultSetHeader>("DELETE FROM agents WHERE id = ?", [id]);
+    const [result] = await this.execute<DbResultHeader>("DELETE FROM agents WHERE id = ?", [id]);
     return result.affectedRows > 0;
   }
 
-  private mapAgent(row: RowDataPacket): AgentConfig {
+  private mapAgent(row: Record<string, any>): AgentConfig {
     return {
       id: row.id, name: row.name, description: row.description ?? "",
       workspaceId: row.workspace_id ?? "",
@@ -618,7 +661,7 @@ export class MySQLAdapter implements DatabaseAdapter {
     const keyHash = hashKey(rawKey);
     const keyPrefix = rawKey.slice(0, 8);
     const now = this.nowStr();
-    await this.pool.execute(
+    await this.execute(
       `INSERT INTO api_keys (id, agent_id, key_hash, key_prefix, name, enabled, created_at) VALUES (?, ?, ?, ?, ?, 1, ?)`,
       [id, agentId, keyHash, keyPrefix, name ?? "default", now]
     );
@@ -629,26 +672,31 @@ export class MySQLAdapter implements DatabaseAdapter {
   }
 
   async getApiKeyByHash(keyHash: string): Promise<ApiKey | null> {
-    const [rows] = await this.pool.execute<RowDataPacket[]>("SELECT * FROM api_keys WHERE key_hash = ?", [keyHash]);
+    const [rows] = await this.execute<Record<string, any>[]>("SELECT * FROM api_keys WHERE key_hash = ?", [keyHash]);
     if (rows.length === 0) return null;
     return this.mapApiKey(rows[0]);
   }
 
   async listApiKeys(agentId: string): Promise<ApiKey[]> {
-    const [rows] = await this.pool.execute<RowDataPacket[]>("SELECT * FROM api_keys WHERE agent_id = ? ORDER BY created_at DESC", [agentId]);
+    const [rows] = await this.execute<Record<string, any>[]>("SELECT * FROM api_keys WHERE agent_id = ? ORDER BY created_at DESC", [agentId]);
+    return rows.map(r => this.mapApiKey(r));
+  }
+
+  async listAllApiKeys(): Promise<ApiKey[]> {
+    const [rows] = await this.execute<Record<string, any>[]>("SELECT * FROM api_keys ORDER BY created_at DESC, id ASC");
     return rows.map(r => this.mapApiKey(r));
   }
 
   async deleteApiKey(id: string): Promise<boolean> {
-    const [result] = await this.pool.execute<ResultSetHeader>("DELETE FROM api_keys WHERE id = ?", [id]);
+    const [result] = await this.execute<DbResultHeader>("DELETE FROM api_keys WHERE id = ?", [id]);
     return result.affectedRows > 0;
   }
 
   async touchApiKey(id: string): Promise<void> {
-    await this.pool.execute("UPDATE api_keys SET last_used_at = ? WHERE id = ?", [this.nowStr(), id]);
+    await this.execute("UPDATE api_keys SET last_used_at = ? WHERE id = ?", [this.nowStr(), id]);
   }
 
-  private mapApiKey(row: RowDataPacket): ApiKey {
+  private mapApiKey(row: Record<string, any>): ApiKey {
     return {
       id: row.id, agentId: row.agent_id, keyHash: row.key_hash, keyPrefix: row.key_prefix,
       name: row.name, enabled: row.enabled === 1, createdAt: String(row.created_at),
@@ -665,7 +713,7 @@ export class MySQLAdapter implements DatabaseAdapter {
     const workspaceId = await this.resolveWorkspaceId(options?.workspaceId ?? agent?.workspaceId);
     let rootSessionId = id;
     if (options?.sourceSessionId) {
-      const [rows] = await this.pool.execute<RowDataPacket[]>(
+      const [rows] = await this.execute<Record<string, any>[]>(
         "SELECT id, root_session_id FROM sessions WHERE id = ?",
         [options.sourceSessionId],
       );
@@ -673,7 +721,7 @@ export class MySQLAdapter implements DatabaseAdapter {
         rootSessionId = rows[0].root_session_id ?? rows[0].id;
       }
     }
-    await this.pool.execute(
+    await this.execute(
       "INSERT INTO sessions (id, workspace_id, agent_id, root_session_id, source_session_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
       [id, workspaceId, agentId, rootSessionId, options?.sourceSessionId ?? null, now, now],
     );
@@ -681,7 +729,7 @@ export class MySQLAdapter implements DatabaseAdapter {
   }
 
   async getSession(id: string): Promise<Session | null> {
-    const [rows] = await this.pool.execute<RowDataPacket[]>("SELECT * FROM sessions WHERE id = ?", [id]);
+    const [rows] = await this.execute<Record<string, any>[]>("SELECT * FROM sessions WHERE id = ?", [id]);
     if (rows.length === 0) return null;
     return this.mapSession(rows[0]);
   }
@@ -692,8 +740,8 @@ export class MySQLAdapter implements DatabaseAdapter {
       ? "SELECT * FROM sessions WHERE workspace_id = ? AND agent_id = ? ORDER BY updated_at DESC LIMIT 200"
       : "SELECT * FROM sessions WHERE workspace_id = ? ORDER BY updated_at DESC LIMIT 200";
     const [sessionRows] = agentId
-      ? await this.pool.execute<RowDataPacket[]>(sessionSql, [resolvedWorkspaceId, agentId])
-      : await this.pool.execute<RowDataPacket[]>(sessionSql, [resolvedWorkspaceId]);
+      ? await this.execute<Record<string, any>[]>(sessionSql, [resolvedWorkspaceId, agentId])
+      : await this.execute<Record<string, any>[]>(sessionSql, [resolvedWorkspaceId]);
     if (sessionRows.length === 0) return [];
 
     const ids = sessionRows.map(r => r.id);
@@ -703,23 +751,23 @@ export class MySQLAdapter implements DatabaseAdapter {
     const rootPh = roots.map(() => "?").join(",");
 
     const [statRows, msgRows, modelRows, familyRows] = await Promise.all([
-      this.pool.execute<RowDataPacket[]>(
+      this.execute<Record<string, any>[]>(
         `SELECT session_id, COUNT(*) as cnt, COALESCE(SUM(tokens_in),0) as ti,
                 COALESCE(SUM(tokens_out),0) as to2, COALESCE(SUM(cache_read_tokens),0) as cr
          FROM messages WHERE session_id IN (${ph}) GROUP BY session_id`, ids
       ).then(r => r[0]),
-      this.pool.execute<RowDataPacket[]>(
+      this.execute<Record<string, any>[]>(
         `SELECT m.session_id, m.content FROM messages m
          INNER JOIN (
            SELECT session_id, MIN(created_at) as min_ca
            FROM messages WHERE session_id IN (${ph}) AND role = 'user' GROUP BY session_id
          ) sub ON m.session_id = sub.session_id AND m.created_at = sub.min_ca AND m.role = 'user'`, ids
       ).then(r => r[0]),
-      this.pool.execute<RowDataPacket[]>(
+      this.execute<Record<string, any>[]>(
         `SELECT session_id, JSON_ARRAYAGG(DISTINCT model) as models
          FROM messages WHERE session_id IN (${ph}) AND model IS NOT NULL GROUP BY session_id`, ids
       ).then(r => r[0]),
-      this.pool.execute<RowDataPacket[]>(
+      this.execute<Record<string, any>[]>(
         `SELECT COALESCE(root_session_id, id) as root_id, COUNT(*) as family_size
          FROM sessions WHERE COALESCE(root_session_id, id) IN (${rootPh})
          GROUP BY COALESCE(root_session_id, id)`, roots
@@ -750,7 +798,7 @@ export class MySQLAdapter implements DatabaseAdapter {
   }
 
   async listSessionFamily(rootSessionId: string): Promise<Session[]> {
-    const [rows] = await this.pool.execute<RowDataPacket[]>(
+    const [rows] = await this.execute<Record<string, any>[]>(
       "SELECT * FROM sessions WHERE COALESCE(root_session_id, id) = ? ORDER BY CASE WHEN source_session_id IS NULL THEN 0 ELSE 1 END, created_at ASC",
       [rootSessionId],
     );
@@ -758,11 +806,11 @@ export class MySQLAdapter implements DatabaseAdapter {
   }
 
   async deleteSession(id: string): Promise<boolean> {
-    const [result] = await this.pool.execute<ResultSetHeader>("DELETE FROM sessions WHERE id = ?", [id]);
+    const [result] = await this.execute<DbResultHeader>("DELETE FROM sessions WHERE id = ?", [id]);
     return result.affectedRows > 0;
   }
 
-  private mapSession(row: RowDataPacket): Session {
+  private mapSession(row: Record<string, any>): Session {
     const session: Session = {
       id: row.id, workspaceId: row.workspace_id ?? "", agentId: row.agent_id,
       rootSessionId: row.root_session_id ?? row.id,
@@ -783,7 +831,7 @@ export class MySQLAdapter implements DatabaseAdapter {
     const id = uuidv4();
     const now = this.nowStr();
     const content = typeof message.content === "string" ? message.content : JSON.stringify(message.content);
-    await this.pool.execute(
+    await this.execute(
       `INSERT INTO messages (id, session_id, role, content, thinking, model, model_trace, tokens_in, tokens_out, cache_read_tokens, duration_ms, tool_calls, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [id, message.sessionId, message.role, content, message.thinking ?? null, message.model ?? null,
@@ -791,7 +839,7 @@ export class MySQLAdapter implements DatabaseAdapter {
        message.tokensIn ?? 0, message.tokensOut ?? 0, message.cacheReadTokens ?? 0,
        message.durationMs ?? 0, message.toolCalls ?? null, now]
     );
-    await this.pool.execute("UPDATE sessions SET updated_at = ? WHERE id = ?", [now, message.sessionId]);
+    await this.execute("UPDATE sessions SET updated_at = ? WHERE id = ?", [now, message.sessionId]);
     return {
       id, sessionId: message.sessionId, role: message.role, content: message.content,
       thinking: message.thinking, model: message.model, tokensIn: message.tokensIn,
@@ -803,11 +851,11 @@ export class MySQLAdapter implements DatabaseAdapter {
   }
 
   async getMessages(sessionId: string): Promise<Message[]> {
-    const [rows] = await this.pool.execute<RowDataPacket[]>("SELECT * FROM messages WHERE session_id = ? ORDER BY created_at ASC, FIELD(role, 'assistant', 'tool', 'user') ASC", [sessionId]);
+    const [rows] = await this.execute<Record<string, any>[]>("SELECT * FROM messages WHERE session_id = ? ORDER BY created_at ASC, FIELD(role, 'user', 'assistant', 'tool') ASC, id ASC", [sessionId]);
     return rows.map(r => this.mapMessage(r));
   }
 
-  private mapMessage(row: RowDataPacket): Message {
+  private mapMessage(row: Record<string, any>): Message {
     let content: string | ContentBlock[];
     const raw = row.content as string;
     try {
@@ -832,7 +880,7 @@ export class MySQLAdapter implements DatabaseAdapter {
     const now = this.nowStr();
     const agent = await this.getAgent(log.agentId);
     const workspaceId = log.workspaceId || agent?.workspaceId || await this.getDefaultWorkspaceId();
-    await this.pool.execute(
+    await this.execute(
       `INSERT INTO usage_logs (id, workspace_id, agent_id, session_id, tokens_in, tokens_out, model, duration_ms, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [id, workspaceId, log.agentId, log.sessionId, log.tokensIn, log.tokensOut, log.model, log.durationMs, now]
     );
@@ -842,7 +890,7 @@ export class MySQLAdapter implements DatabaseAdapter {
     let sql = "SELECT COALESCE(SUM(tokens_in), 0) as total_in, COALESCE(SUM(tokens_out), 0) as total_out, COUNT(*) as total_requests FROM usage_logs WHERE workspace_id = ?";
     const params: SqlParams = [workspaceId ?? await this.getDefaultWorkspaceId()];
     if (agentId) { sql += " AND agent_id = ?"; params.push(agentId); }
-    const [rows] = await this.pool.execute<RowDataPacket[]>(sql, params);
+    const [rows] = await this.execute<Record<string, any>[]>(sql, params);
     const row = rows[0];
     return { totalTokensIn: Number(row.total_in), totalTokensOut: Number(row.total_out), totalRequests: Number(row.total_requests) };
   }
@@ -864,13 +912,13 @@ export class MySQLAdapter implements DatabaseAdapter {
     }
     if (agentId) { sql += " AND agent_id = ?"; params.push(agentId); }
     sql += ` GROUP BY ${groupExpr} ORDER BY ${groupExpr} ASC`;
-    const [rows] = await this.pool.execute<RowDataPacket[]>(sql, params);
+    const [rows] = await this.execute<Record<string, any>[]>(sql, params);
     return rows.map(r => ({ date: String(r.date), tokensIn: Number(r.tokens_in), tokensOut: Number(r.tokens_out), requests: Number(r.requests) }));
   }
 
   async getSessionCounts(workspaceId?: string): Promise<{ total: number; today: number }> {
     const resolvedWorkspaceId = workspaceId ?? await this.getDefaultWorkspaceId();
-    const [rows] = await this.pool.execute<RowDataPacket[]>(
+    const [rows] = await this.execute<Record<string, any>[]>(
       `SELECT COUNT(*) as total,
               SUM(CASE WHEN created_at >= CURDATE() THEN 1 ELSE 0 END) as today
        FROM sessions WHERE workspace_id = ?`,
@@ -887,7 +935,7 @@ export class MySQLAdapter implements DatabaseAdapter {
       params.push(startDate, endDate);
     }
     sql += " GROUP BY agent_id ORDER BY requests DESC";
-    const [rows] = await this.pool.execute<RowDataPacket[]>(sql, params);
+    const [rows] = await this.execute<Record<string, any>[]>(sql, params);
     return rows.map(r => ({ agentId: r.agent_id, totalRequests: Number(r.requests), totalTokensIn: Number(r.tokens_in), totalTokensOut: Number(r.tokens_out) }));
   }
 
@@ -899,7 +947,7 @@ export class MySQLAdapter implements DatabaseAdapter {
       params.push(startDate, endDate);
     }
     sql += " GROUP BY model ORDER BY requests DESC";
-    const [rows] = await this.pool.execute<RowDataPacket[]>(sql, params);
+    const [rows] = await this.execute<Record<string, any>[]>(sql, params);
     return rows.map(r => ({ model: r.model, requests: Number(r.requests), tokensIn: Number(r.tokens_in), tokensOut: Number(r.tokens_out) }));
   }
 
@@ -909,7 +957,7 @@ export class MySQLAdapter implements DatabaseAdapter {
     const id = uuidv4();
     const now = this.nowStr();
     const workspaceId = await this.resolveWorkspaceId(input.workspaceId);
-    await this.pool.execute(
+    await this.execute(
       `INSERT INTO http_tools (id, workspace_id, name, description, method, url, headers, parameters, body_template, enabled, category, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`,
       [id, workspaceId, input.name, input.description ?? "", input.method ?? "GET", input.url,
        JSON.stringify(input.headers ?? {}), JSON.stringify(input.parameters ?? { type: "object", properties: {} }),
@@ -919,15 +967,15 @@ export class MySQLAdapter implements DatabaseAdapter {
   }
 
   async getHttpTool(id: string): Promise<HttpTool | null> {
-    const [rows] = await this.pool.execute<RowDataPacket[]>("SELECT * FROM http_tools WHERE id = ?", [id]);
+    const [rows] = await this.execute<Record<string, any>[]>("SELECT * FROM http_tools WHERE id = ?", [id]);
     if (rows.length === 0) return null;
     return this.mapHttpTool(rows[0]);
   }
 
   async listHttpTools(workspaceId?: string): Promise<HttpTool[]> {
     const [rows] = workspaceId
-      ? await this.pool.execute<RowDataPacket[]>("SELECT * FROM http_tools WHERE workspace_id = ? ORDER BY created_at DESC", [workspaceId])
-      : await this.pool.execute<RowDataPacket[]>("SELECT * FROM http_tools ORDER BY created_at DESC");
+      ? await this.execute<Record<string, any>[]>("SELECT * FROM http_tools WHERE workspace_id = ? ORDER BY created_at DESC", [workspaceId])
+      : await this.execute<Record<string, any>[]>("SELECT * FROM http_tools ORDER BY created_at DESC");
     return rows.map(r => this.mapHttpTool(r));
   }
 
@@ -948,16 +996,16 @@ export class MySQLAdapter implements DatabaseAdapter {
     if (input.category !== undefined) { fields.push("category = ?"); values.push(normalizeCategory(input.category)); }
     if (fields.length === 0) return existing;
     fields.push("updated_at = ?"); values.push(this.nowStr()); values.push(id);
-    await this.pool.execute(`UPDATE http_tools SET ${fields.join(", ")} WHERE id = ?`, values);
+    await this.execute(`UPDATE http_tools SET ${fields.join(", ")} WHERE id = ?`, values);
     return (await this.getHttpTool(id))!;
   }
 
   async deleteHttpTool(id: string): Promise<boolean> {
-    const [result] = await this.pool.execute<ResultSetHeader>("DELETE FROM http_tools WHERE id = ?", [id]);
+    const [result] = await this.execute<DbResultHeader>("DELETE FROM http_tools WHERE id = ?", [id]);
     return result.affectedRows > 0;
   }
 
-  private mapHttpTool(row: RowDataPacket): HttpTool {
+  private mapHttpTool(row: Record<string, any>): HttpTool {
     return {
       id: row.id, workspaceId: row.workspace_id ?? "", name: row.name, description: row.description ?? "",
       method: row.method, url: row.url,
@@ -971,7 +1019,7 @@ export class MySQLAdapter implements DatabaseAdapter {
 
   async listSkillCategories(workspaceId?: string): Promise<Record<string, string>> {
     const resolvedWorkspaceId = workspaceId ?? await this.getDefaultWorkspaceId();
-    const [rows] = await this.pool.execute<RowDataPacket[]>("SELECT skill_name, category FROM workspace_skill_categories WHERE workspace_id = ?", [resolvedWorkspaceId]);
+    const [rows] = await this.execute<Record<string, any>[]>("SELECT skill_name, category FROM workspace_skill_categories WHERE workspace_id = ?", [resolvedWorkspaceId]);
     return Object.fromEntries(rows.map(row => [row.skill_name as string, row.category as string]));
   }
 
@@ -979,10 +1027,10 @@ export class MySQLAdapter implements DatabaseAdapter {
     const resolvedWorkspaceId = workspaceId ?? await this.getDefaultWorkspaceId();
     const normalized = category.trim();
     if (!normalized) {
-      await this.pool.execute("DELETE FROM workspace_skill_categories WHERE workspace_id = ? AND skill_name = ?", [resolvedWorkspaceId, skillName]);
+      await this.execute("DELETE FROM workspace_skill_categories WHERE workspace_id = ? AND skill_name = ?", [resolvedWorkspaceId, skillName]);
       return;
     }
-    await this.pool.execute(
+    await this.execute(
       `INSERT INTO workspace_skill_categories (workspace_id, skill_name, category, updated_at)
        VALUES (?, ?, ?, NOW())
        ON DUPLICATE KEY UPDATE category = VALUES(category), updated_at = NOW()`,
@@ -997,9 +1045,9 @@ export class MySQLAdapter implements DatabaseAdapter {
     const now = this.nowStr();
     const workspaceId = await this.resolveWorkspaceId(input.workspaceId);
     if (input.isPrimary) {
-      await this.pool.execute("UPDATE providers SET is_primary = 0 WHERE workspace_id = ?", [workspaceId]);
+      await this.execute("UPDATE providers SET is_primary = 0 WHERE workspace_id = ?", [workspaceId]);
     }
-    await this.pool.execute(
+    await this.execute(
       `INSERT INTO providers (id, workspace_id, name, type, api_key, base_url, default_model, capabilities, enabled, is_primary, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [id, workspaceId, input.name, input.type, input.apiKey, input.baseUrl ?? null, input.defaultModel,
        JSON.stringify(normalizeModelCapabilities(input.type, input.capabilities)),
@@ -1009,15 +1057,15 @@ export class MySQLAdapter implements DatabaseAdapter {
   }
 
   async getProvider(id: string): Promise<ProviderConfig | null> {
-    const [rows] = await this.pool.execute<RowDataPacket[]>("SELECT * FROM providers WHERE id = ?", [id]);
+    const [rows] = await this.execute<Record<string, any>[]>("SELECT * FROM providers WHERE id = ?", [id]);
     if (rows.length === 0) return null;
     return this.mapProvider(rows[0]);
   }
 
   async listProviders(workspaceId?: string): Promise<ProviderConfig[]> {
     const [rows] = workspaceId
-      ? await this.pool.execute<RowDataPacket[]>("SELECT * FROM providers WHERE workspace_id = ? ORDER BY is_primary DESC, created_at ASC", [workspaceId])
-      : await this.pool.execute<RowDataPacket[]>("SELECT * FROM providers ORDER BY is_primary DESC, created_at ASC");
+      ? await this.execute<Record<string, any>[]>("SELECT * FROM providers WHERE workspace_id = ? ORDER BY is_primary DESC, created_at ASC", [workspaceId])
+      : await this.execute<Record<string, any>[]>("SELECT * FROM providers ORDER BY is_primary DESC, created_at ASC");
     return rows.map(r => this.mapProvider(r));
   }
 
@@ -1025,7 +1073,7 @@ export class MySQLAdapter implements DatabaseAdapter {
     const existing = await this.getProvider(id);
     if (!existing) return null;
     if (input.isPrimary) {
-      await this.pool.execute("UPDATE providers SET is_primary = 0 WHERE workspace_id = ?", [input.workspaceId ?? existing.workspaceId]);
+      await this.execute("UPDATE providers SET is_primary = 0 WHERE workspace_id = ?", [input.workspaceId ?? existing.workspaceId]);
     }
     const fields: string[] = [];
     const values: SqlParams = [];
@@ -1040,24 +1088,24 @@ export class MySQLAdapter implements DatabaseAdapter {
     if (input.isPrimary !== undefined) { fields.push("is_primary = ?"); values.push(input.isPrimary ? 1 : 0); }
     if (fields.length === 0) return existing;
     fields.push("updated_at = ?"); values.push(this.nowStr()); values.push(id);
-    await this.pool.execute(`UPDATE providers SET ${fields.join(", ")} WHERE id = ?`, values);
+    await this.execute(`UPDATE providers SET ${fields.join(", ")} WHERE id = ?`, values);
     return (await this.getProvider(id))!;
   }
 
   async deleteProvider(id: string): Promise<boolean> {
-    const [result] = await this.pool.execute<ResultSetHeader>("DELETE FROM providers WHERE id = ?", [id]);
+    const [result] = await this.execute<DbResultHeader>("DELETE FROM providers WHERE id = ?", [id]);
     return result.affectedRows > 0;
   }
 
   async getPrimaryProvider(workspaceId?: string): Promise<ProviderConfig | null> {
     const resolvedWorkspaceId = workspaceId ?? await this.getDefaultWorkspaceId();
-    const [rows] = await this.pool.execute<RowDataPacket[]>("SELECT * FROM providers WHERE workspace_id = ? AND is_primary = 1 AND enabled = 1 LIMIT 1", [resolvedWorkspaceId]);
+    const [rows] = await this.execute<Record<string, any>[]>("SELECT * FROM providers WHERE workspace_id = ? AND is_primary = 1 AND enabled = 1 LIMIT 1", [resolvedWorkspaceId]);
     if (rows.length > 0) return this.mapProvider(rows[0]);
-    const [fallback] = await this.pool.execute<RowDataPacket[]>("SELECT * FROM providers WHERE workspace_id = ? AND enabled = 1 LIMIT 1", [resolvedWorkspaceId]);
+    const [fallback] = await this.execute<Record<string, any>[]>("SELECT * FROM providers WHERE workspace_id = ? AND enabled = 1 LIMIT 1", [resolvedWorkspaceId]);
     return fallback.length > 0 ? this.mapProvider(fallback[0]) : null;
   }
 
-  private mapProvider(row: RowDataPacket): ProviderConfig {
+  private mapProvider(row: Record<string, any>): ProviderConfig {
     return {
       id: row.id, workspaceId: row.workspace_id ?? "", name: row.name, type: row.type, apiKey: row.api_key,
       baseUrl: row.base_url ?? undefined, defaultModel: row.default_model,
@@ -1073,7 +1121,7 @@ export class MySQLAdapter implements DatabaseAdapter {
     const id = uuidv4();
     const now = this.nowStr();
     const workspaceId = await this.resolveWorkspaceId(input.workspaceId);
-    await this.pool.execute(
+    await this.execute(
       "INSERT INTO knowledge_bases (id, workspace_id, name, description, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
       [id, workspaceId, input.name, input.description ?? "", now, now]
     );
@@ -1081,7 +1129,7 @@ export class MySQLAdapter implements DatabaseAdapter {
   }
 
   async getKnowledgeBase(id: string): Promise<KnowledgeBase | null> {
-    const [rows] = await this.pool.execute<RowDataPacket[]>("SELECT * FROM knowledge_bases WHERE id = ?", [id]);
+    const [rows] = await this.execute<Record<string, any>[]>("SELECT * FROM knowledge_bases WHERE id = ?", [id]);
     if (rows.length === 0) return null;
     const r = rows[0];
     return { id: r.id, workspaceId: r.workspace_id ?? "", name: r.name, description: r.description ?? "", createdAt: String(r.created_at), updatedAt: String(r.updated_at) };
@@ -1089,7 +1137,7 @@ export class MySQLAdapter implements DatabaseAdapter {
 
   async listKnowledgeBases(workspaceId?: string): Promise<KnowledgeBase[]> {
     const resolvedWorkspaceId = workspaceId ?? await this.getDefaultWorkspaceId();
-    const [rows] = await this.pool.execute<RowDataPacket[]>("SELECT * FROM knowledge_bases WHERE workspace_id = ? ORDER BY created_at DESC", [resolvedWorkspaceId]);
+    const [rows] = await this.execute<Record<string, any>[]>("SELECT * FROM knowledge_bases WHERE workspace_id = ? ORDER BY created_at DESC", [resolvedWorkspaceId]);
     return rows.map(r => ({ id: r.id, workspaceId: r.workspace_id ?? "", name: r.name, description: r.description ?? "", createdAt: String(r.created_at), updatedAt: String(r.updated_at) }));
   }
 
@@ -1103,47 +1151,47 @@ export class MySQLAdapter implements DatabaseAdapter {
     if (input.description !== undefined) { fields.push("description = ?"); values.push(input.description); }
     if (fields.length === 0) return existing;
     fields.push("updated_at = ?"); values.push(this.nowStr()); values.push(id);
-    await this.pool.execute(`UPDATE knowledge_bases SET ${fields.join(", ")} WHERE id = ?`, values);
+    await this.execute(`UPDATE knowledge_bases SET ${fields.join(", ")} WHERE id = ?`, values);
     return (await this.getKnowledgeBase(id))!;
   }
 
   async deleteKnowledgeBase(id: string): Promise<boolean> {
-    const [result] = await this.pool.execute<ResultSetHeader>("DELETE FROM knowledge_bases WHERE id = ?", [id]);
+    const [result] = await this.execute<DbResultHeader>("DELETE FROM knowledge_bases WHERE id = ?", [id]);
     return result.affectedRows > 0;
   }
 
   // --- Agent-Knowledge Association ---
 
   async setAgentKnowledge(agentId: string, kbIds: string[]): Promise<void> {
-    await this.pool.execute("DELETE FROM agent_knowledge WHERE agent_id = ?", [agentId]);
+    await this.execute("DELETE FROM agent_knowledge WHERE agent_id = ?", [agentId]);
     for (const kbId of kbIds) {
-      await this.pool.execute("INSERT INTO agent_knowledge (agent_id, kb_id) VALUES (?, ?)", [agentId, kbId]);
+      await this.execute("INSERT INTO agent_knowledge (agent_id, kb_id) VALUES (?, ?)", [agentId, kbId]);
     }
   }
 
   async getAgentKnowledge(agentId: string): Promise<string[]> {
-    const [rows] = await this.pool.execute<RowDataPacket[]>("SELECT kb_id FROM agent_knowledge WHERE agent_id = ?", [agentId]);
+    const [rows] = await this.execute<Record<string, any>[]>("SELECT kb_id FROM agent_knowledge WHERE agent_id = ?", [agentId]);
     return rows.map(r => r.kb_id);
   }
 
   // --- Knowledge Sources & Chunks ---
 
   async ingestKnowledge(kbId: string, sourceName: string, rawContent: string, chunks: string[], embeddings?: number[][]): Promise<number> {
-    const [existing] = await this.pool.execute<RowDataPacket[]>(
+    const [existing] = await this.execute<Record<string, any>[]>(
       "SELECT id FROM knowledge_sources WHERE kb_id = ? AND source_name = ?", [kbId, sourceName]
     );
     if (existing.length > 0) {
-      await this.pool.execute("UPDATE knowledge_sources SET raw_content = ?, updated_at = NOW() WHERE id = ?", [rawContent, existing[0].id]);
+      await this.execute("UPDATE knowledge_sources SET raw_content = ?, updated_at = NOW() WHERE id = ?", [rawContent, existing[0].id]);
     } else {
-      await this.pool.execute(
+      await this.execute(
         "INSERT INTO knowledge_sources (id, kb_id, source_name, raw_content) VALUES (?, ?, ?, ?)",
         [uuidv4(), kbId, sourceName, rawContent]
       );
     }
-    await this.pool.execute("DELETE FROM knowledge_chunks WHERE kb_id = ? AND source_name = ?", [kbId, sourceName]);
+    await this.execute("DELETE FROM knowledge_chunks WHERE kb_id = ? AND source_name = ?", [kbId, sourceName]);
     for (let i = 0; i < chunks.length; i++) {
       const emb = embeddings?.[i] ? Buffer.from(new Float32Array(embeddings[i]).buffer) : null;
-      await this.pool.execute(
+      await this.execute(
         "INSERT INTO knowledge_chunks (id, kb_id, source_name, chunk_index, content, embedding) VALUES (?, ?, ?, ?, ?, ?)",
         [uuidv4(), kbId, sourceName, i, chunks[i], emb]
       );
@@ -1154,7 +1202,7 @@ export class MySQLAdapter implements DatabaseAdapter {
   async searchKnowledge(kbIds: string[], query: string, limit: number = 5, queryEmbedding?: number[]): Promise<KnowledgeSearchResult[]> {
     if (kbIds.length === 0) return [];
     const placeholders = kbIds.map(() => "?").join(",");
-    const [rows] = await this.pool.execute<RowDataPacket[]>(
+    const [rows] = await this.execute<Record<string, any>[]>(
       `SELECT kc.source_name, kc.content, kc.embedding, kb.name as kb_name
        FROM knowledge_chunks kc JOIN knowledge_bases kb ON kb.id = kc.kb_id
        WHERE kc.kb_id IN (${placeholders}) ORDER BY kc.chunk_index ASC`,
@@ -1229,25 +1277,25 @@ export class MySQLAdapter implements DatabaseAdapter {
   }
 
   async listKnowledgeSources(kbId: string): Promise<KnowledgeSource[]> {
-    const [rows] = await this.pool.execute<RowDataPacket[]>(
+    const [rows] = await this.execute<Record<string, any>[]>(
       "SELECT source_name, COUNT(*) as cnt FROM knowledge_chunks WHERE kb_id = ? GROUP BY source_name", [kbId]
     );
     return rows.map(r => ({ sourceName: r.source_name, chunkCount: Number(r.cnt) }));
   }
 
   async getKnowledgeSourceContent(kbId: string, sourceName: string): Promise<string | null> {
-    const [rows] = await this.pool.execute<RowDataPacket[]>(
+    const [rows] = await this.execute<Record<string, any>[]>(
       "SELECT raw_content FROM knowledge_sources WHERE kb_id = ? AND source_name = ?", [kbId, sourceName]
     );
     return rows.length > 0 ? rows[0].raw_content : null;
   }
 
   async renameKnowledgeSource(kbId: string, oldName: string, newName: string): Promise<boolean> {
-    await this.pool.execute(
+    await this.execute(
       "UPDATE knowledge_sources SET source_name = ?, updated_at = NOW() WHERE kb_id = ? AND source_name = ?",
       [newName, kbId, oldName]
     );
-    const [result] = await this.pool.execute<ResultSetHeader>(
+    const [result] = await this.execute<DbResultHeader>(
       "UPDATE knowledge_chunks SET source_name = ? WHERE kb_id = ? AND source_name = ?",
       [newName, kbId, oldName]
     );
@@ -1255,8 +1303,8 @@ export class MySQLAdapter implements DatabaseAdapter {
   }
 
   async deleteKnowledgeSource(kbId: string, sourceName: string): Promise<boolean> {
-    await this.pool.execute("DELETE FROM knowledge_sources WHERE kb_id = ? AND source_name = ?", [kbId, sourceName]);
-    const [result] = await this.pool.execute<ResultSetHeader>("DELETE FROM knowledge_chunks WHERE kb_id = ? AND source_name = ?", [kbId, sourceName]);
+    await this.execute("DELETE FROM knowledge_sources WHERE kb_id = ? AND source_name = ?", [kbId, sourceName]);
+    const [result] = await this.execute<DbResultHeader>("DELETE FROM knowledge_chunks WHERE kb_id = ? AND source_name = ?", [kbId, sourceName]);
     return result.affectedRows > 0;
   }
 
@@ -1271,7 +1319,7 @@ export class MySQLAdapter implements DatabaseAdapter {
     const keyHash = hashKey(rawKey);
     const keyPrefix = rawKey.slice(0, 10);
     const now = this.nowStr();
-    await this.pool.execute(
+    await this.execute(
       `INSERT INTO provider_channels (id, workspace_id, provider_id, name, key_hash, key_prefix, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)`,
       [id, workspaceId, providerId, name, keyHash, keyPrefix, now, now]
     );
@@ -1282,7 +1330,7 @@ export class MySQLAdapter implements DatabaseAdapter {
   }
 
   async getChannelByHash(keyHash: string): Promise<(ProviderChannel & { providerConfig: ProviderConfig }) | null> {
-    const [rows] = await this.pool.execute<RowDataPacket[]>(
+    const [rows] = await this.execute<Record<string, any>[]>(
       `SELECT pc.*, p.id as p_id, p.workspace_id as p_workspace_id, p.name as p_name, p.type as p_type, p.api_key as p_api_key,
               p.base_url as p_base_url, p.default_model as p_default_model, p.enabled as p_enabled,
               p.capabilities as p_capabilities, p.is_primary as p_is_primary,
@@ -1307,7 +1355,7 @@ export class MySQLAdapter implements DatabaseAdapter {
   }
 
   async listChannels(providerId: string): Promise<ProviderChannel[]> {
-    const [rows] = await this.pool.execute<RowDataPacket[]>(
+    const [rows] = await this.execute<Record<string, any>[]>(
       "SELECT * FROM provider_channels WHERE provider_id = ? ORDER BY created_at DESC", [providerId]
     );
     return rows.map(r => ({
@@ -1318,7 +1366,7 @@ export class MySQLAdapter implements DatabaseAdapter {
   }
 
   async deleteChannel(id: string): Promise<boolean> {
-    const [result] = await this.pool.execute<ResultSetHeader>("DELETE FROM provider_channels WHERE id = ?", [id]);
+    const [result] = await this.execute<DbResultHeader>("DELETE FROM provider_channels WHERE id = ?", [id]);
     return result.affectedRows > 0;
   }
 
@@ -1329,18 +1377,18 @@ export class MySQLAdapter implements DatabaseAdapter {
     const now = this.nowStr();
     const provider = await this.getProvider(log.providerId);
     const workspaceId = log.workspaceId || provider?.workspaceId || await this.getDefaultWorkspaceId();
-    await this.pool.execute(
+    await this.execute(
       `INSERT INTO proxy_usage_logs (id, workspace_id, channel_id, provider_id, model, tokens_in, tokens_out, duration_ms, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [id, workspaceId, log.channelId, log.providerId, log.model, log.tokensIn, log.tokensOut, log.durationMs, now]
     );
   }
 
   async getChannelStats(channelId: string, days: number = 30): Promise<ChannelStats> {
-    const [totalRows] = await this.pool.execute<RowDataPacket[]>(
+    const [totalRows] = await this.execute<Record<string, any>[]>(
       "SELECT COUNT(*) as requests, COALESCE(SUM(tokens_in), 0) as tokens_in, COALESCE(SUM(tokens_out), 0) as tokens_out FROM proxy_usage_logs WHERE channel_id = ?",
       [channelId]
     );
-    const [dailyRows] = await this.pool.execute<RowDataPacket[]>(
+    const [dailyRows] = await this.execute<Record<string, any>[]>(
       `SELECT DATE(created_at) as date, COUNT(*) as requests, SUM(tokens_in) as tokens_in, SUM(tokens_out) as tokens_out
        FROM proxy_usage_logs WHERE channel_id = ? AND created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
        GROUP BY DATE(created_at) ORDER BY DATE(created_at) ASC`,
@@ -1369,7 +1417,7 @@ export class MySQLAdapter implements DatabaseAdapter {
               COALESCE(SUM(pu.tokens_in), 0) as tokens_in, COALESCE(SUM(pu.tokens_out), 0) as tokens_out
        FROM provider_channels pc LEFT JOIN proxy_usage_logs pu ON ${joinCondition}
        WHERE pc.provider_id = ? GROUP BY pc.id, pc.name ORDER BY requests DESC`;
-    const [rows] = await this.pool.execute<RowDataPacket[]>(sql, params);
+    const [rows] = await this.execute<Record<string, any>[]>(sql, params);
     return rows.map(r => ({
       channelId: r.channel_id, channelName: r.channel_name,
       totalRequests: Number(r.requests), totalTokensIn: Number(r.tokens_in), totalTokensOut: Number(r.tokens_out),
@@ -1392,15 +1440,15 @@ export class MySQLAdapter implements DatabaseAdapter {
       params.push(days);
     }
     sql += ` GROUP BY ${groupExpr} ORDER BY ${groupExpr} ASC`;
-    const [rows] = await this.pool.execute<RowDataPacket[]>(sql, params);
+    const [rows] = await this.execute<Record<string, any>[]>(sql, params);
     return rows.map(r => ({ date: String(r.date), tokensIn: Number(r.tokens_in), tokensOut: Number(r.tokens_out), requests: Number(r.requests) }));
   }
 
   async getProxyOverview(workspaceId?: string): Promise<{ totalRequests: number; totalTokensIn: number; totalTokensOut: number; totalChannels: number }> {
     const resolvedWorkspaceId = workspaceId ?? await this.getDefaultWorkspaceId();
     const [[usageRows], [channelRows]] = await Promise.all([
-      this.pool.execute<RowDataPacket[]>("SELECT COUNT(*) as cnt, COALESCE(SUM(tokens_in),0) as ti, COALESCE(SUM(tokens_out),0) as to2 FROM proxy_usage_logs WHERE workspace_id = ?", [resolvedWorkspaceId]),
-      this.pool.execute<RowDataPacket[]>("SELECT COUNT(*) as cnt FROM provider_channels WHERE workspace_id = ?", [resolvedWorkspaceId]),
+      this.execute<Record<string, any>[]>("SELECT COUNT(*) as cnt, COALESCE(SUM(tokens_in),0) as ti, COALESCE(SUM(tokens_out),0) as to2 FROM proxy_usage_logs WHERE workspace_id = ?", [resolvedWorkspaceId]),
+      this.execute<Record<string, any>[]>("SELECT COUNT(*) as cnt FROM provider_channels WHERE workspace_id = ?", [resolvedWorkspaceId]),
     ]);
     return {
       totalRequests: Number(usageRows[0].cnt),

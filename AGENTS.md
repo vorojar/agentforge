@@ -7,7 +7,7 @@ This file is the project-level guide for Codex, Claude, and other coding agents 
 AgentForge is a TypeScript monorepo:
 
 - `packages/types`: shared interfaces and contracts. Keep this free of runtime dependencies.
-- `packages/database`: database adapters, migrations, and persistence tests. SQLite and MySQL behavior must stay aligned.
+- `packages/database`: PostgreSQL adapter, migrations, and persistence tests.
 - `packages/providers`: LLM provider adapters. Avoid importing heavyweight SDKs at module load when it creates test/runtime warnings.
 - `packages/tools`: builtin tools, HTTP tools, embeddings, and tool execution.
 - `packages/skills`: Skill parsing, loading, registry, and hot reload.
@@ -73,8 +73,8 @@ Review matches manually. Some English text is intentional, such as `AgentForge`,
 ## Database Rules
 
 - Schema changes must update migrations and adapters together.
-- SQLite and MySQL must both be considered for new fields.
-- Private-cloud production uses the database factory and should prefer `DB_TYPE=mysql`; keep `pnpm verify:mysql`, backup/restore scripts, and `docs/OPERATIONS.md` aligned with schema or deployment changes.
+- PostgreSQL is the only supported runtime database. Do not add SQLite/MySQL code paths without an explicit product decision.
+- Private-cloud production uses the database factory with `DB_TYPE=postgres`; keep `pnpm verify:postgres`, backup/restore scripts, Docker Compose, and `docs/OPERATIONS.md` aligned with schema or deployment changes.
 - Add or update database tests for persistence changes.
 - Enterprise/private-cloud work must build on the tenant foundation: organizations, workspaces, users, memberships, identity provider configs, and audit logs.
 - Core runtime data must stay workspace-scoped: agents, providers/channels, HTTP tools, skill categories, knowledge bases, sessions, usage, and proxy usage.
@@ -109,7 +109,7 @@ For UI changes, verify:
 - `README.md` is for users and new contributors: capabilities, setup, configuration, API overview, and high-level maintenance commands.
 - `AGENTS.md` is for coding agents: repo rules, validation, architecture boundaries, and non-negotiable checks.
 - `docs/MAINTENANCE.md` is the detailed checklist for recurring maintenance.
-- `docs/OPERATIONS.md` is the production operator runbook for MySQL, backup, restore, upgrade, and rollback.
+- `docs/OPERATIONS.md` is the production operator runbook for PostgreSQL, backup, restore, upgrade, and rollback.
 - `docs/COMMERCIAL_READINESS.md`, `docs/CUSTOMER_DELIVERY.md`, and `docs/PRICING.md` are the durable sales/delivery/customer-IT acceptance materials. Update them when packaging, demo flow, deployment, support, or buyer-facing assumptions change.
 - Keep docs short enough to stay useful. If behavior changes, update the closest durable doc in the same change.
 

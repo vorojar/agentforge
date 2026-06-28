@@ -1,5 +1,7 @@
 # AgentForge Implementation Plan
 
+> Historical implementation plan. Current runtime database policy is PostgreSQL-only; use `AGENTS.md`, `README.md`, and `docs/OPERATIONS.md` for active maintenance and deployment rules.
+
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development to implement this plan. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Build a unified Agent service platform (AgentForge) — a Docker-deployable service with Vue3 admin UI, where each business team can create, configure, and call AI Agents via API.

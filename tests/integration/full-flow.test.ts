@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import type { LLMProvider, LLMRequest, LLMResponse, LLMStreamChunk } from "@agentforge/types";
-import { SQLiteAdapter } from "@agentforge/database";
+import { PostgresAdapter, type PostgresConfig } from "@agentforge/database";
 import { ToolRegistryImpl, createBuiltinTools } from "@agentforge/tools";
 import { SkillRegistryImpl } from "@agentforge/skills";
 import { AgentLoop } from "@agentforge/core";
@@ -31,7 +31,9 @@ describe("Integration: Full Flow", () => {
   const adminSecret = "test-admin-secret";
 
   beforeAll(async () => {
-    const db = new SQLiteAdapter(":memory:");
+    const db = new PostgresAdapter(testPostgresConfig());
+    await resetDatabase(db);
+    await db.initialize();
     const provider = new MockProvider();
     const toolRegistry = new ToolRegistryImpl();
     for (const tool of createBuiltinTools()) {
@@ -48,12 +50,15 @@ describe("Integration: Full Flow", () => {
       agentLoop,
       config: {
         port: 0,
-        databaseType: "sqlite",
-        databaseUrl: ":memory:",
+        dbType: "postgres",
+        database: { type: "postgres", ...testPostgresConfig() },
         llmProvider: "mock",
         llmApiKey: "test",
         defaultModel: "mock-model",
         adminSecret,
+        adminEmail: "demo@example.com",
+        adminPassword: "password",
+        sessionTtlDays: 7,
       },
     };
 
@@ -147,7 +152,7 @@ describe("Integration: Full Flow", () => {
       headers: { "x-admin-secret": adminSecret },
     });
     expect(toolsRes.statusCode).toBe(200);
-    expect(toolsRes.json().length).toBeGreaterThanOrEqual(3); // 3 demo tools
+    expect(toolsRes.json().map((tool: { name: string }) => tool.name).sort()).toEqual(["calculate", "get_time"]);
 
     // 8. Check stats
     const statsRes = await app.inject({
@@ -157,7 +162,8 @@ describe("Integration: Full Flow", () => {
     });
     expect(statsRes.statusCode).toBe(200);
     const stats = statsRes.json();
-    expect(stats.totalAgents).toBe(1);
+    expect(stats.totalSessions).toBe(1);
+    expect(stats.totalRequests).toBe(1);
 
     // 9. Check skills endpoint (read-only, loaded from filesystem)
     const skillsRes = await app.inject({
@@ -194,3 +200,22 @@ describe("Integration: Full Flow", () => {
     expect(finalList.json()).toHaveLength(0);
   });
 });
+
+function testPostgresConfig(): PostgresConfig {
+  const value = process.env.POSTGRES_TEST_URL ?? process.env.DATABASE_URL;
+  if (!value) throw new Error("POSTGRES_TEST_URL is required for integration tests");
+  const url = new URL(value);
+  return {
+    host: url.hostname,
+    port: url.port ? Number(url.port) : 5432,
+    user: decodeURIComponent(url.username),
+    password: decodeURIComponent(url.password),
+    database: url.pathname.replace(/^\//, ""),
+  };
+}
+
+async function resetDatabase(db: PostgresAdapter): Promise<void> {
+  const pool = (db as unknown as { pool: { query(sql: string): Promise<unknown> } }).pool;
+  await pool.query("DROP SCHEMA IF EXISTS public CASCADE");
+  await pool.query("CREATE SCHEMA public");
+}

@@ -12,7 +12,7 @@ export interface PreflightReport {
   checks: PreflightCheck[];
 }
 
-const UNSAFE_VALUES = new Set(["admin", "password", "change-me", "change-me-in-production", "change-me-mysql", "change-me-root"]);
+const UNSAFE_VALUES = new Set(["admin", "password", "change-me", "change-me-in-production", "change-me-postgres", "change-me-root"]);
 
 export function runProductionPreflight(env: NodeJS.ProcessEnv = process.env): PreflightReport {
   const checks: PreflightCheck[] = [
@@ -107,91 +107,58 @@ function checkPublicUrl(value: string | undefined): PreflightCheck {
 function checkDatabase(env: NodeJS.ProcessEnv): PreflightCheck[] {
   const dbType = env.DB_TYPE?.trim().toLowerCase();
   const databaseUrl = env.DATABASE_URL?.trim();
-  const mysqlUrl = env.MYSQL_URL?.trim() || (databaseUrl?.startsWith("mysql://") || databaseUrl?.startsWith("mysql2://") ? databaseUrl : undefined);
+  const postgresUrl = env.POSTGRES_URL?.trim() || (databaseUrl?.startsWith("postgres://") || databaseUrl?.startsWith("postgresql://") ? databaseUrl : undefined);
 
-  if (dbType && !["sqlite", "mysql"].includes(dbType)) {
+  if (dbType && !["postgres", "postgresql"].includes(dbType)) {
     return [{
       id: "database_type",
       status: "fail",
-      message: `DB_TYPE must be sqlite or mysql. Current value: ${dbType}.`,
-      remediation: "Set DB_TYPE=mysql for production private-cloud deployments, or DB_TYPE=sqlite for a persistent single-node install.",
+      message: `DB_TYPE must be postgres. Current value: ${dbType}.`,
+      remediation: "Set DB_TYPE=postgres or omit DB_TYPE and provide PostgreSQL settings.",
     }];
   }
 
-  if (dbType === "mysql" || mysqlUrl) {
-    return [
-      { id: "database_type", status: "pass", message: "DB_TYPE is mysql." },
-      checkMySQLConfig(env, mysqlUrl),
-    ];
-  }
-
   return [
-    {
-      id: "database_type",
-      status: "warn",
-      message: "DB_TYPE is sqlite. Use MySQL for multi-user private-cloud production deployments.",
-      remediation: "Set DB_TYPE=mysql plus MYSQL_HOST/MYSQL_USER/MYSQL_PASSWORD/MYSQL_DATABASE, or MYSQL_URL.",
-    },
-    checkDatabasePath(env.DB_PATH ?? env.DATABASE_URL),
+    { id: "database_type", status: "pass", message: "PostgreSQL is the configured database." },
+    checkPostgresConfig(env, postgresUrl),
   ];
 }
 
-function checkMySQLConfig(env: NodeJS.ProcessEnv, mysqlUrl: string | undefined): PreflightCheck {
-  if (mysqlUrl) {
+function checkPostgresConfig(env: NodeJS.ProcessEnv, postgresUrl: string | undefined): PreflightCheck {
+  if (postgresUrl) {
     try {
-      const url = new URL(mysqlUrl);
+      const url = new URL(postgresUrl);
       const hasDatabase = url.pathname.replace(/^\//, "").trim().length > 0;
-      if ((url.protocol === "mysql:" || url.protocol === "mysql2:") && url.hostname && url.username && hasDatabase) {
-        return { id: "mysql_config", status: "pass", message: "MySQL connection URL is configured." };
+      if ((url.protocol === "postgres:" || url.protocol === "postgresql:") && url.hostname && url.username && hasDatabase) {
+        return { id: "postgres_config", status: "pass", message: "PostgreSQL connection URL is configured." };
       }
     } catch {
       // fall through
     }
     return {
-      id: "mysql_config",
+      id: "postgres_config",
       status: "fail",
-      message: "MYSQL_URL must be a valid mysql:// URL with host, user, and database.",
-      remediation: "Use mysql://user:password@host:3306/database or discrete MYSQL_* variables.",
+      message: "POSTGRES_URL or DATABASE_URL must be a valid postgres:// URL with host, user, and database.",
+      remediation: "Use postgres://user:password@host:5432/database or discrete POSTGRES_* variables.",
     };
   }
 
-  const missing = ["MYSQL_HOST", "MYSQL_USER", "MYSQL_PASSWORD", "MYSQL_DATABASE"].filter((key) => !env[key]?.trim());
+  const missing = ["POSTGRES_PASSWORD"].filter((key) => !env[key]?.trim());
   if (missing.length > 0) {
     return {
-      id: "mysql_config",
+      id: "postgres_config",
       status: "fail",
-      message: `Missing MySQL settings: ${missing.join(", ")}.`,
-      remediation: "Set MYSQL_HOST, MYSQL_PORT, MYSQL_USER, MYSQL_PASSWORD, and MYSQL_DATABASE.",
+      message: `Missing PostgreSQL settings: ${missing.join(", ")}.`,
+      remediation: "Set POSTGRES_PASSWORD, and optionally POSTGRES_HOST, POSTGRES_PORT, POSTGRES_USER, POSTGRES_DB.",
     };
   }
-  if (UNSAFE_VALUES.has(env.MYSQL_PASSWORD!.trim().toLowerCase())) {
+  if (UNSAFE_VALUES.has(env.POSTGRES_PASSWORD!.trim().toLowerCase())) {
     return {
-      id: "mysql_config",
+      id: "postgres_config",
       status: "fail",
-      message: "MYSQL_PASSWORD uses a demo value.",
+      message: "POSTGRES_PASSWORD uses a demo value.",
       remediation: "Set a strong customer-specific database password.",
     };
   }
-  return { id: "mysql_config", status: "pass", message: "MySQL discrete settings are configured." };
-}
-
-function checkDatabasePath(value: string | undefined): PreflightCheck {
-  if (!value?.trim()) {
-    return {
-      id: "database_path",
-      status: "fail",
-      message: "DB_PATH or DATABASE_URL must be configured.",
-      remediation: "Set DB_PATH to a persistent volume path, or wire the production database adapter.",
-    };
-  }
-  const dbPath = value.trim();
-  if (dbPath === "data/agentforge.db") {
-    return {
-      id: "database_path",
-      status: "warn",
-      message: "DB_PATH uses the local development default.",
-      remediation: "Use an absolute path on a persistent volume, such as /app/data/agentforge.db.",
-    };
-  }
-  return { id: "database_path", status: "pass", message: "Database path is configured." };
+  return { id: "postgres_config", status: "pass", message: "PostgreSQL discrete settings are configured." };
 }

@@ -8,8 +8,8 @@ AgentForge should be sold as private-cloud enterprise software plus upgrade/supp
 
 | Package | Best For | Includes |
 |---|---|---|
-| Team Trial | One department proving value | Single environment, local admin, one IdP, basic support, SQLite or customer MySQL |
-| Business | Multiple departments in one company | Production MySQL, SSO, audit logs, model fallback, backup/restore runbook, standard upgrade help |
+| Team Trial | One department proving value | Single environment, local admin, one IdP, basic support, Docker Compose PostgreSQL |
+| Business | Multiple departments in one company | Production PostgreSQL, SSO, audit logs, model fallback, backup/restore runbook, standard upgrade help |
 | Enterprise | Security-sensitive or global rollout | Multiple workspaces, strict change control, dedicated upgrade window, SSO rollout support, priority incident response |
 
 ## Pricing Units
@@ -54,7 +54,7 @@ For IT:
 - Private-cloud deployment keeps customer data in customer infrastructure.
 - SSO and local emergency admin coexist.
 - Audit logs cover sensitive tenant/admin changes.
-- MySQL is the production database path.
+- PostgreSQL is the only runtime database path.
 - Secrets are passed by environment or secret reference, not stored in docs or audit metadata.
 
 ## Quote Readiness Gate

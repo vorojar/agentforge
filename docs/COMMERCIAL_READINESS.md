@@ -17,7 +17,7 @@ AgentForge is commercially ready when a salesperson, delivery engineer, customer
 | Audience | Must Be Able To | Evidence |
 |---|---|---|
 | Sales | Run a clean demo repeatedly and explain the buying unit | `pnpm demo:reset`, `pnpm demo:seed`, [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md), [PRICING.md](PRICING.md) |
-| Delivery | Deploy, preflight, seed demo, back up, restore, upgrade, and roll back | [OPERATIONS.md](OPERATIONS.md), [CUSTOMER_DELIVERY.md](CUSTOMER_DELIVERY.md), `pnpm preflight:prod`, `pnpm verify:mysql`, `pnpm backup:mysql`, `pnpm restore:mysql` |
+| Delivery | Deploy, preflight, seed demo, back up, restore, upgrade, and roll back | [OPERATIONS.md](OPERATIONS.md), [CUSTOMER_DELIVERY.md](CUSTOMER_DELIVERY.md), `pnpm preflight:prod`, `pnpm verify:postgres`, `pnpm backup:postgres`, `pnpm restore:postgres` |
 | Customer IT | Review architecture, ports, identity, secrets, database, backup, logs, upgrade, and rollback | [CUSTOMER_DELIVERY.md](CUSTOMER_DELIVERY.md), [MAINTENANCE.md](MAINTENANCE.md) |
 | Executive buyer | Understand value, rollout risk, support model, and pricing structure | [PRICING.md](PRICING.md), [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md) |
 | Maintainer | Know which files and commands must stay current | `AGENTS.md`, [MAINTENANCE.md](MAINTENANCE.md), `task.md` |
@@ -28,7 +28,7 @@ AgentForge is commercially ready when a salesperson, delivery engineer, customer
 2. Deterministic demo reset/seed/status scripts exist.
 3. Customer IT delivery checklist exists.
 4. Sales pricing and packaging guidance exists.
-5. Demo scripts pass on a disposable SQLite database.
+5. Demo scripts pass on a disposable PostgreSQL database.
 6. README, release checklist, maintenance guide, and agent guide link to the commercial delivery materials.
 7. Commit and push only after verification evidence is captured.
 

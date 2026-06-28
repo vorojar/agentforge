@@ -6,7 +6,15 @@
       "outputs": ["dist/**"]
     },
     "test": {
-      "dependsOn": ["build"]
+      "dependsOn": ["build"],
+      "passThroughEnv": [
+        "POSTGRES_TEST_URL",
+        "POSTGRES_TEST_CONTAINER",
+        "POSTGRES_TEST_PORT",
+        "POSTGRES_TEST_PASSWORD",
+        "POSTGRES_TEST_DB",
+        "POSTGRES_TEST_USER"
+      ]
     },
     "dev": {
       "cache": false,
@@ -14,7 +22,13 @@
       "passThroughEnv": [
         "ADMIN_SECRET",
         "CORS_ORIGIN",
-        "DB_PATH",
+        "POSTGRES_URL",
+        "POSTGRES_HOST",
+        "POSTGRES_PORT",
+        "POSTGRES_USER",
+        "POSTGRES_PASSWORD",
+        "POSTGRES_DB",
+        "POSTGRES_SSL",
         "DEFAULT_MODEL",
         "LLM_API_KEY",
         "LLM_BASE_URL",

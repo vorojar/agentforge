@@ -12,11 +12,10 @@ describe("runProductionPreflight", () => {
     publicUrl: "PUBLIC_" + "URL",
     corsOrigin: "CORS_" + "ORIGIN",
     dbType: "DB_" + "TYPE",
-    dbPath: "DB_" + "PATH",
-    mysqlHost: "MYSQL_" + "HOST",
-    mysqlUser: "MYSQL_" + "USER",
-    mysqlPassword: "MYSQL_" + "PASSWORD",
-    mysqlDatabase: "MYSQL_" + "DATABASE",
+    postgresHost: "POSTGRES_" + "HOST",
+    postgresUser: "POSTGRES_" + "USER",
+    postgresPassword: "POSTGRES_" + "PASSWORD",
+    postgresDb: "POSTGRES_" + "DB",
   };
 
   it("passes a hardened production environment", () => {
@@ -29,11 +28,11 @@ describe("runProductionPreflight", () => {
       [keys.authCookieSecure]: "true",
       [keys.publicUrl]: "https://agentforge.example.com",
       [keys.corsOrigin]: "https://agentforge.example.com",
-      [keys.dbType]: "mysql",
-      [keys.mysqlHost]: "mysql.internal",
-      [keys.mysqlUser]: "agentforge",
-      [keys.mysqlPassword]: "long-random-mysql-password",
-      [keys.mysqlDatabase]: "agentforge",
+      [keys.dbType]: "postgres",
+      [keys.postgresHost]: "postgres.internal",
+      [keys.postgresUser]: "agentforge",
+      [keys.postgresPassword]: "long-random-postgres-password",
+      [keys.postgresDb]: "agentforge",
     });
 
     expect(report.ok).toBe(true);
@@ -51,7 +50,7 @@ describe("runProductionPreflight", () => {
       [keys.authCookieSecure]: "false",
       [keys.publicUrl]: "http://agentforge.example.com",
       [keys.corsOrigin]: "true",
-      [keys.dbPath]: "data/agentforge.db",
+      [keys.dbType]: "mysql",
     });
 
     expect(report.ok).toBe(false);
@@ -60,11 +59,10 @@ describe("runProductionPreflight", () => {
     expect(statusFor(report, "auth_cookie_secure")).toBe("fail");
     expect(statusFor(report, "public_url")).toBe("fail");
     expect(statusFor(report, "cors_origin")).toBe("fail");
-    expect(statusFor(report, "database_type")).toBe("warn");
-    expect(statusFor(report, "database_path")).toBe("warn");
+    expect(statusFor(report, "database_type")).toBe("fail");
   });
 
-  it("fails incomplete MySQL production config", () => {
+  it("fails incomplete PostgreSQL production config", () => {
     const report = runProductionPreflight({
       [keys.nodeEnv]: "production",
       [keys.llmApiKey]: "test-key",
@@ -74,13 +72,13 @@ describe("runProductionPreflight", () => {
       [keys.authCookieSecure]: "true",
       [keys.publicUrl]: "https://agentforge.example.com",
       [keys.corsOrigin]: "https://agentforge.example.com",
-      [keys.dbType]: "mysql",
-      [keys.mysqlHost]: "mysql.internal",
-      [keys.mysqlUser]: "agentforge",
+      [keys.dbType]: "postgres",
+      [keys.postgresHost]: "postgres.internal",
+      [keys.postgresUser]: "agentforge",
     });
 
     expect(report.ok).toBe(false);
-    expect(statusFor(report, "mysql_config")).toBe("fail");
+    expect(statusFor(report, "postgres_config")).toBe("fail");
   });
 });
 

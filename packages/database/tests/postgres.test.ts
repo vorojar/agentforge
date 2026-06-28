@@ -1,17 +1,36 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { createHash } from "node:crypto";
-import { SQLiteAdapter } from "../src/sqlite.js";
-import { MySQLAdapter } from "../src/mysql.js";
+import { PostgresAdapter, type PostgresConfig } from "../src/postgres.js";
 
 function hashKey(raw: string): string {
   return createHash("sha256").update(raw).digest("hex");
 }
 
-describe("SQLiteAdapter", () => {
-  let db: SQLiteAdapter;
+function testPostgresConfig(): PostgresConfig {
+  const value = process.env.POSTGRES_TEST_URL ?? process.env.DATABASE_URL;
+  if (!value) throw new Error("POSTGRES_TEST_URL is required for database tests");
+  const url = new URL(value);
+  return {
+    host: url.hostname,
+    port: url.port ? Number(url.port) : 5432,
+    user: decodeURIComponent(url.username),
+    password: decodeURIComponent(url.password),
+    database: url.pathname.replace(/^\//, ""),
+  };
+}
+
+async function resetDatabase(db: PostgresAdapter): Promise<void> {
+  const pool = (db as unknown as { pool: { query(sql: string): Promise<unknown> } }).pool;
+  await pool.query("DROP SCHEMA IF EXISTS public CASCADE");
+  await pool.query("CREATE SCHEMA public");
+}
+
+describe("PostgresAdapter", () => {
+  let db: PostgresAdapter;
 
   beforeEach(async () => {
-    db = new SQLiteAdapter(":memory:");
+    db = new PostgresAdapter(testPostgresConfig());
+    await resetDatabase(db);
     await db.initialize();
   });
 
@@ -849,24 +868,17 @@ describe("SQLiteAdapter", () => {
   // --- createDatabase factory ---
 
   describe("createDatabase", () => {
-    it("should create SQLiteAdapter via factory", async () => {
-      const { createDatabase } = await import("../src/index.js");
-      const adapter = await createDatabase(":memory:");
-      expect(adapter).toBeInstanceOf(SQLiteAdapter);
-      await adapter.close();
-    });
-
-    it("should create MySQLAdapter via factory config", async () => {
+    it("should create PostgresAdapter via factory config", async () => {
       const { createDatabaseAdapter } = await import("../src/index.js");
       const adapter = createDatabaseAdapter({
-        type: "mysql",
+        type: "postgres",
         host: "localhost",
-        port: 3306,
+        port: 5432,
         user: "agentforge",
         password: "secret",
         database: "agentforge",
       });
-      expect(adapter).toBeInstanceOf(MySQLAdapter);
+      expect(adapter).toBeInstanceOf(PostgresAdapter);
       await adapter.close();
     });
   });

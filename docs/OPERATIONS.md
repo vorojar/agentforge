@@ -4,20 +4,20 @@ This runbook is for customer private-cloud operators and release engineers.
 
 ## Production Database
 
-Use MySQL for multi-user private-cloud production deployments.
+Use PostgreSQL for all private-cloud production deployments. AgentForge no longer supports SQLite or MySQL runtime modes.
 
 Required environment:
 
 ```bash
-DB_TYPE=mysql
-MYSQL_HOST=mysql.example.internal
-MYSQL_PORT=3306
-MYSQL_USER=agentforge
-MYSQL_PASSWORD=<strong database password>
-MYSQL_DATABASE=agentforge
+DB_TYPE=postgres
+POSTGRES_HOST=postgres.example.internal
+POSTGRES_PORT=5432
+POSTGRES_USER=agentforge
+POSTGRES_PASSWORD=<strong database password>
+POSTGRES_DB=agentforge
 ```
 
-`MYSQL_URL=mysql://user:password@host:3306/database` is also supported. SQLite remains available for local development and small single-node trials.
+`POSTGRES_URL=postgres://user:password@host:5432/database` or `DATABASE_URL=postgres://...` is also supported.
 
 ## Preflight
 
@@ -27,40 +27,40 @@ Run before every production rollout:
 NODE_ENV=production pnpm preflight:prod
 ```
 
-Expected result: no `FAIL` checks. Warnings require an explicit operator decision; for production customers, `DB_TYPE=sqlite` should normally be treated as a blocker.
+Expected result: no `FAIL` checks. Any non-PostgreSQL `DB_TYPE` is a blocker.
 
 ## Migration Verification
 
 Run against a staging copy or a newly provisioned production database before switching traffic:
 
 ```bash
-DB_TYPE=mysql pnpm verify:mysql
+pnpm verify:postgres
 ```
 
 The command initializes schema, applies migrations, creates a temporary workspace, agent, knowledge base, agent-knowledge relation, and audit row, then verifies the audit row can be read back.
 
 ## Backup
 
-Create a logical MySQL backup before upgrade:
+Create a logical PostgreSQL backup before upgrade:
 
 ```bash
-BACKUP_DIR=backups pnpm backup:mysql
+BACKUP_DIR=backups pnpm backup:postgres
 ```
 
-The script uses `mysqldump --single-transaction` and writes `backups/agentforge-<database>-<timestamp>.sql.gz`. Store backups outside the application container and keep at least one known-good backup from before the upgrade window.
+The script uses `pg_dump` and writes `backups/agentforge-<database>-<timestamp>.sql.gz`. Store backups outside the application container and keep at least one known-good backup from before the upgrade window.
 
 ## Restore
 
 Restore into an empty or explicitly prepared database:
 
 ```bash
-pnpm restore:mysql backups/agentforge-prod-20260627-120000.sql.gz
+pnpm restore:postgres backups/agentforge-prod-20260627-120000.sql.gz
 ```
 
 After restore:
 
 ```bash
-DB_TYPE=mysql pnpm verify:mysql
+pnpm verify:postgres
 NODE_ENV=production pnpm preflight:prod
 ```
 
@@ -68,8 +68,8 @@ NODE_ENV=production pnpm preflight:prod
 
 1. Announce a maintenance window.
 2. Confirm current commit/tag and record the target version.
-3. Run `pnpm backup:mysql`.
-4. Restore the backup into a staging database and run `pnpm verify:mysql`.
+3. Run `pnpm backup:postgres`.
+4. Restore the backup into a staging database and run `pnpm verify:postgres`.
 5. Pull the new release image or code.
 6. Run `NODE_ENV=production pnpm preflight:prod`.
 7. Start the app and confirm `/health`.
@@ -79,7 +79,7 @@ NODE_ENV=production pnpm preflight:prod
 ## Rollback
 
 1. Stop the new application version.
-2. Restore the pre-upgrade MySQL backup if the new version wrote incompatible data.
+2. Restore the pre-upgrade PostgreSQL backup if the new version wrote incompatible data.
 3. Start the previous application image/commit.
 4. Confirm `/health`, login, audit logs, and one agent chat.
 5. Record the failed version, logs, and failed verification command before retrying.

@@ -51,43 +51,29 @@ async function main() {
 }
 
 function rawDb(adapter: InitializableDatabaseAdapter): RawDb {
-  const sqlite = adapter as unknown as {
-    db?: {
-      prepare(sql: string): {
-        run(...params: unknown[]): unknown;
-        all(...params: unknown[]): Record<string, unknown>[];
-      };
-    };
-  };
-  if (sqlite.db) {
-    return {
-      async run(sql, params = []) {
-        sqlite.db!.prepare(sql).run(...params);
-      },
-      async all(sql, params = []) {
-        return sqlite.db!.prepare(sql).all(...params) as never;
-      },
-    };
-  }
-
-  const mysql = adapter as unknown as {
+  const postgres = adapter as unknown as {
     pool?: {
-      execute<T = unknown>(sql: string, params?: unknown[]): Promise<[T, unknown]>;
+      query<T extends Record<string, unknown>>(sql: string, params?: unknown[]): Promise<{ rows: T[] }>;
     };
   };
-  if (mysql.pool) {
+  if (postgres.pool) {
     return {
       async run(sql, params = []) {
-        await mysql.pool!.execute(sql, params);
+        await postgres.pool!.query(toPostgresPlaceholders(sql), params);
       },
       async all(sql, params = []) {
-        const [rows] = await mysql.pool!.execute<Record<string, unknown>[]>(sql, params);
-        return rows as never;
+        const result = await postgres.pool!.query(toPostgresPlaceholders(sql), params);
+        return result.rows as never;
       },
     };
   }
 
   throw new Error("Unsupported database adapter for demo data script");
+}
+
+function toPostgresPlaceholders(sql: string): string {
+  let index = 0;
+  return sql.replace(/\?/g, () => `$${++index}`);
 }
 
 async function seedDemoData(db: InitializableDatabaseAdapter) {

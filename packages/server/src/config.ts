@@ -1,7 +1,6 @@
 export interface AppConfig {
   port: number;
   dbType: DatabaseConfig["type"];
-  dbPath: string;
   database: DatabaseConfig;
   llmProvider: string;
   llmApiKey: string;
@@ -15,15 +14,15 @@ export interface AppConfig {
 }
 
 export type DatabaseConfig =
-  | { type: "sqlite"; path: string }
-  | ({ type: "mysql" } & MySQLConfig);
+  { type: "postgres" } & PostgresConfig;
 
-export interface MySQLConfig {
+export interface PostgresConfig {
   host: string;
   port: number;
   user: string;
   password: string;
   database: string;
+  ssl?: boolean;
 }
 
 export function loadConfig(): AppConfig {
@@ -45,7 +44,6 @@ export function loadConfig(): AppConfig {
   return {
     port: parseInt(process.env.PORT ?? "3000", 10),
     dbType: database.type,
-    dbPath: database.type === "sqlite" ? database.path : "",
     database,
     llmProvider: process.env.LLM_PROVIDER ?? "claude",
     llmApiKey,
@@ -68,60 +66,55 @@ function isDemoPassword(password: string): boolean {
 
 export function loadDatabaseConfig(env: NodeJS.ProcessEnv = process.env): DatabaseConfig {
   const databaseUrl = env.DATABASE_URL?.trim();
-  const mysqlUrl = env.MYSQL_URL?.trim() || (databaseUrl?.startsWith("mysql://") || databaseUrl?.startsWith("mysql2://") ? databaseUrl : undefined);
-  const dbType = normalizeDatabaseType(env.DB_TYPE, mysqlUrl);
+  const postgresUrl = env.POSTGRES_URL?.trim() || (databaseUrl?.startsWith("postgres://") || databaseUrl?.startsWith("postgresql://") ? databaseUrl : undefined);
+  const dbType = normalizeDatabaseType(env.DB_TYPE, postgresUrl);
 
-  if (dbType === "mysql") {
-    return { type: "mysql", ...loadMySQLConfig(env, mysqlUrl) };
-  }
-
-  return {
-    type: "sqlite",
-    path: env.DB_PATH ?? databaseUrl ?? "data/agentforge.db",
-  };
+  return { type: dbType, ...loadPostgresConfig(env, postgresUrl) };
 }
 
-function normalizeDatabaseType(value: string | undefined, mysqlUrl: string | undefined): DatabaseConfig["type"] {
+function normalizeDatabaseType(value: string | undefined, postgresUrl: string | undefined): DatabaseConfig["type"] {
   const normalized = value?.trim().toLowerCase();
-  if (!normalized) return mysqlUrl ? "mysql" : "sqlite";
-  if (normalized === "sqlite" || normalized === "mysql") return normalized;
+  if (!normalized) return "postgres";
+  if (normalized === "postgres" || normalized === "postgresql") return "postgres";
   throw new Error(`Unsupported DB_TYPE: ${value}`);
 }
 
-function loadMySQLConfig(env: NodeJS.ProcessEnv, mysqlUrl: string | undefined): MySQLConfig {
-  if (mysqlUrl) return parseMySQLUrl(mysqlUrl);
+function loadPostgresConfig(env: NodeJS.ProcessEnv, postgresUrl: string | undefined): PostgresConfig {
+  if (postgresUrl) return parsePostgresUrl(postgresUrl);
 
-  const host = env.MYSQL_HOST?.trim();
-  const user = env.MYSQL_USER?.trim();
-  const password = env.MYSQL_PASSWORD;
-  const database = env.MYSQL_DATABASE?.trim();
+  const host = env.POSTGRES_HOST?.trim() || "postgres";
+  const user = env.POSTGRES_USER?.trim() || "agentforge";
+  const password = env.POSTGRES_PASSWORD;
+  const database = env.POSTGRES_DB?.trim() || "agentforge";
   if (!host || !user || password === undefined || !database) {
-    throw new Error("MYSQL_HOST, MYSQL_USER, MYSQL_PASSWORD, and MYSQL_DATABASE are required when DB_TYPE=mysql");
+    throw new Error("POSTGRES_PASSWORD is required for PostgreSQL");
   }
 
   return {
     host,
-    port: parseInt(env.MYSQL_PORT ?? "3306", 10),
+    port: parseInt(env.POSTGRES_PORT ?? "5432", 10),
     user,
     password,
     database,
+    ssl: env.POSTGRES_SSL === "true",
   };
 }
 
-function parseMySQLUrl(value: string): MySQLConfig {
+function parsePostgresUrl(value: string): PostgresConfig {
   const url = new URL(value);
-  if (url.protocol !== "mysql:" && url.protocol !== "mysql2:") {
-    throw new Error("MYSQL_URL must use mysql:// or mysql2://");
+  if (url.protocol !== "postgres:" && url.protocol !== "postgresql:") {
+    throw new Error("DATABASE_URL/POSTGRES_URL must use postgres:// or postgresql://");
   }
   const database = url.pathname.replace(/^\//, "");
   if (!url.hostname || !url.username || !database) {
-    throw new Error("MYSQL_URL must include host, user, and database");
+    throw new Error("DATABASE_URL/POSTGRES_URL must include host, user, and database");
   }
   return {
     host: url.hostname,
-    port: url.port ? parseInt(url.port, 10) : 3306,
+    port: url.port ? parseInt(url.port, 10) : 5432,
     user: decodeURIComponent(url.username),
     password: decodeURIComponent(url.password),
     database: decodeURIComponent(database),
+    ssl: url.searchParams.get("sslmode") === "require",
   };
 }
