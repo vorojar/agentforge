@@ -69,7 +69,9 @@
         <el-table :data="identityProviders" v-loading="loading" stripe>
           <el-table-column prop="name" :label="t('common.name')" min-width="160" />
           <el-table-column prop="type" :label="t('tenant.loginProtocol')" width="110" />
-          <el-table-column prop="provider" :label="t('tenant.provider')" width="140" />
+          <el-table-column :label="t('tenant.provider')" width="160">
+            <template #default="{ row }">{{ providerDisplayName(row.provider) }}</template>
+          </el-table-column>
           <el-table-column prop="clientId" :label="t('tenant.clientId')" min-width="170" show-overflow-tooltip />
           <el-table-column :label="t('common.status')" width="110">
             <template #default="{ row }">
@@ -177,19 +179,23 @@
 
     <el-dialog v-model="identityProviderDialogVisible" :title="t('tenant.createIdentityProvider')" width="720px">
       <el-form :model="identityProviderForm" label-width="150px">
-        <el-form-item :label="t('common.name')" required>
-          <el-input v-model="identityProviderForm.name" :placeholder="t('tenant.idpNamePlaceholder')" />
-        </el-form-item>
-        <el-form-item :label="t('tenant.loginProtocol')" required>
-          <el-select v-model="identityProviderForm.type" style="width: 100%">
-            <el-option label="OIDC" value="oidc" />
-            <el-option label="OAuth" value="oauth" />
-            <el-option label="SAML" value="saml" />
-            <el-option :label="t('tenant.localProvider')" value="local" />
+        <el-form-item :label="t('tenant.loginPlatform')" required>
+          <el-select
+            v-model="identityProviderForm.presetId"
+            filterable
+            data-testid="login-platform-select"
+            style="width: 100%"
+            :placeholder="t('tenant.loginPlatformPlaceholder')"
+            @change="applyLoginPreset"
+          >
+            <el-option v-for="preset in loginProviderPresets" :key="preset.id" :label="t(preset.labelKey)" :value="preset.id" />
           </el-select>
         </el-form-item>
-        <el-form-item :label="t('tenant.provider')" required>
-          <el-input v-model="identityProviderForm.provider" :placeholder="t('tenant.providerPlaceholder')" />
+        <el-form-item :label="t('tenant.loginProtocol')" required>
+          <el-input :model-value="protocolLabel(identityProviderForm.type)" disabled />
+        </el-form-item>
+        <el-form-item :label="t('tenant.displayName')" required>
+          <el-input v-model="identityProviderForm.name" :disabled="!selectedLoginPreset" :placeholder="t('tenant.idpNamePlaceholder')" />
         </el-form-item>
         <el-form-item :label="t('tenant.clientId')">
           <el-input v-model="identityProviderForm.clientId" :placeholder="t('tenant.clientIdPlaceholder')" />
@@ -202,9 +208,6 @@
         </el-form-item>
         <el-form-item :label="t('tenant.ssoUrl')">
           <el-input v-model="identityProviderForm.ssoUrl" :placeholder="t('tenant.ssoUrlPlaceholder')" />
-        </el-form-item>
-        <el-form-item :label="t('tenant.certificate')">
-          <el-input v-model="identityProviderForm.certificate" type="textarea" :rows="3" :placeholder="t('tenant.certificatePlaceholder')" />
         </el-form-item>
         <el-form-item :label="t('tenant.claimMapping')">
           <el-input v-model="identityProviderForm.claimMapping" type="textarea" :rows="4" :placeholder="claimMappingPlaceholder" />
@@ -251,6 +254,19 @@ interface UserAccount { id: string; email: string; displayName: string; avatarUr
 interface Membership { id: string; organizationId: string; workspaceId: string | null; userId: string; role: Role; status: MemberStatus; createdAt: string; updatedAt: string }
 interface IdentityProvider { id: string; type: string; provider: string; name: string; clientId?: string; enabled: boolean; updatedAt: string }
 interface AuditLog { id: string; workspaceId: string | null; actorUserId: string | null; action: string; resourceType: string; metadata: Record<string, unknown>; createdAt: string }
+type IdentityProviderProtocol = "oidc" | "oauth";
+type MessageKey = Parameters<typeof t>[0];
+interface LoginProviderPreset {
+  id: string;
+  labelKey: MessageKey;
+  nameKey: MessageKey;
+  type: IdentityProviderProtocol;
+  provider: string;
+  issuerUrl?: string;
+  ssoUrl?: string;
+  claimMapping?: Record<string, string>;
+  groupMapping?: Record<string, string>;
+}
 
 const loading = ref(false);
 const saving = ref(false);
@@ -278,8 +294,9 @@ const membershipForm = ref<{ userId: string; workspaceId: string | null; role: R
   status: "active",
 });
 const identityProviderForm = ref({
+  presetId: "",
   name: "",
-  type: "oidc",
+  type: "oidc" as IdentityProviderProtocol,
   provider: "",
   clientId: "",
   clientSecretRef: "",
@@ -293,8 +310,90 @@ const identityProviderForm = ref({
 
 const roleOptions: Role[] = ["owner", "admin", "builder", "viewer"];
 const statusOptions: MemberStatus[] = ["active", "invited", "disabled"];
+const loginProviderPresets: LoginProviderPreset[] = [
+  {
+    id: "google",
+    labelKey: "tenant.loginPreset.google",
+    nameKey: "tenant.loginPreset.googleName",
+    type: "oidc",
+    provider: "google",
+    issuerUrl: "https://accounts.google.com",
+    claimMapping: { email: "email", name: "name", avatarUrl: "picture" },
+  },
+  {
+    id: "microsoft",
+    labelKey: "tenant.loginPreset.microsoft",
+    nameKey: "tenant.loginPreset.microsoftName",
+    type: "oidc",
+    provider: "microsoft",
+    issuerUrl: "https://login.microsoftonline.com/common/v2.0",
+    claimMapping: { email: "email", name: "name" },
+  },
+  {
+    id: "okta",
+    labelKey: "tenant.loginPreset.okta",
+    nameKey: "tenant.loginPreset.oktaName",
+    type: "oidc",
+    provider: "okta",
+    claimMapping: { email: "email", name: "name" },
+  },
+  {
+    id: "auth0",
+    labelKey: "tenant.loginPreset.auth0",
+    nameKey: "tenant.loginPreset.auth0Name",
+    type: "oidc",
+    provider: "auth0",
+    claimMapping: { email: "email", name: "name" },
+  },
+  {
+    id: "keycloak",
+    labelKey: "tenant.loginPreset.keycloak",
+    nameKey: "tenant.loginPreset.keycloakName",
+    type: "oidc",
+    provider: "keycloak",
+    claimMapping: { email: "email", name: "name" },
+  },
+  {
+    id: "feishu",
+    labelKey: "tenant.loginPreset.feishu",
+    nameKey: "tenant.loginPreset.feishuName",
+    type: "oauth",
+    provider: "feishu",
+    issuerUrl: "https://open.feishu.cn/open-apis/authen/v2/oauth/token",
+    ssoUrl: "https://accounts.feishu.cn/open-apis/authen/v1/authorize",
+    claimMapping: { scope: "contact:user.email" },
+  },
+  {
+    id: "wecom",
+    labelKey: "tenant.loginPreset.wecom",
+    nameKey: "tenant.loginPreset.wecomName",
+    type: "oauth",
+    provider: "wecom",
+    ssoUrl: "https://open.work.weixin.qq.com/wwopen/sso/qrConnect",
+    claimMapping: { agentId: "1000002", emailDomain: "company.com" },
+  },
+  {
+    id: "dingtalk",
+    labelKey: "tenant.loginPreset.dingtalk",
+    nameKey: "tenant.loginPreset.dingtalkName",
+    type: "oauth",
+    provider: "dingtalk",
+    issuerUrl: "https://api.dingtalk.com/v1.0/oauth2/userAccessToken",
+    ssoUrl: "https://login.dingtalk.com/oauth2/auth",
+    claimMapping: { scope: "openid", emailDomain: "company.com" },
+  },
+  {
+    id: "custom-oidc",
+    labelKey: "tenant.loginPreset.customOidc",
+    nameKey: "tenant.loginPreset.customOidcName",
+    type: "oidc",
+    provider: "custom-oidc",
+    claimMapping: { email: "email", name: "name" },
+  },
+];
 const tenantActionLabel = computed(() => t("tenant.action"));
 const tenantResourceLabel = computed(() => t("tenant.resource"));
+const selectedLoginPreset = computed(() => loginProviderPresets.find((preset) => preset.id === identityProviderForm.value.presetId));
 const currentOrganizationName = computed(() => {
   const organization = organizations.value.find((org) => org.id === selectedOrganizationId.value);
   if (!organization || (organization.slug === "default" && organization.name === "Default Organization")) {
@@ -380,6 +479,7 @@ function openMembershipDialog() {
 
 function openIdentityProviderDialog() {
   identityProviderForm.value = {
+    presetId: "",
     name: "",
     type: "oidc",
     provider: "",
@@ -393,6 +493,26 @@ function openIdentityProviderDialog() {
     enabled: true,
   };
   identityProviderDialogVisible.value = true;
+}
+
+function applyLoginPreset(presetId: string) {
+  const preset = loginProviderPresets.find((item) => item.id === presetId);
+  if (!preset) return;
+
+  identityProviderForm.value = {
+    presetId: preset.id,
+    name: t(preset.nameKey),
+    type: preset.type,
+    provider: preset.provider,
+    clientId: "",
+    clientSecretRef: "",
+    issuerUrl: preset.issuerUrl ?? "",
+    ssoUrl: preset.ssoUrl ?? "",
+    certificate: "",
+    claimMapping: JSON.stringify(preset.claimMapping ?? {}, null, 2),
+    groupMapping: JSON.stringify(preset.groupMapping ?? {}, null, 2),
+    enabled: true,
+  };
 }
 
 async function createWorkspace() {
@@ -442,7 +562,7 @@ async function upsertMembership() {
 }
 
 async function createIdentityProvider() {
-  if (!selectedOrganizationId.value || !identityProviderForm.value.name.trim() || !identityProviderForm.value.provider.trim()) {
+  if (!selectedOrganizationId.value || !identityProviderForm.value.presetId || !identityProviderForm.value.name.trim() || !identityProviderForm.value.provider.trim()) {
     return ElMessage.warning(t("tenant.idpRequired"));
   }
 
@@ -452,8 +572,9 @@ async function createIdentityProvider() {
 
   saving.value = true;
   try {
+    const { presetId, ...payload } = identityProviderForm.value;
     await createIdentityProviderApi(selectedOrganizationId.value, {
-      ...compactPayload(identityProviderForm.value),
+      ...compactPayload(payload),
       claimMapping,
       groupMapping,
     });
@@ -515,6 +636,15 @@ function statusLabel(status: MemberStatus): string {
     disabled: t("tenant.statusDisabled"),
   };
   return labels[status];
+}
+
+function protocolLabel(type: IdentityProviderProtocol): string {
+  return type === "oauth" ? "OAuth" : "OIDC";
+}
+
+function providerDisplayName(provider: string): string {
+  const preset = loginProviderPresets.find((item) => item.provider === provider);
+  return preset ? t(preset.labelKey) : provider;
 }
 
 function formatDate(value: string): string {
